@@ -329,87 +329,22 @@ class UINavigationMixin:
         self._update_footer_bindings()
 
     def _update_footer_bindings(self) -> None:
-        """Update footer with context-appropriate bindings."""
-        from ...widgets import ContextFooter, KeyBinding, VimMode
-
-        # Don't update if a modal screen is open
-        if len(self.screen_stack) > 1:
-            return
+        """Update footer with context-appropriate bindings from the state machine."""
+        from ...widgets import ContextFooter, KeyBinding
 
         try:
             footer = self.query_one(ContextFooter)
         except Exception:
             return
 
-        left_bindings: list[KeyBinding] = []
+        left_display, right_display = self._state_machine.get_display_bindings(self)
 
-        if self.object_tree.has_focus:
-            node = self.object_tree.cursor_node
-            node_type = None
-            is_root = node == self.object_tree.root if node else False
-
-            if node and node.data:
-                node_type = node.data[0]
-
-            if is_root or node_type is None:
-                left_bindings.append(KeyBinding("n", "New Connection", "new_connection"))
-                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
-
-            elif node_type == "connection":
-                config = node.data[1] if node and node.data else None
-                is_current = self.current_config and config and config.name == self.current_config.name
-                if is_current and self.current_connection:
-                    left_bindings.append(KeyBinding("x", "Disconnect", "disconnect"))
-                else:
-                    left_bindings.append(KeyBinding("enter", "Connect", "connect_selected"))
-                left_bindings.append(KeyBinding("n", "New", "new_connection"))
-                left_bindings.append(KeyBinding("e", "Edit", "edit_connection"))
-                left_bindings.append(KeyBinding("D", "Duplicate", "duplicate_connection"))
-                left_bindings.append(KeyBinding("d", "Delete", "delete_connection"))
-                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
-
-            elif node_type in ("table", "view"):
-                left_bindings.append(KeyBinding("enter", "Columns", "toggle_node"))
-                left_bindings.append(KeyBinding("s", "Select TOP 100", "select_table"))
-                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
-
-            elif node_type == "database":
-                left_bindings.append(KeyBinding("enter", "Expand", "toggle_node"))
-                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
-
-            elif node_type == "folder":
-                left_bindings.append(KeyBinding("enter", "Expand", "toggle_node"))
-                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
-
-        elif self.query_input.has_focus:
-            if self.vim_mode == VimMode.NORMAL:
-                left_bindings.append(KeyBinding("i", "Insert Mode", "enter_insert_mode"))
-                left_bindings.append(KeyBinding("enter", "Execute", "execute_query"))
-                if self.current_connection:
-                    left_bindings.append(KeyBinding("h", "History", "show_history"))
-                left_bindings.append(KeyBinding("d", "Clear", "clear_query"))
-                left_bindings.append(KeyBinding("n", "New", "new_query"))
-            else:
-                left_bindings.append(KeyBinding("esc", "Normal Mode", "exit_insert_mode"))
-                left_bindings.append(KeyBinding("f5", "Execute", "execute_query_insert"))
-                left_bindings.append(KeyBinding("tab", "Autocomplete", "autocomplete_accept"))
-
-        elif self.results_table.has_focus:
-            # Check if showing an error (column named "Error")
-            is_error = self._last_result_columns == ["Error"]
-            if is_error:
-                left_bindings.append(KeyBinding("v", "View error", "view_cell"))
-                left_bindings.append(KeyBinding("y", "Copy error", "copy_cell"))
-            else:
-                left_bindings.append(KeyBinding("enter", "Re-run", "execute_query"))
-                left_bindings.append(KeyBinding("v", "View cell", "view_cell"))
-                left_bindings.append(KeyBinding("y", "Copy cell", "copy_cell"))
-                left_bindings.append(KeyBinding("Y", "Copy row", "copy_row"))
-                left_bindings.append(KeyBinding("a", "Copy all", "copy_results"))
-
-        right_bindings: list[KeyBinding] = []
-        if self.vim_mode != VimMode.INSERT:
-            right_bindings.append(KeyBinding("<space>", "Commands", "leader_key"))
+        left_bindings = [
+            KeyBinding(b.key, b.label, b.action) for b in left_display
+        ]
+        right_bindings = [
+            KeyBinding(b.key, b.label, b.action) for b in right_display
+        ]
 
         footer.set_bindings(left_bindings, right_bindings)
 
@@ -417,47 +352,7 @@ class UINavigationMixin:
         """Show help with all keybindings."""
         from ..screens import HelpScreen
 
-        help_text = """
-[bold]Object Explorer:[/]
-  enter    Connect/Expand/Columns
-  s        Select TOP 100 (table/view)
-  n        New connection
-  e        Edit connection
-  D        Duplicate connection
-  d        Delete connection
-  R        Refresh
-  f        Fullscreen explorer
-  z        Collapse all
-  x        Disconnect
-
-[bold]Query Editor (Vim Mode):[/]
-  i        Enter INSERT mode
-  esc      Exit to NORMAL mode
-  enter    Execute query (NORMAL)
-  f5       Execute query (stay INSERT)
-  h        Query history
-  d        Clear query
-  n        New query (clear all)
-  tab      Accept autocomplete (INSERT)
-  f        Fullscreen query
-
-[bold]Panes (NORMAL mode):[/]
-  e        Object Explorer
-  q        Query
-  r        Results
-
-[bold]Results:[/]
-  f        Fullscreen results
-  v        View selected cell
-  y        Copy selected cell
-  Y        Copy selected row
-  a        Copy all results
-
-[bold]General:[/]
-  <space>  Commands menu
-  ?        Show this help
-  ^q       Quit
-"""
+        help_text = self._state_machine.generate_help_text()
         self.push_screen(HelpScreen(help_text))
 
     def action_leader_key(self) -> None:
@@ -482,6 +377,22 @@ class UINavigationMixin:
         # Show menu after 200ms delay
         self._leader_timer = self.set_timer(0.2, show_menu)
 
+    def _cancel_leader_pending(self) -> None:
+        """Cancel leader pending state and timer."""
+        self._leader_pending = False
+        if hasattr(self, "_leader_timer") and self._leader_timer is not None:
+            self._leader_timer.stop()
+            self._leader_timer = None
+
+    def _execute_leader_command(self, action: str) -> None:
+        """Execute a leader command by action name."""
+        if action == "quit":
+            self.exit()
+            return
+        action_method = getattr(self, f"action_{action}", None)
+        if action_method:
+            action_method()
+
     def _show_leader_menu(self) -> None:
         """Display the leader menu."""
         from textual.screen import ModalScreen
@@ -497,49 +408,31 @@ class UINavigationMixin:
         """Handle result from leader menu."""
         self._update_footer_bindings()
         if result:
-            # Handle quit specially since Textual's action_quit is async
-            if result == "quit":
-                self.exit()
-                return
-            # Run the action
-            action_method = getattr(self, f"action_{result}", None)
-            if action_method:
-                action_method()
+            self._execute_leader_command(result)
 
-    # Leader combo actions (triggered by space + key)
     def action_leader_toggle_explorer(self) -> None:
-        """Leader combo: toggle explorer."""
-        self.action_toggle_explorer()
+        self._execute_leader_command("toggle_explorer")
 
-    def action_leader_fullscreen(self) -> None:
-        """Leader combo: toggle fullscreen."""
-        self.action_toggle_fullscreen()
+    def action_leader_toggle_fullscreen(self) -> None:
+        self._execute_leader_command("toggle_fullscreen")
 
-    def action_leader_help(self) -> None:
-        """Leader combo: show help."""
-        self.action_show_help()
-
-    def action_leader_theme(self) -> None:
-        """Leader combo: change theme."""
-        self.action_change_theme()
-
-    def action_leader_quit(self) -> None:
-        """Leader combo: quit app."""
-        self.exit()
+    def action_leader_show_connection_picker(self) -> None:
+        self._execute_leader_command("show_connection_picker")
 
     def action_leader_disconnect(self) -> None:
-        """Leader combo: disconnect."""
-        if self.current_connection:
-            self.action_disconnect()
+        self._execute_leader_command("disconnect")
 
-    def action_leader_connect(self) -> None:
-        """Leader combo: show connection picker."""
-        self.action_show_connection_picker()
+    def action_leader_cancel_operation(self) -> None:
+        self._execute_leader_command("cancel_operation")
 
-    def action_leader_cancel(self) -> None:
-        """Leader combo: cancel running operation."""
-        if getattr(self, "_query_executing", False):
-            self.action_cancel_operation()
+    def action_leader_change_theme(self) -> None:
+        self._execute_leader_command("change_theme")
+
+    def action_leader_show_help(self) -> None:
+        self._execute_leader_command("show_help")
+
+    def action_leader_quit(self) -> None:
+        self._execute_leader_command("quit")
 
     def on_descendant_focus(self, event) -> None:
         """Handle focus changes to update section labels and footer."""

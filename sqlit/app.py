@@ -23,6 +23,12 @@ from .config import (
     save_settings,
 )
 from .db import DatabaseAdapter
+from .state_machine import (
+    get_leader_bindings,
+    get_leader_binding_actions,
+    check_leader_action_guard,
+    UIStateMachine,
+)
 from .ui.mixins import (
     AutocompleteMixin,
     ConnectionMixin,
@@ -176,15 +182,8 @@ class SSMSTUI(
     LAYERS = ["autocomplete"]
 
     BINDINGS = [
-        # Leader combo bindings (checked first when _leader_pending is True)
-        Binding("e", "leader_toggle_explorer", show=False),
-        Binding("f", "leader_fullscreen", show=False),
-        Binding("h", "leader_help", show=False),
-        Binding("t", "leader_theme", show=False),
-        Binding("q", "leader_quit", show=False),
-        Binding("c", "leader_connect", show=False),
-        Binding("x", "leader_disconnect", show=False),
-        Binding("z", "leader_cancel", show=False),
+        # Leader combo bindings - generated from keymap provider
+        *get_leader_bindings(),
         # Regular bindings
         Binding("n", "new_connection", "New", show=False),
         Binding("s", "select_table", "Select", show=False),
@@ -263,6 +262,7 @@ class SSMSTUI(
         self._schema_spinner_timer = None
         self._table_metadata: dict = {}
         self._columns_loading: set[str] = set()
+        self._state_machine = UIStateMachine()
 
     @property
     def object_tree(self) -> Tree:
@@ -302,135 +302,29 @@ class SSMSTUI(
         return self.query_one("#autocomplete-dropdown", AutocompleteDropdown)
 
     def push_screen(self, screen, callback=None, wait_for_dismiss: bool = False):
-        """Override push_screen to hide footer when showing modal dialogs."""
-        from textual.screen import ModalScreen
-
-        if isinstance(screen, ModalScreen):
-            self._hide_footer()
-        return super().push_screen(screen, callback, wait_for_dismiss=wait_for_dismiss)
-
-    def pop_screen(self):
-        """Override pop_screen to restore footer when closing modal dialogs."""
-        result = super().pop_screen()
-        # Check if we're back to the main screen (no modal screens)
-        if not any(
-            hasattr(s, "__class__") and "ModalScreen" in str(s.__class__.__mro__)
-            for s in self.screen_stack[1:]  # Skip the base screen
-        ):
-            self._show_footer()
+        """Override push_screen to update footer when screen changes."""
+        result = super().push_screen(screen, callback, wait_for_dismiss=wait_for_dismiss)
+        self._update_footer_bindings()
         return result
 
-    def _hide_footer(self) -> None:
-        """Clear the footer content when showing dialogs."""
-        try:
-            footer = self.query_one(ContextFooter)
-            footer.set_bindings([], [])
-        except Exception:
-            pass
-
-    def _show_footer(self) -> None:
-        """Restore the footer content after closing dialogs."""
+    def pop_screen(self):
+        """Override pop_screen to update footer when screen changes."""
+        result = super().pop_screen()
         self._update_footer_bindings()
+        return result
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
-        """Only allow actions when their context is active."""
-        # Leader combo actions only work when _leader_pending is True
-        if action.startswith("leader_") and action != "leader_key":
-            if getattr(self, "_leader_pending", False):
-                # Cancel timer and clear pending state
-                if hasattr(self, "_leader_timer") and self._leader_timer is not None:
-                    self._leader_timer.stop()
-                    self._leader_timer = None
-                self._leader_pending = False
-                return True
-            return False
-
-        # Block most actions when waiting for leader combo
-        if getattr(self, "_leader_pending", False):
-            # Only allow leader_key action during leader pending
-            if action != "leader_key":
+        """Check if an action is allowed in the current state."""
+        if action in get_leader_binding_actions():
+            if not getattr(self, "_leader_pending", False):
                 return False
+            if hasattr(self, "_leader_timer") and self._leader_timer is not None:
+                self._leader_timer.stop()
+                self._leader_timer = None
+            self._leader_pending = False
+            return check_leader_action_guard(self, action)
 
-        tree_focused = self.object_tree.has_focus
-        query_focused = self.query_input.has_focus
-        results_focused = self.results_table.has_focus
-        in_insert_mode = self.vim_mode == VimMode.INSERT
-
-        node = self.object_tree.cursor_node
-        node_type = None
-        is_root = node == self.object_tree.root if node else False
-        if node and node.data:
-            node_type = node.data[0]
-
-        if action == "enter_insert_mode":
-            return query_focused and not in_insert_mode
-        elif action == "exit_insert_mode":
-            return in_insert_mode
-
-        if in_insert_mode:
-            if action in (
-                "quit",
-                "exit_insert_mode",
-                "execute_query_insert",
-            ):
-                return True
-            return False
-
-        if action == "new_connection":
-            return tree_focused
-        elif action == "refresh_tree":
-            return tree_focused
-        elif action == "collapse_tree":
-            return tree_focused
-        elif action == "edit_connection":
-            return tree_focused and node_type == "connection"
-        elif action == "delete_connection":
-            return tree_focused and node_type == "connection"
-        elif action == "connect_selected":
-            if not tree_focused or node_type != "connection":
-                return False
-            config = node.data[1] if node and node.data else None
-            if not self.current_connection:
-                return True
-            return config and self.current_config and config.name != self.current_config.name
-        elif action == "disconnect":
-            return (
-                tree_focused
-                and node_type == "connection"
-                and self.current_connection is not None
-            )
-        elif action == "select_table":
-            return tree_focused and node_type in ("table", "view")
-        elif action == "execute_query":
-            return query_focused or results_focused
-        elif action == "execute_query_insert":
-            return query_focused
-        elif action in ("clear_query", "new_query"):
-            return query_focused and self.vim_mode == VimMode.NORMAL
-        elif action == "show_history":
-            return query_focused and self.vim_mode == VimMode.NORMAL and self.current_config is not None
-        elif action == "focus_explorer":
-            if tree_focused and node_type == "connection":
-                return False
-            return True
-        elif action in ("focus_query", "focus_results"):
-            return True
-        elif action == "toggle_fullscreen":
-            # Don't allow toggle_fullscreen when tree focused (f is refresh there)
-            return not tree_focused
-        elif action == "test_connections":
-            return True
-        elif action in ("view_cell", "copy_cell", "copy_row", "copy_results"):
-            return results_focused
-        elif action in (
-            "quit",
-            "show_help",
-            "leader_key",
-            "toggle_dark",
-        ):
-            return True
-
-        return True
+        return self._state_machine.check_action(self, action)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="main-container"):

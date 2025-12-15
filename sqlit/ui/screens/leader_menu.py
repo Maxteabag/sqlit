@@ -7,26 +7,25 @@ from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from ...state_machine import get_leader_commands
+
+
+def _make_menu_bindings():
+    """Generate bindings for the leader menu from leader commands."""
+    bindings = [
+        Binding("escape", "dismiss", "Close", show=False),
+        Binding("space", "dismiss", "Close", show=False),
+    ]
+    for cmd in get_leader_commands():
+        # Menu uses cmd_* action names which dismiss and return the target action
+        bindings.append(Binding(cmd.key, f"cmd_{cmd.action}", cmd.label, show=False))
+    return bindings
+
 
 class LeaderMenuScreen(ModalScreen):
     """Modal screen showing leader key commands."""
 
-    BINDINGS = [
-        Binding("escape", "dismiss", "Close", show=False),
-        Binding("space", "dismiss", "Close", show=False),
-        # View
-        Binding("e", "cmd_toggle_explorer", "Toggle Explorer", show=False),
-        Binding("f", "cmd_fullscreen", "Maximize", show=False),
-        # Actions
-        Binding("h", "cmd_help", "Help", show=False),
-        Binding("t", "cmd_theme", "Theme", show=False),
-        Binding("q", "cmd_quit", "Quit", show=False),
-        # Connection
-        Binding("c", "cmd_connect", "Connect", show=False),
-        Binding("x", "cmd_disconnect", "Disconnect", show=False),
-        # Cancel
-        Binding("z", "cmd_cancel", "Cancel", show=False),
-    ]
+    BINDINGS = _make_menu_bindings()
 
     CSS = """
     LeaderMenuScreen {
@@ -48,37 +47,27 @@ class LeaderMenuScreen(ModalScreen):
 
     def __init__(self):
         super().__init__()
+        # Build lookup for cmd_* actions (rebuilt each time for testability)
+        self._cmd_actions = {cmd.action: cmd for cmd in get_leader_commands()}
 
     def compose(self) -> ComposeResult:
-        app = self.app
-        connected = app.current_connection is not None
-        query_running = getattr(app, "_query_executing", False)
-
+        """Generate menu content from leader commands."""
         lines = []
+        leader_commands = get_leader_commands()
 
-        # View category
-        lines.append("[bold $text-muted]View[/]")
-        lines.append("  [bold $warning]e[/] Toggle Explorer")
-        lines.append("  [bold $warning]f[/] Toggle Maximize Current Window")
-        lines.append("")
+        categories: dict[str, list] = {}
+        for cmd in leader_commands:
+            if cmd.category not in categories:
+                categories[cmd.category] = []
+            categories[cmd.category].append(cmd)
 
-        # Connection category
-        lines.append("[bold $text-muted]Connection[/]")
-        lines.append("  [bold $warning]c[/] Connect")
-        if connected:
-            lines.append("  [bold $warning]x[/] Disconnect")
+        for category, commands in categories.items():
+            lines.append(f"[bold $text-muted]{category}[/]")
+            for cmd in commands:
+                if cmd.is_allowed(self.app):
+                    lines.append(f"  [bold $warning]{cmd.key}[/] {cmd.label}")
+            lines.append("")
 
-        lines.append("")
-
-        # Actions category
-        lines.append("[bold $text-muted]Actions[/]")
-        if query_running:
-            lines.append("  [bold $warning]z[/] Cancel Query")
-        lines.append("  [bold $warning]t[/] Change Theme")
-        lines.append("  [bold $warning]h[/] Help")
-        lines.append("  [bold $warning]q[/] Quit")
-
-        lines.append("")
         lines.append("[$primary]Close: <esc>[/]")
 
         content = "\n".join(lines)
@@ -91,28 +80,16 @@ class LeaderMenuScreen(ModalScreen):
         """Run an app action and dismiss the menu."""
         self.dismiss(action_name)
 
-    def action_cmd_toggle_explorer(self) -> None:
-        self._run_and_dismiss("toggle_explorer")
+    def __getattr__(self, name: str):
+        """Handle cmd_* actions dynamically from leader commands."""
+        if name.startswith("action_cmd_"):
+            action = name[len("action_cmd_"):]
+            if action in self._cmd_actions:
+                cmd = self._cmd_actions[action]
 
-    def action_cmd_fullscreen(self) -> None:
-        self._run_and_dismiss("toggle_fullscreen")
+                def handler():
+                    if cmd.is_allowed(self.app):
+                        self._run_and_dismiss(cmd.action)
 
-    def action_cmd_help(self) -> None:
-        self._run_and_dismiss("show_help")
-
-    def action_cmd_theme(self) -> None:
-        self._run_and_dismiss("change_theme")
-
-    def action_cmd_quit(self) -> None:
-        self._run_and_dismiss("quit")
-
-    def action_cmd_connect(self) -> None:
-        self._run_and_dismiss("show_connection_picker")
-
-    def action_cmd_disconnect(self) -> None:
-        if self.app.current_connection:
-            self._run_and_dismiss("disconnect")
-
-    def action_cmd_cancel(self) -> None:
-        if getattr(self.app, "_query_executing", False):
-            self._run_and_dismiss("cancel_operation")
+                return handler
+        raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
