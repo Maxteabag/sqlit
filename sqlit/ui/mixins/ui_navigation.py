@@ -364,6 +364,7 @@ class UINavigationMixin:
                     left_bindings.append(KeyBinding("enter", "Connect", "connect_selected"))
                 left_bindings.append(KeyBinding("n", "New", "new_connection"))
                 left_bindings.append(KeyBinding("e", "Edit", "edit_connection"))
+                left_bindings.append(KeyBinding("D", "Duplicate", "duplicate_connection"))
                 left_bindings.append(KeyBinding("d", "Delete", "delete_connection"))
                 left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
 
@@ -408,12 +409,7 @@ class UINavigationMixin:
 
         right_bindings: list[KeyBinding] = []
         if self.vim_mode != VimMode.INSERT:
-            right_bindings.extend(
-                [
-                    KeyBinding("?", "Help", "show_help"),
-                    KeyBinding("<space>", "Commands", "leader_key"),
-                ]
-            )
+            right_bindings.append(KeyBinding("<space>", "Commands", "leader_key"))
 
         footer.set_bindings(left_bindings, right_bindings)
 
@@ -427,6 +423,7 @@ class UINavigationMixin:
   s        Select TOP 100 (table/view)
   n        New connection
   e        Edit connection
+  D        Duplicate connection
   d        Delete connection
   R        Refresh
   f        Fullscreen explorer

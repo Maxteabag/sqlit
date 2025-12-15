@@ -175,6 +175,7 @@ class ConnectionScreen(ModalScreen):
     }
 
     .field-fixed {
+        width: 10;
         height: auto;
         margin-left: 1;
     }
@@ -289,29 +290,32 @@ class ConnectionScreen(ModalScreen):
 
         hidden_class = "" if initial_visible else " hidden"
 
-        if field_def.field_type == FieldType.SELECT:
+        if field_def.field_type == FieldType.DROPDOWN:
             container = Container(id=container_id, classes=f"field-container{hidden_class}")
             container.border_title = field_def.label
             with container:
-                if field_def.name == "auth_type":
-                    select = Select(
-                        options=[(opt.label, opt.value) for opt in field_def.options],
-                        value=(self._get_field_value(field_def.name) or field_def.default),
-                        allow_blank=False,
-                        compact=True,
-                        id=field_id,
-                    )
-                    self._field_widgets[field_def.name] = select
-                    yield select
-                else:
-                    options = [Option(opt.label, id=opt.value) for opt in field_def.options]
-                    option_list = OptionList(*options, id=field_id, classes="select-field")
-                    self._field_widgets[field_def.name] = option_list
-                    yield option_list
+                select = Select(
+                    options=[(opt.label, opt.value) for opt in field_def.options],
+                    value=(self._get_field_value(field_def.name) or field_def.default),
+                    allow_blank=False,
+                    compact=True,
+                    id=field_id,
+                )
+                self._field_widgets[field_def.name] = select
                 self._field_definitions[field_def.name] = field_def
+                yield select
+                yield Static("", id=f"error-{field_def.name}", classes="error-text hidden")
+        elif field_def.field_type == FieldType.SELECT:
+            container = Container(id=container_id, classes=f"field-container{hidden_class}")
+            container.border_title = field_def.label
+            with container:
+                options = [Option(opt.label, id=opt.value) for opt in field_def.options]
+                option_list = OptionList(*options, id=field_id, classes="select-field")
+                self._field_widgets[field_def.name] = option_list
+                self._field_definitions[field_def.name] = field_def
+                yield option_list
                 yield Static("", id=f"error-{field_def.name}", classes="error-text hidden")
         else:
-            # TEXT, PASSWORD, FILE all use Input
             value = self._get_field_value(field_def.name) or field_def.default
             container = Container(id=container_id, classes=f"field-container{hidden_class}")
             container.border_title = field_def.label
@@ -760,23 +764,26 @@ class ConnectionScreen(ModalScreen):
         container = Container(id=container_id, classes=f"field-container{hidden_class}")
         container.border_title = field_def.label
 
-        if field_def.field_type == FieldType.SELECT:
-            if field_def.name == "auth_type":
-                select = Select(
-                    options=[(opt.label, opt.value) for opt in field_def.options],
-                    value=(self._get_field_value(field_def.name) or field_def.default),
-                    allow_blank=False,
-                    compact=True,
-                    id=field_id,
-                )
-                self._field_widgets[field_def.name] = select
-                container.compose_add_child(select)
-            else:
-                options = [Option(opt.label, id=opt.value) for opt in field_def.options]
-                option_list = OptionList(*options, id=field_id, classes="select-field")
-                self._field_widgets[field_def.name] = option_list
-                container.compose_add_child(option_list)
+        if field_def.field_type == FieldType.DROPDOWN:
+            select = Select(
+                options=[(opt.label, opt.value) for opt in field_def.options],
+                value=(self._get_field_value(field_def.name) or field_def.default),
+                allow_blank=False,
+                compact=True,
+                id=field_id,
+            )
+            self._field_widgets[field_def.name] = select
             self._field_definitions[field_def.name] = field_def
+            container.compose_add_child(select)
+            container.compose_add_child(
+                Static("", id=f"error-{field_def.name}", classes="error-text hidden")
+            )
+        elif field_def.field_type == FieldType.SELECT:
+            options = [Option(opt.label, id=opt.value) for opt in field_def.options]
+            option_list = OptionList(*options, id=field_id, classes="select-field")
+            self._field_widgets[field_def.name] = option_list
+            self._field_definitions[field_def.name] = field_def
+            container.compose_add_child(option_list)
             container.compose_add_child(
                 Static("", id=f"error-{field_def.name}", classes="error-text hidden")
             )
@@ -1198,7 +1205,6 @@ class ConnectionScreen(ModalScreen):
             if not field_name.startswith("ssh_"):
                 config_kwargs[field_name] = value
 
-        # Handle SQL Server specific fields
         if db_type == DatabaseType.MSSQL:
             auth_type = values.get("auth_type", "sql")
             config_kwargs["trusted_connection"] = (auth_type == "windows")
@@ -1229,7 +1235,6 @@ class ConnectionScreen(ModalScreen):
         return hints.get(db_type)
 
     def action_test_connection(self) -> None:
-        """Test the connection without saving or closing."""
         from dataclasses import replace
 
         config = self._get_config()
@@ -1242,7 +1247,6 @@ class ConnectionScreen(ModalScreen):
         self._last_test_error = ""
         tunnel = None
         try:
-            # Create SSH tunnel if needed
             tunnel, host, port = create_ssh_tunnel(config)
             if tunnel:
                 connect_config = replace(config, server=host, port=str(port))

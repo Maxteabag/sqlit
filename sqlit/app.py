@@ -192,6 +192,7 @@ class SSMSTUI(
         Binding("f", "refresh_tree", "Refresh", show=False),
         Binding("e", "edit_connection", "Edit", show=False),
         Binding("d", "delete_connection", "Delete", show=False),
+        Binding("D", "duplicate_connection", "Duplicate", show=False),
         Binding("delete", "delete_connection", "Delete", show=False),
         Binding("x", "disconnect", "Disconnect", show=False),
         Binding("space", "leader_key", "Commands", show=False, priority=True),
@@ -592,4 +593,3 @@ class SSMSTUI(
         settings = load_settings()
         settings["theme"] = new_theme
         save_settings(settings)
-

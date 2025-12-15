@@ -13,11 +13,10 @@ from typing import Callable
 
 
 class FieldType(Enum):
-    """Types of connection fields."""
-
     TEXT = "text"
     PASSWORD = "password"
     SELECT = "select"
+    DROPDOWN = "dropdown"
     FILE = "file"
 
 
@@ -31,12 +30,7 @@ class SelectOption:
 
 @dataclass(frozen=True)
 class SchemaField:
-    """Metadata for a connection parameter.
-
-    This is a pure data description, independent of any UI framework.
-    """
-
-    name: str  # Maps to ConnectionConfig attribute
+    name: str
     label: str
     field_type: FieldType = FieldType.TEXT
     required: bool = False
@@ -44,22 +38,17 @@ class SchemaField:
     placeholder: str = ""
     description: str = ""
     options: tuple[SelectOption, ...] = ()
-    # Visibility predicate: field names this depends on and the condition
     visible_when: Callable[[dict], bool] | None = None
-    # Group name for fields that belong together (e.g., "server_port", "credentials")
     group: str | None = None
-    # Whether this is an advanced/optional field
     advanced: bool = False
 
 
 @dataclass(frozen=True)
 class ConnectionSchema:
-    """Schema defining connection parameters for a database type."""
-
     db_type: str
     display_name: str
     fields: tuple[SchemaField, ...]
-    supports_ssh: bool = True  # Most server-based DBs support SSH tunneling
+    supports_ssh: bool = True
 
 
 # Common field templates
@@ -174,7 +163,7 @@ MSSQL_SCHEMA = ConnectionSchema(
         SchemaField(
             name="auth_type",
             label="Authentication",
-            field_type=FieldType.SELECT,
+            field_type=FieldType.DROPDOWN,
             options=_get_mssql_auth_options(),
             default="sql",
         ),
@@ -307,6 +296,58 @@ TURSO_SCHEMA = ConnectionSchema(
 )
 
 
+def _get_supabase_region_options() -> tuple[SelectOption, ...]:
+    regions = (
+        "us-east-1",
+        "us-east-2",
+        "us-west-1",
+        "us-west-2",
+        "ca-central-1",
+        "sa-east-1",
+        "eu-west-1",
+        "eu-west-2",
+        "eu-west-3",
+        "eu-central-1",
+        "eu-central-2",
+        "eu-north-1",
+        "ap-south-1",
+        "ap-southeast-1",
+        "ap-southeast-2",
+        "ap-northeast-1",
+        "ap-northeast-2",
+    )
+    return tuple(SelectOption(r, r) for r in regions)
+
+
+SUPABASE_SCHEMA = ConnectionSchema(
+    db_type="supabase",
+    display_name="Supabase",
+    fields=(
+        SchemaField(
+            name="supabase_region",
+            label="Region",
+            field_type=FieldType.DROPDOWN,
+            options=_get_supabase_region_options(),
+            required=True,
+            default="us-east-1",
+        ),
+        SchemaField(
+            name="supabase_project_id",
+            label="Project ID",
+            placeholder="abcdefghijklmnop",
+            required=True,
+        ),
+        SchemaField(
+            name="password",
+            label="Password",
+            field_type=FieldType.PASSWORD,
+            required=True,
+        ),
+    ),
+    supports_ssh=False,
+)
+
+
 # Schema registry
 _SCHEMAS: dict[str, ConnectionSchema] = {
     "mssql": MSSQL_SCHEMA,
@@ -318,6 +359,7 @@ _SCHEMAS: dict[str, ConnectionSchema] = {
     "sqlite": SQLITE_SCHEMA,
     "duckdb": DUCKDB_SCHEMA,
     "turso": TURSO_SCHEMA,
+    "supabase": SUPABASE_SCHEMA,
 }
 
 

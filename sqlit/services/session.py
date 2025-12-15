@@ -92,7 +92,6 @@ class ConnectionSession:
         get_adapter_fn = adapter_factory or get_adapter
         create_tunnel_fn = tunnel_factory or create_ssh_tunnel
 
-        # Create SSH tunnel if enabled
         tunnel, host, port = create_tunnel_fn(config)
 
         # Adjust config for tunnel if created

@@ -177,6 +177,38 @@ class ConnectionMixin:
             self.refresh_tree()
             self.notify(f"Connection '{config.name}' saved")
 
+    def action_duplicate_connection(self) -> None:
+        """Duplicate the selected connection."""
+        from dataclasses import replace
+
+        from ..screens import ConnectionScreen
+
+        node = self.object_tree.cursor_node
+
+        if not node or not node.data:
+            return
+
+        data = node.data
+        if data[0] != "connection":
+            return
+
+        config = data[1]
+
+        existing_names = {c.name for c in self.connections}
+        base_name = config.name
+        new_name = f"{base_name} (copy)"
+        counter = 2
+        while new_name in existing_names:
+            new_name = f"{base_name} (copy {counter})"
+            counter += 1
+
+        duplicated = replace(config, name=new_name)
+
+        self._set_connection_screen_footer()
+        self.push_screen(
+            ConnectionScreen(duplicated, editing=False), self._wrap_connection_result
+        )
+
     def action_delete_connection(self) -> None:
         """Delete the selected connection."""
         from ..screens import ConfirmScreen

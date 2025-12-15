@@ -40,6 +40,7 @@ class DatabaseType(Enum):
     DUCKDB = "duckdb"
     COCKROACHDB = "cockroachdb"
     TURSO = "turso"
+    SUPABASE = "supabase"
 
 
 DATABASE_TYPE_LABELS = {
@@ -52,6 +53,7 @@ DATABASE_TYPE_LABELS = {
     DatabaseType.DUCKDB: "DuckDB",
     DatabaseType.COCKROACHDB: "CockroachDB",
     DatabaseType.TURSO: "Turso",
+    DatabaseType.SUPABASE: "Supabase",
 }
 
 
@@ -100,6 +102,9 @@ class ConnectionConfig:
     ssh_auth_type: str = "key"  # "key" or "password"
     ssh_password: str = ""
     ssh_key_path: str = ""
+    # Supabase specific fields
+    supabase_region: str = ""
+    supabase_project_id: str = ""
 
     def __post_init__(self):
         """Handle backwards compatibility with old configs."""
@@ -181,6 +186,9 @@ class ConnectionConfig:
         """Get a display string for the connection."""
         if self.db_type in ("sqlite", "duckdb"):
             return self.file_path or self.name
+
+        if self.db_type == "supabase":
+            return f"{self.name} ({self.supabase_region})"
 
         db_part = f"@{self.database}" if self.database else ""
         return f"{self.name}{db_part}"

@@ -1,5 +1,3 @@
-"""Database adapters for sqlit - abstraction layer for different database types."""
-
 from .base import ColumnInfo, DatabaseAdapter, TableInfo
 from .cockroachdb import CockroachDBAdapter
 from .duckdb import DuckDBAdapter
@@ -9,14 +7,13 @@ from .mysql import MySQLAdapter
 from .oracle import OracleAdapter
 from .postgresql import PostgreSQLAdapter
 from .sqlite import SQLiteAdapter
+from .supabase import SupabaseAdapter
 from .turso import TursoAdapter
 
 __all__ = [
-    # Base
     "ColumnInfo",
     "DatabaseAdapter",
     "TableInfo",
-    # Adapters
     "CockroachDBAdapter",
     "DuckDBAdapter",
     "MariaDBAdapter",
@@ -25,14 +22,13 @@ __all__ = [
     "PostgreSQLAdapter",
     "SQLiteAdapter",
     "SQLServerAdapter",
+    "SupabaseAdapter",
     "TursoAdapter",
-    # Factory
     "get_adapter",
 ]
 
 
 def get_adapter(db_type: str) -> DatabaseAdapter:
-    """Get the appropriate adapter for a database type."""
     adapters = {
         "mssql": SQLServerAdapter(),
         "sqlite": SQLiteAdapter(),
@@ -43,6 +39,7 @@ def get_adapter(db_type: str) -> DatabaseAdapter:
         "duckdb": DuckDBAdapter(),
         "cockroachdb": CockroachDBAdapter(),
         "turso": TursoAdapter(),
+        "supabase": SupabaseAdapter(),
     }
     adapter = adapters.get(db_type)
     if not adapter:
