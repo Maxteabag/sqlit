@@ -135,7 +135,7 @@ sqlit is inspired by [lazygit](https://github.com/jesseduffield/lazygit) - you c
 Key differences:
 - **No need for external documentation** - Sqlit embrace the "lazy" approach in that a user should be able to jump in and use it right away intuitively. There should be no setup instructions. If python packages are required for certain adapters, sqlit will help you install them as you need them. 
 - **No CLI config required** - Just run `sqlit` and pick a connection from the UI
-- **Lightweight** - While Lazysql or Marlequin offer more features, I experienced that for the vast majority of cases, all I needed is an simple and fast way to connect and run queries. Sqlit is centered about doing a limited amount of things really well.
+- **Lightweight** - While Lazysql or Harlequin offer more features, I experienced that for the vast majority of cases, all I needed was a simple and fast way to connect and run queries. Sqlit is focused on doing a limited amount of things really well.
 
 ## Inspiration
 
