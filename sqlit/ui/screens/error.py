@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import textwrap
-
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import ModalScreen
@@ -50,9 +48,8 @@ class ErrorScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         shortcuts = [("Copy", "y"), ("Close", "<enter>")]
-        wrapped = textwrap.fill(self.message, width=56)
         with Dialog(id="error-dialog", title=self.title_text, shortcuts=shortcuts):
-            yield Static(wrapped, id="error-message")
+            yield Static(self.message, id="error-message")
 
     def action_close(self) -> None:
         self.dismiss()

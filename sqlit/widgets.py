@@ -127,7 +127,9 @@ class Dialog(Container):
         if title is not None:
             self.border_title = title
         if shortcuts:
-            subtitle = "  ".join(f"{action}: [bold]{key}[/]" for action, key in shortcuts)
+            # Use a visible separator. Border subtitles can collapse regular spaces,
+            # so we use non-breaking spaces to preserve padding around the separator.
+            subtitle = "\u00a0·\u00a0".join(f"{action}: [bold]{key}[/]" for action, key in shortcuts)
             self.border_subtitle = subtitle
 
 

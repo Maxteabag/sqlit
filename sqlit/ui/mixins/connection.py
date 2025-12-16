@@ -68,8 +68,6 @@ class ConnectionMixin:
                     ConfirmScreen(
                         "Missing driver",
                         f"This connection requires the {error.driver_name} driver.\n\nInstall it now?",
-                        yes_label="Install now",
-                        no_label="Manual steps",
                     ),
                     lambda confirmed: self._handle_install_confirmation(confirmed, error),
                 )

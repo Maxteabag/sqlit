@@ -18,6 +18,7 @@ class InstallerApp(Protocol):
     def pop_screen(self) -> Any: ...
     def call_from_thread(self, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> Any: ...
     def notify(self, message: str, *, severity: str = "information", timeout: float | int | None = None) -> Any: ...
+    def restart(self) -> Any: ...
 
 
 class Installer:
@@ -137,10 +138,13 @@ class Installer:
 
         try:
             if success:
+                restart = getattr(self.app, "restart", None)
                 self.app.push_screen(
                     MessageScreen(
                         "Driver installed",
-                        f"{error.driver_name} installed successfully. Restart sqlit-tui to use it.",
+                        f"{error.driver_name} installed successfully. Please restart to apply.",
+                        enter_label="Restart",
+                        on_enter=restart if callable(restart) else None,
                     )
                 )
             else:
@@ -157,17 +161,14 @@ class Installer:
                     )
                     return
                 manual_hint = _create_driver_import_error_hint(error.driver_name, error.extra_name, error.package_name)
-                error_details = f"""
-Automatic installation failed.
-
-[bold]Reason:[/bold]
-{output}
-
----
-
-Please try the manual installation steps below:
-{manual_hint}
-"""
+                output_clean = (output or "").strip()
+                error_details = (
+                    "Automatic installation failed.\n\n"
+                    "[bold]Reason:[/bold]\n"
+                    f"{output_clean}\n\n"
+                    "Please try the manual installation steps below.\n\n"
+                    f"{manual_hint.strip()}\n"
+                )
                 self.app.push_screen(ErrorScreen("Installation Failed", error_details))
         except StylesheetParseError as e:
             # Fallback: avoid crashing the app if the stylesheet can’t be reparsed after install.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import ModalScreen
@@ -14,7 +16,7 @@ class MessageScreen(ModalScreen):
     """Modal screen that shows a message and closes via keyboard."""
 
     BINDINGS = [
-        Binding("enter", "close", "Continue"),
+        Binding("enter", "primary", "Continue", show=False),
         Binding("escape", "close", "Close", show=False),
     ]
 
@@ -25,7 +27,7 @@ class MessageScreen(ModalScreen):
     }
 
     #message-dialog {
-        width: 60;
+        width: 70;
         max-width: 80%;
         border: solid $primary;
         border-subtitle-color: $primary;
@@ -40,15 +42,30 @@ class MessageScreen(ModalScreen):
     }
     """
 
-    def __init__(self, title: str, message: str):
+    def __init__(
+        self,
+        title: str,
+        message: str,
+        *,
+        enter_label: str = "Continue",
+        on_enter: Callable[[], None] | None = None,
+    ):
         super().__init__()
         self._title = title
         self.message = message
+        self._enter_label = enter_label
+        self._on_enter = on_enter
 
     def compose(self) -> ComposeResult:
-        shortcuts = [("Continue", "<enter>")]
+        shortcuts = [(self._enter_label, "<enter>")]
         with Dialog(id="message-dialog", title=self._title, shortcuts=shortcuts):
             yield Static(self.message, id="message-content")
+
+    def action_primary(self) -> None:
+        if self._on_enter is not None:
+            self._on_enter()
+            return
+        self.dismiss()
 
     def action_close(self) -> None:
         self.dismiss()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -352,6 +354,35 @@ class SSMSTUI(
         """
         return self._state_machine.check_action(self, action)
 
+    def _compute_restart_argv(self) -> list[str]:
+        """Compute a best-effort argv to restart the app."""
+        # Linux provides the most reliable answer via /proc.
+        try:
+            cmdline_path = "/proc/self/cmdline"
+            if os.path.exists(cmdline_path):
+                raw = open(cmdline_path, "rb").read()
+                parts = [p.decode(errors="surrogateescape") for p in raw.split(b"\0") if p]
+                if parts:
+                    return parts
+        except Exception:
+            pass
+
+        # Fallback: sys.argv (good enough for most invocations).
+        argv = [sys.argv[0], *sys.argv[1:]] if sys.argv else []
+        if argv:
+            return argv
+        return [sys.executable]
+
+    def restart(self) -> None:
+        """Restart the current process in-place."""
+        argv = getattr(self, "_restart_argv", None) or self._compute_restart_argv()
+        exe = argv[0]
+        # execv doesn't search PATH; use execvp for bare commands (e.g. "sqlit").
+        if os.sep in exe:
+            os.execv(exe, argv)
+        else:
+            os.execvp(exe, argv)
+
     def compose(self) -> ComposeResult:
         with Vertical(id="main-container"):
             with Horizontal(id="content"):
@@ -383,6 +414,7 @@ class SSMSTUI(
 
     def on_mount(self) -> None:
         """Initialize the app."""
+        self._restart_argv = self._compute_restart_argv()
         if not PYODBC_AVAILABLE and not self._mock_profile:
             self.notify(
                 "pyodbc not installed. Run: pip install pyodbc",

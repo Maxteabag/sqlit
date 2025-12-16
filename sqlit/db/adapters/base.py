@@ -444,18 +444,14 @@ def _create_driver_import_error_hint(driver_name: str, extra_name: str, package_
         is_pipx = False
 
     if is_pipx:
-        return f"""
-{driver_name} driver not found.
-
-To connect to {driver_name}, please add the required package to your sqlit-tui environment:
-
-  pipx inject sqlit-tui {package_name}
-"""
+        return (
+            f"{driver_name} driver not found.\n\n"
+            f"To connect to {driver_name}, run:\n\n"
+            f"[bold]pipx inject sqlit-tui {package_name}[/bold]\n"
+        )
     else:
-        return f"""
-{driver_name} driver not found.
-
-To connect to {driver_name}, please install the required package:
-
-  pip install "sqlit-tui[{extra_name}]"
-"""
+        return (
+            f"{driver_name} driver not found.\n\n"
+            f"To connect to {driver_name}, run:\n\n"
+            f'[bold]pip install "sqlit-tui[{extra_name}]"[/bold]\n'
+        )

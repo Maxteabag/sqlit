@@ -1125,8 +1125,6 @@ class ConnectionScreen(ModalScreen):
             ConfirmScreen(
                 "Missing driver",
                 f"This connection requires the {error.driver_name} driver.\n\nInstall it now?",
-                yes_label="Install now",
-                no_label="Manual steps",
             ),
             on_confirm,
         )

@@ -15,10 +15,10 @@ class ConfirmScreen(ModalScreen):
     """Modal screen for confirmation dialogs."""
 
     BINDINGS = [
-        Binding("y", "confirm", "Install", show=False),
-        Binding("n", "cancel", "Cancel", show=False),
+        Binding("y", "yes", "Yes", show=False),
+        Binding("n", "no", "No", show=False),
         Binding("escape", "cancel", "Cancel", show=False),
-        Binding("enter", "select_option", "Select"),
+        Binding("enter", "select_option", "Select", show=False),
     ]
 
     CSS = """
@@ -51,8 +51,8 @@ class ConfirmScreen(ModalScreen):
         title: str,
         description: str | None = None,
         *,
-        yes_label: str = "Install now",
-        no_label: str = "Manual steps",
+        yes_label: str = "Yes",
+        no_label: str = "No",
     ):
         super().__init__()
         self.title_text = title
@@ -61,7 +61,7 @@ class ConfirmScreen(ModalScreen):
         self.no_label = no_label
 
     def compose(self) -> ComposeResult:
-        shortcuts: list[tuple[str, str]] = [("Install", "y"), ("Cancel", "n")]
+        shortcuts: list[tuple[str, str]] = [("Yes", "y"), ("No", "n")]
         with Dialog(id="confirm-dialog", title=self.title_text, shortcuts=shortcuts):
             if self.description:
                 yield Static(self.description, id="confirm-description")
@@ -90,10 +90,14 @@ class ConfirmScreen(ModalScreen):
             elif option_id == "no":
                 self.dismiss(False)
 
-    def action_confirm(self) -> None:
+    def action_yes(self) -> None:
         self.dismiss(True)
 
+    def action_no(self) -> None:
+        self.dismiss(False)
+
     def action_cancel(self) -> None:
+        # Escape cancels without selecting Yes/No.
         self.dismiss(None)
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
