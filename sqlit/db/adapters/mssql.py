@@ -44,9 +44,6 @@ class SQLServerAdapter(DatabaseAdapter):
     def _build_connection_string(self, config: ConnectionConfig) -> str:
         """Build ODBC connection string from config.
 
-        This method encapsulates the SQL Server-specific connection string
-        building logic that was previously in ConnectionConfig.get_connection_string().
-
         Args:
             config: Connection configuration.
 

@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING, Any
 
 from .config import (
     AUTH_TYPE_LABELS,
-    DATABASE_TYPE_LABELS,
     AuthType,
     ConnectionConfig,
     DatabaseType,
+    get_database_type_labels,
     load_connections,
     save_connections,
 )
@@ -33,8 +33,9 @@ def cmd_connection_list(args: Any) -> int:
 
     print(f"{'Name':<20} {'Type':<10} {'Connection Info':<40} {'Auth Type':<25}")
     print("-" * 95)
+    labels = get_database_type_labels()
     for conn in connections:
-        db_type_label = DATABASE_TYPE_LABELS.get(conn.get_db_type(), conn.db_type)
+        db_type_label = labels.get(conn.get_db_type(), conn.db_type)
         if is_file_based(conn.db_type):
             conn_info = conn.file_path[:38] + ".." if len(conn.file_path) > 40 else conn.file_path
             auth_label = "N/A"
@@ -116,7 +117,7 @@ def cmd_connection_create(args: Any) -> int:
         # Server-based databases with simple auth
         server = getattr(args, "server", None) or getattr(args, "host", None)
         if not server:
-            db_label = DATABASE_TYPE_LABELS.get(DatabaseType(db_type), db_type.upper())
+            db_label = get_database_type_labels().get(DatabaseType(db_type), db_type.upper())
             print(f"Error: --server is required for {db_label} connections.")
             return 1
 

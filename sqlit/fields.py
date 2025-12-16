@@ -11,7 +11,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-# Re-export types from schema for backward compatibility
 from .db.schema import FieldType, SelectOption
 
 if TYPE_CHECKING:

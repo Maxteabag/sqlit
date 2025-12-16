@@ -2,29 +2,22 @@
 
 This module contains domain types (DatabaseType, AuthType, ConnectionConfig)
 and re-exports persistence functions from stores for backward compatibility.
+
+NOTE: This module uses lazy imports for db.providers to avoid loading all
+adapter classes at import time. Only _get_supported_db_types is loaded
+eagerly (needed to create DatabaseType enum).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from .db.providers import (
-    get_default_port as _get_default_port,
-)
-from .db.providers import (
-    get_display_name as _provider_display_name,
-)
-from .db.providers import (
-    get_supported_db_types as _get_supported_db_types,
-)
-from .db.providers import (
-    is_file_based as _is_file_based,
-)
-from .drivers import SUPPORTED_DRIVERS
+# Only import what's needed to create the DatabaseType enum
+from .db.providers import get_supported_db_types as _get_supported_db_types
 
-# Re-export store paths and persistence helpers for backward compatibility
+# Re-export store paths for backward compatibility
 from .stores.base import CONFIG_DIR
 
 CONFIG_PATH = CONFIG_DIR / "connections.json"
@@ -102,7 +95,10 @@ else:
     DatabaseType = Enum("DatabaseType", {t.upper(): t for t in _get_supported_db_types()})  # type: ignore[misc]
 
 
-DATABASE_TYPE_LABELS = {db_type: _provider_display_name(db_type.value) for db_type in DatabaseType}
+def get_database_type_labels() -> dict[DatabaseType, str]:
+    """Get database type display labels (lazy-loaded)."""
+    from .db.providers import get_display_name
+    return {db_type: get_display_name(db_type.value) for db_type in DatabaseType}
 
 
 class AuthType(Enum):
@@ -124,6 +120,12 @@ AUTH_TYPE_LABELS = {
 }
 
 
+def _get_default_driver() -> str:
+    """Get default ODBC driver (lazy import)."""
+    from .drivers import SUPPORTED_DRIVERS
+    return SUPPORTED_DRIVERS[0]
+
+
 @dataclass
 class ConnectionConfig:
     """Database connection configuration."""
@@ -138,8 +140,8 @@ class ConnectionConfig:
     password: str = ""
     # SQL Server specific fields
     auth_type: str = "sql"
-    driver: str = SUPPORTED_DRIVERS[0]
-    trusted_connection: bool = False  # Legacy field for backwards compatibility
+    driver: str = field(default_factory=_get_default_driver)
+    trusted_connection: bool = False
     # SQLite specific fields
     file_path: str = ""
     # SSH tunnel fields
@@ -160,10 +162,12 @@ class ConnectionConfig:
         if not hasattr(self, "db_type") or not self.db_type:
             self.db_type = "mssql"
 
-        # Apply default port for server-based DBs if missing
-        default_port = _get_default_port(self.db_type)
-        if not getattr(self, "port", None) and default_port:
-            self.port = default_port
+        # Apply default port for server-based DBs if missing (lazy import)
+        if not getattr(self, "port", None):
+            from .db.providers import get_default_port
+            default_port = get_default_port(self.db_type)
+            if default_port:
+                self.port = default_port
 
         # Handle old SQL Server auth compatibility
         if self.db_type == "mssql":
@@ -232,7 +236,8 @@ class ConnectionConfig:
 
     def get_display_info(self) -> str:
         """Get a display string for the connection."""
-        if _is_file_based(self.db_type):
+        from .db.providers import is_file_based
+        if is_file_based(self.db_type):
             return self.file_path or self.name
 
         if self.db_type == "supabase":

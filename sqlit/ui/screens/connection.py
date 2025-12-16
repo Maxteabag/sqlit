@@ -28,9 +28,9 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from ...config import (
-    DATABASE_TYPE_LABELS,
     ConnectionConfig,
     DatabaseType,
+    get_database_type_labels,
 )
 from ...db import (
     create_ssh_tunnel,
@@ -691,11 +691,12 @@ class ConnectionScreen(ModalScreen):
                         yield Static("", id="error-name", classes="error-text hidden")
 
                     db_types = list(DatabaseType)
+                    labels = get_database_type_labels()
                     dbtype_container = Container(id="container-dbtype", classes="field-container")
                     dbtype_container.border_title = "Database Type"
                     with dbtype_container:
                         yield Select(
-                            options=[(DATABASE_TYPE_LABELS[dt], dt.value) for dt in db_types],
+                            options=[(labels[dt], dt.value) for dt in db_types],
                             value=db_type.value,
                             allow_blank=False,
                             compact=True,
