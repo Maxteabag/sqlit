@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlit.config import ConnectionConfig, DatabaseType
+from sqlit.config import ConnectionConfig
 from sqlit.db.adapters.base import ColumnInfo, DatabaseAdapter
 
 
@@ -147,7 +147,7 @@ class MockDatabaseAdapter(DatabaseAdapter):
     def supports_stored_procedures(self) -> bool:
         return False
 
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         if self._should_fail_connect:
             raise ConnectionError(self._connect_error)
         self._connected = True
@@ -173,9 +173,7 @@ class MockDatabaseAdapter(DatabaseAdapter):
     def quote_identifier(self, name: str) -> str:
         return f'"{name}"'
 
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None) -> str:
         return f'SELECT * FROM "{table}" LIMIT {limit}'
 
     def execute_query(self, conn: Any, query: str) -> tuple[list[str], list[tuple]]:

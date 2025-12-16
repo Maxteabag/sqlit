@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from sqlit.keymap import (
-    LeaderCommandDef,
     ActionKeyDef,
+    LeaderCommandDef,
     get_keymap,
-    set_keymap,
     reset_keymap,
+    set_keymap,
 )
 from sqlit.state_machine import get_leader_commands
 

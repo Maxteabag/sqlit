@@ -48,5 +48,5 @@ class HelpScreen(ModalScreen):
             with VerticalScroll(id="help-scroll"):
                 yield Static(self.help_text)
 
-    def action_dismiss(self) -> None:
+    def action_dismiss(self) -> None:  # type: ignore[override]
         self.dismiss(None)

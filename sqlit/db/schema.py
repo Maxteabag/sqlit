@@ -1,15 +1,16 @@
 """Connection schema definitions for database types.
 
-This module provides pure metadata about connection parameters for each
-database type, decoupled from UI concerns. The UI layer transforms these
-schemas into form widgets.
+This module defines UI-facing connection metadata (fields + labels + defaults).
+The canonical provider registry is `sqlit.db.providers.PROVIDERS`.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
-from typing import Callable
+
+from ..drivers import SUPPORTED_DRIVERS
 
 
 class FieldType(Enum):
@@ -199,14 +200,10 @@ SSH_FIELDS = _get_ssh_fields()
 
 # Schema definitions for each database type
 
+
 def _get_mssql_driver_options() -> tuple[SelectOption, ...]:
     """Get available ODBC driver options for SQL Server."""
-    # These are checked at runtime in the UI layer
-    return (
-        SelectOption("ODBC Driver 18 for SQL Server", "ODBC Driver 18 for SQL Server"),
-        SelectOption("ODBC Driver 17 for SQL Server", "ODBC Driver 17 for SQL Server"),
-        SelectOption("ODBC Driver 13 for SQL Server", "ODBC Driver 13 for SQL Server"),
-    )
+    return tuple(SelectOption(d, d) for d in SUPPORTED_DRIVERS)
 
 
 def _get_mssql_auth_options() -> tuple[SelectOption, ...]:
@@ -244,7 +241,7 @@ MSSQL_SCHEMA = ConnectionSchema(
             label="Driver",
             field_type=FieldType.SELECT,
             options=_get_mssql_driver_options(),
-            default="ODBC Driver 18 for SQL Server",
+            default=SUPPORTED_DRIVERS[0],
             advanced=True,
         ),
         SchemaField(
@@ -268,7 +265,8 @@ MSSQL_SCHEMA = ConnectionSchema(
             group="credentials",
             visible_when=lambda v: v.get("auth_type") in _MSSQL_AUTH_NEEDS_PASSWORD,
         ),
-    ) + SSH_FIELDS,
+    )
+    + SSH_FIELDS,
     has_advanced_auth=True,
     default_port="1433",
 )
@@ -282,7 +280,8 @@ POSTGRESQL_SCHEMA = ConnectionSchema(
         _database_field(),
         _username_field(),
         _password_field(),
-    ) + SSH_FIELDS,
+    )
+    + SSH_FIELDS,
     default_port="5432",
 )
 
@@ -295,7 +294,8 @@ MYSQL_SCHEMA = ConnectionSchema(
         _database_field(),
         _username_field(),
         _password_field(),
-    ) + SSH_FIELDS,
+    )
+    + SSH_FIELDS,
     default_port="3306",
 )
 
@@ -308,7 +308,8 @@ MARIADB_SCHEMA = ConnectionSchema(
         _database_field(),
         _username_field(),
         _password_field(),
-    ) + SSH_FIELDS,
+    )
+    + SSH_FIELDS,
     default_port="3306",
 )
 
@@ -332,7 +333,8 @@ ORACLE_SCHEMA = ConnectionSchema(
         ),
         _username_field(),
         _password_field(),
-    ) + SSH_FIELDS,
+    )
+    + SSH_FIELDS,
     default_port="1521",
 )
 
@@ -345,16 +347,15 @@ COCKROACHDB_SCHEMA = ConnectionSchema(
         _database_field(),
         _username_field(),
         _password_field(),
-    ) + SSH_FIELDS,
+    )
+    + SSH_FIELDS,
     default_port="26257",
 )
 
 SQLITE_SCHEMA = ConnectionSchema(
     db_type="sqlite",
     display_name="SQLite",
-    fields=(
-        _file_path_field("/path/to/database.db"),
-    ),
+    fields=(_file_path_field("/path/to/database.db"),),
     supports_ssh=False,
     is_file_based=True,
 )
@@ -362,9 +363,7 @@ SQLITE_SCHEMA = ConnectionSchema(
 DUCKDB_SCHEMA = ConnectionSchema(
     db_type="duckdb",
     display_name="DuckDB",
-    fields=(
-        _file_path_field("/path/to/database.duckdb"),
-    ),
+    fields=(_file_path_field("/path/to/database.duckdb"),),
     supports_ssh=False,
     is_file_based=True,
 )
@@ -388,7 +387,35 @@ TURSO_SCHEMA = ConnectionSchema(
             description="Database authentication token, optional for local servers",
         ),
     ),
-    supports_ssh=False,  # Turso uses HTTPS, SSH tunneling not applicable
+    supports_ssh=False,
+)
+
+
+D1_SCHEMA = ConnectionSchema(
+    db_type="d1",
+    display_name="Cloudflare D1",
+    fields=(
+        SchemaField(
+            name="server",
+            label="Account ID",
+            placeholder="Your Cloudflare Account ID",
+            required=True,
+        ),
+        SchemaField(
+            name="password",
+            label="API Token",
+            field_type=FieldType.PASSWORD,
+            required=True,
+            description="Cloudflare API Token with D1 permissions",
+        ),
+        SchemaField(
+            name="database",
+            label="Database Name",
+            placeholder="Your D1 database name",
+            required=True,
+        ),
+    ),
+    supports_ssh=False,
 )
 
 
@@ -444,47 +471,24 @@ SUPABASE_SCHEMA = ConnectionSchema(
 )
 
 
-# Schema registry
-_SCHEMAS: dict[str, ConnectionSchema] = {
-    "mssql": MSSQL_SCHEMA,
-    "postgresql": POSTGRESQL_SCHEMA,
-    "mysql": MYSQL_SCHEMA,
-    "mariadb": MARIADB_SCHEMA,
-    "oracle": ORACLE_SCHEMA,
-    "cockroachdb": COCKROACHDB_SCHEMA,
-    "sqlite": SQLITE_SCHEMA,
-    "duckdb": DUCKDB_SCHEMA,
-    "turso": TURSO_SCHEMA,
-    "supabase": SUPABASE_SCHEMA,
-}
-
-
 def get_connection_schema(db_type: str) -> ConnectionSchema:
-    """Get the connection schema for a database type.
+    from .providers import get_connection_schema as _get_connection_schema
 
-    Args:
-        db_type: Database type identifier (e.g., "postgresql", "mysql")
-
-    Returns:
-        ConnectionSchema for the database type
-
-    Raises:
-        ValueError: If db_type is not recognized
-    """
-    schema = _SCHEMAS.get(db_type)
-    if schema is None:
-        raise ValueError(f"Unknown database type: {db_type}")
-    return schema
+    return _get_connection_schema(db_type)
 
 
 def get_all_schemas() -> dict[str, ConnectionSchema]:
     """Get all registered connection schemas."""
-    return dict(_SCHEMAS)
+    from .providers import get_all_schemas as _get_all_schemas
+
+    return _get_all_schemas()
 
 
 def get_supported_db_types() -> list[str]:
     """Get list of supported database type identifiers."""
-    return list(_SCHEMAS.keys())
+    from .providers import get_supported_db_types as _get_supported_db_types
+
+    return _get_supported_db_types()
 
 
 def is_file_based(db_type: str) -> bool:
@@ -496,8 +500,9 @@ def is_file_based(db_type: str) -> bool:
     Returns:
         True if the database is file-based, False otherwise
     """
-    schema = _SCHEMAS.get(db_type)
-    return schema.is_file_based if schema else False
+    from .providers import is_file_based as _is_file_based
+
+    return _is_file_based(db_type)
 
 
 def has_advanced_auth(db_type: str) -> bool:
@@ -509,8 +514,9 @@ def has_advanced_auth(db_type: str) -> bool:
     Returns:
         True if the database has advanced auth options, False otherwise
     """
-    schema = _SCHEMAS.get(db_type)
-    return schema.has_advanced_auth if schema else False
+    from .providers import has_advanced_auth as _has_advanced_auth
+
+    return _has_advanced_auth(db_type)
 
 
 def supports_ssh(db_type: str) -> bool:
@@ -522,8 +528,9 @@ def supports_ssh(db_type: str) -> bool:
     Returns:
         True if the database supports SSH tunneling, False otherwise
     """
-    schema = _SCHEMAS.get(db_type)
-    return schema.supports_ssh if schema else False
+    from .providers import supports_ssh as _supports_ssh
+
+    return _supports_ssh(db_type)
 
 
 def get_default_port(db_type: str) -> str:
@@ -535,8 +542,9 @@ def get_default_port(db_type: str) -> str:
     Returns:
         Default port string, or "1433" as fallback for unknown types
     """
-    schema = _SCHEMAS.get(db_type)
-    return schema.default_port if schema and schema.default_port else "1433"
+    from .providers import get_default_port as _get_default_port
+
+    return _get_default_port(db_type)
 
 
 def get_display_name(db_type: str) -> str:
@@ -548,5 +556,6 @@ def get_display_name(db_type: str) -> str:
     Returns:
         Display name string, or the db_type itself as fallback
     """
-    schema = _SCHEMAS.get(db_type)
-    return schema.display_name if schema else db_type
+    from .providers import get_display_name as _get_display_name
+
+    return _get_display_name(db_type)

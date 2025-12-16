@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from .test_database_base import BaseDatabaseTestsWithLimit, DatabaseTestConfig
 
 
@@ -26,21 +24,29 @@ class TestMySQLIntegration(BaseDatabaseTestsWithLimit):
 
     def test_create_mysql_connection(self, mysql_db, cli_runner):
         """Test creating a MySQL connection via CLI."""
-        from .conftest import MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD
+        from .conftest import MYSQL_HOST, MYSQL_PASSWORD, MYSQL_PORT, MYSQL_USER
 
         connection_name = "test_create_mysql"
 
         try:
             # Create connection
             result = cli_runner(
-                "connection", "create",
-                "--name", connection_name,
-                "--db-type", "mysql",
-                "--server", MYSQL_HOST,
-                "--port", str(MYSQL_PORT),
-                "--database", mysql_db,
-                "--username", MYSQL_USER,
-                "--password", MYSQL_PASSWORD,
+                "connection",
+                "create",
+                "--name",
+                connection_name,
+                "--db-type",
+                "mysql",
+                "--server",
+                MYSQL_HOST,
+                "--port",
+                str(MYSQL_PORT),
+                "--database",
+                mysql_db,
+                "--username",
+                MYSQL_USER,
+                "--password",
+                MYSQL_PASSWORD,
             )
             assert result.returncode == 0
             assert "created successfully" in result.stdout
@@ -56,20 +62,28 @@ class TestMySQLIntegration(BaseDatabaseTestsWithLimit):
 
     def test_delete_mysql_connection(self, mysql_db, cli_runner):
         """Test deleting a MySQL connection."""
-        from .conftest import MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD
+        from .conftest import MYSQL_HOST, MYSQL_PASSWORD, MYSQL_PORT, MYSQL_USER
 
         connection_name = "test_delete_mysql"
 
         # Create connection first
         cli_runner(
-            "connection", "create",
-            "--name", connection_name,
-            "--db-type", "mysql",
-            "--server", MYSQL_HOST,
-            "--port", str(MYSQL_PORT),
-            "--database", mysql_db,
-            "--username", MYSQL_USER,
-            "--password", MYSQL_PASSWORD,
+            "connection",
+            "create",
+            "--name",
+            connection_name,
+            "--db-type",
+            "mysql",
+            "--server",
+            MYSQL_HOST,
+            "--port",
+            str(MYSQL_PORT),
+            "--database",
+            mysql_db,
+            "--username",
+            MYSQL_USER,
+            "--password",
+            MYSQL_PASSWORD,
         )
 
         # Delete it

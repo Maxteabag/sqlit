@@ -20,9 +20,7 @@ class TestLeaderMenu:
             app._show_leader_menu()
             await pilot.pause()
 
-            has_leader_menu = any(
-                isinstance(screen, LeaderMenuScreen) for screen in app.screen_stack
-            )
+            has_leader_menu = any(isinstance(screen, LeaderMenuScreen) for screen in app.screen_stack)
             assert not has_leader_menu
 
 

@@ -8,60 +8,50 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-# Re-export store paths for backward compatibility
+from .db.providers import (
+    get_default_port as _get_default_port,
+)
+from .db.providers import (
+    get_display_name as _provider_display_name,
+)
+from .db.providers import (
+    get_supported_db_types as _get_supported_db_types,
+)
+from .db.providers import (
+    is_file_based as _is_file_based,
+)
+from .drivers import SUPPORTED_DRIVERS
+
+# Re-export store paths and persistence helpers for backward compatibility
 from .stores.base import CONFIG_DIR
 
 CONFIG_PATH = CONFIG_DIR / "connections.json"
 SETTINGS_PATH = CONFIG_DIR / "settings.json"
 HISTORY_PATH = CONFIG_DIR / "query_history.json"
 
-# Re-export persistence functions from stores
-from .stores.connections import load_connections, save_connections
-from .stores.history import (
-    QueryHistoryEntry,
-    delete_query_from_history,
-    load_query_history,
-    save_query_to_history,
-)
-from .stores.settings import load_settings, save_settings
+
+if TYPE_CHECKING:
+
+    class DatabaseType(str, Enum):
+        MSSQL = "mssql"
+        POSTGRESQL = "postgresql"
+        COCKROACHDB = "cockroachdb"
+        MYSQL = "mysql"
+        MARIADB = "mariadb"
+        ORACLE = "oracle"
+        SQLITE = "sqlite"
+        DUCKDB = "duckdb"
+        SUPABASE = "supabase"
+        TURSO = "turso"
+        D1 = "d1"
+
+else:
+    DatabaseType = Enum("DatabaseType", {t.upper(): t for t in _get_supported_db_types()})  # type: ignore[misc]
 
 
-# Import schema capabilities - use function to avoid circular imports
-def _is_file_based(db_type: str) -> bool:
-    from .db.schema import is_file_based
-
-    return is_file_based(db_type)
-
-
-class DatabaseType(Enum):
-    """Supported database types."""
-
-    MSSQL = "mssql"
-    SQLITE = "sqlite"
-    POSTGRESQL = "postgresql"
-    MYSQL = "mysql"
-    ORACLE = "oracle"
-    MARIADB = "mariadb"
-    DUCKDB = "duckdb"
-    COCKROACHDB = "cockroachdb"
-    TURSO = "turso"
-    SUPABASE = "supabase"
-
-
-DATABASE_TYPE_LABELS = {
-    DatabaseType.MSSQL: "SQL Server",
-    DatabaseType.SQLITE: "SQLite",
-    DatabaseType.POSTGRESQL: "PostgreSQL",
-    DatabaseType.MYSQL: "MySQL",
-    DatabaseType.ORACLE: "Oracle",
-    DatabaseType.MARIADB: "MariaDB",
-    DatabaseType.DUCKDB: "DuckDB",
-    DatabaseType.COCKROACHDB: "CockroachDB",
-    DatabaseType.TURSO: "Turso",
-    DatabaseType.SUPABASE: "Supabase",
-}
+DATABASE_TYPE_LABELS = {db_type: _provider_display_name(db_type.value) for db_type in DatabaseType}
 
 
 class AuthType(Enum):
@@ -91,13 +81,13 @@ class ConnectionConfig:
     db_type: str = "mssql"  # Database type: mssql, sqlite, postgresql, mysql
     # Server-based database fields (SQL Server, PostgreSQL, MySQL)
     server: str = ""
-    port: str = "1433"  # Default varies: 1433 (MSSQL), 5432 (PostgreSQL), 3306 (MySQL)
+    port: str = ""  # Default derived from schema for server-based databases
     database: str = ""
     username: str = ""
     password: str = ""
     # SQL Server specific fields
     auth_type: str = "sql"
-    driver: str = "ODBC Driver 18 for SQL Server"
+    driver: str = SUPPORTED_DRIVERS[0]
     trusted_connection: bool = False  # Legacy field for backwards compatibility
     # SQLite specific fields
     file_path: str = ""
@@ -113,11 +103,17 @@ class ConnectionConfig:
     supabase_region: str = ""
     supabase_project_id: str = ""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Handle backwards compatibility with old configs."""
         # Old configs without db_type are SQL Server
         if not hasattr(self, "db_type") or not self.db_type:
             self.db_type = "mssql"
+
+        # Apply default port for server-based DBs if missing
+        default_port = _get_default_port(self.db_type)
+        if not getattr(self, "port", None) and default_port:
+            self.port = default_port
+
         # Handle old SQL Server auth compatibility
         if self.db_type == "mssql":
             if self.auth_type == "windows" and not self.trusted_connection and self.username:
@@ -128,7 +124,7 @@ class ConnectionConfig:
         try:
             return DatabaseType(self.db_type)
         except ValueError:
-            return DatabaseType.MSSQL
+            return DatabaseType.MSSQL  # type: ignore[attr-defined, no-any-return]
 
     def get_auth_type(self) -> AuthType:
         """Get the AuthType enum value."""
@@ -175,15 +171,9 @@ class ConnectionConfig:
         elif auth == AuthType.SQL_SERVER:
             return base + f"UID={self.username};PWD={self.password};"
         elif auth == AuthType.AD_PASSWORD:
-            return (
-                base
-                + f"Authentication=ActiveDirectoryPassword;"
-                f"UID={self.username};PWD={self.password};"
-            )
+            return base + f"Authentication=ActiveDirectoryPassword;" f"UID={self.username};PWD={self.password};"
         elif auth == AuthType.AD_INTERACTIVE:
-            return (
-                base + f"Authentication=ActiveDirectoryInteractive;" f"UID={self.username};"
-            )
+            return base + f"Authentication=ActiveDirectoryInteractive;" f"UID={self.username};"
         elif auth == AuthType.AD_INTEGRATED:
             return base + "Authentication=ActiveDirectoryIntegrated;"
 

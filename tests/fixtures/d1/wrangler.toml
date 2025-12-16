@@ -1,0 +1,10 @@
+# wrangler.toml
+# This file is used by miniflare to configure the D1 database for integration tests.
+
+name = "test-worker"
+main = "index.js"
+compatibility_date = "2023-10-30"
+
+d1_databases = [
+  { binding = "DB", database_name = "test-d1", database_id = "test-d1" }
+]

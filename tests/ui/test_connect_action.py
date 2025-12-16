@@ -24,20 +24,18 @@ class TestConnectAction:
         mock_connections = MockConnectionStore(connections)
         mock_settings = MockSettingsStore({"theme": "tokyo-night"})
 
-        with patch("sqlit.app.load_connections", mock_connections.load_all), \
-             patch("sqlit.app.load_settings", mock_settings.load_all), \
-             patch("sqlit.app.save_settings", mock_settings.save_all):
-
+        with (
+            patch("sqlit.app.load_connections", mock_connections.load_all),
+            patch("sqlit.app.load_settings", mock_settings.load_all),
+            patch("sqlit.app.save_settings", mock_settings.save_all),
+        ):
             app = SSMSTUI()
 
             async with app.run_test(size=(100, 35)) as pilot:
                 app.action_show_connection_picker()
                 await pilot.pause()
 
-                picker = next(
-                    (s for s in app.screen_stack if isinstance(s, ConnectionPickerScreen)),
-                    None
-                )
+                picker = next((s for s in app.screen_stack if isinstance(s, ConnectionPickerScreen)), None)
                 assert picker is not None
 
                 with patch.object(app, "connect_to_server"):
@@ -59,20 +57,18 @@ class TestConnectAction:
         mock_connections = MockConnectionStore(connections)
         mock_settings = MockSettingsStore({"theme": "tokyo-night"})
 
-        with patch("sqlit.app.load_connections", mock_connections.load_all), \
-             patch("sqlit.app.load_settings", mock_settings.load_all), \
-             patch("sqlit.app.save_settings", mock_settings.save_all):
-
+        with (
+            patch("sqlit.app.load_connections", mock_connections.load_all),
+            patch("sqlit.app.load_settings", mock_settings.load_all),
+            patch("sqlit.app.save_settings", mock_settings.save_all),
+        ):
             app = SSMSTUI()
 
             async with app.run_test(size=(100, 35)) as pilot:
                 app.action_show_connection_picker()
                 await pilot.pause()
 
-                picker = next(
-                    (s for s in app.screen_stack if isinstance(s, ConnectionPickerScreen)),
-                    None
-                )
+                picker = next((s for s in app.screen_stack if isinstance(s, ConnectionPickerScreen)), None)
                 assert picker is not None
 
                 picker.search_text = "ora"

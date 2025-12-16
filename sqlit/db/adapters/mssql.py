@@ -18,6 +18,18 @@ class SQLServerAdapter(DatabaseAdapter):
         return "SQL Server"
 
     @property
+    def install_extra(self) -> str:
+        return "mssql"
+
+    @property
+    def install_package(self) -> str:
+        return "pyodbc"
+
+    @property
+    def driver_import_names(self) -> tuple[str, ...]:
+        return ("pyodbc",)
+
+    @property
     def supports_multiple_databases(self) -> bool:
         return True
 
@@ -29,7 +41,7 @@ class SQLServerAdapter(DatabaseAdapter):
     def default_schema(self) -> str:
         return "dbo"
 
-    def _build_connection_string(self, config: "ConnectionConfig") -> str:
+    def _build_connection_string(self, config: ConnectionConfig) -> str:
         """Build ODBC connection string from config.
 
         This method encapsulates the SQL Server-specific connection string
@@ -61,23 +73,24 @@ class SQLServerAdapter(DatabaseAdapter):
         elif auth == AuthType.SQL_SERVER:
             return base + f"UID={config.username};PWD={config.password};"
         elif auth == AuthType.AD_PASSWORD:
-            return (
-                base
-                + f"Authentication=ActiveDirectoryPassword;"
-                f"UID={config.username};PWD={config.password};"
-            )
+            return base + f"Authentication=ActiveDirectoryPassword;" f"UID={config.username};PWD={config.password};"
         elif auth == AuthType.AD_INTERACTIVE:
-            return (
-                base + f"Authentication=ActiveDirectoryInteractive;" f"UID={config.username};"
-            )
+            return base + f"Authentication=ActiveDirectoryInteractive;" f"UID={config.username};"
         elif auth == AuthType.AD_INTEGRATED:
             return base + "Authentication=ActiveDirectoryIntegrated;"
 
         return base + "Trusted_Connection=yes;"
 
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         """Connect to SQL Server using pyodbc."""
-        import pyodbc
+        try:
+            import pyodbc
+        except ImportError as e:
+            from ...db.exceptions import MissingDriverError
+
+            if not self.install_extra or not self.install_package:
+                raise e
+            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
 
         conn_str = self._build_connection_string(config)
         return pyodbc.connect(conn_str, timeout=10)
@@ -113,8 +126,7 @@ class SQLServerAdapter(DatabaseAdapter):
             )
         else:
             cursor.execute(
-                "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS "
-                "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+                "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS " "ORDER BY TABLE_SCHEMA, TABLE_NAME"
             )
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
@@ -161,18 +173,14 @@ class SQLServerAdapter(DatabaseAdapter):
         escaped = name.replace("]", "]]")
         return f"[{escaped}]"
 
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None, schema: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT TOP query for SQL Server."""
         schema = schema or "dbo"
         if database:
             return f"SELECT TOP {limit} * FROM [{database}].[{schema}].[{table}]"
         return f"SELECT TOP {limit} * FROM [{schema}].[{table}]"
 
-    def execute_query(
-        self, conn: Any, query: str, max_rows: int | None = None
-    ) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on SQL Server with optional row limit."""
         cursor = conn.cursor()
         cursor.execute(query)
@@ -193,6 +201,6 @@ class SQLServerAdapter(DatabaseAdapter):
         """Execute a non-query on SQL Server."""
         cursor = conn.cursor()
         cursor.execute(query)
-        rowcount = cursor.rowcount
+        rowcount = int(cursor.rowcount)
         conn.commit()
         return rowcount

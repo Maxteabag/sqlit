@@ -65,10 +65,11 @@ class TestContextualKeybindings:
         mock_connections = MockConnectionStore(connections)
         mock_settings = MockSettingsStore({"theme": "tokyo-night"})
 
-        with patch("sqlit.app.load_connections", mock_connections.load_all), \
-             patch("sqlit.app.load_settings", mock_settings.load_all), \
-             patch("sqlit.app.save_settings", mock_settings.save_all):
-
+        with (
+            patch("sqlit.app.load_connections", mock_connections.load_all),
+            patch("sqlit.app.load_settings", mock_settings.load_all),
+            patch("sqlit.app.save_settings", mock_settings.save_all),
+        ):
             app = SSMSTUI()
 
             async with app.run_test(size=(100, 35)) as pilot:

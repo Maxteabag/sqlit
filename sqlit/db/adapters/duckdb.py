@@ -18,6 +18,18 @@ class DuckDBAdapter(DatabaseAdapter):
         return "DuckDB"
 
     @property
+    def install_extra(self) -> str:
+        return "duckdb"
+
+    @property
+    def install_package(self) -> str:
+        return "duckdb"
+
+    @property
+    def driver_import_names(self) -> tuple[str, ...]:
+        return ("duckdb",)
+
+    @property
     def supports_multiple_databases(self) -> bool:
         return False
 
@@ -29,17 +41,25 @@ class DuckDBAdapter(DatabaseAdapter):
     def default_schema(self) -> str:
         return "main"
 
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         """Connect to DuckDB database file.
 
         Note: DuckDB connections have limited thread safety. Operations are
         serialized via exclusive workers to ensure only one thread accesses
         the connection at a time.
         """
-        import duckdb
+        try:
+            import duckdb
+        except ImportError as e:
+            from ...db.exceptions import MissingDriverError
+
+            if not self.install_extra or not self.install_package:
+                raise e
+            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
 
         file_path = resolve_file_path(config.file_path)
-        return duckdb.connect(str(file_path))
+        duckdb_any: Any = duckdb
+        return duckdb_any.connect(str(file_path))
 
     def get_databases(self, conn: Any) -> list[str]:
         """DuckDB doesn't support multiple databases - return empty list."""
@@ -90,16 +110,12 @@ class DuckDBAdapter(DatabaseAdapter):
         escaped = name.replace('"', '""')
         return f'"{escaped}"'
 
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None, schema: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT LIMIT query for DuckDB."""
         schema = schema or "main"
         return f'SELECT * FROM "{schema}"."{table}" LIMIT {limit}'
 
-    def execute_query(
-        self, conn: Any, query: str, max_rows: int | None = None
-    ) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on DuckDB with optional row limit."""
         result = conn.execute(query)
         if result.description:
@@ -120,6 +136,6 @@ class DuckDBAdapter(DatabaseAdapter):
         result = conn.execute(query)
         # DuckDB doesn't provide rowcount for all operations
         try:
-            return result.rowcount if hasattr(result, 'rowcount') else -1
+            return result.rowcount if hasattr(result, "rowcount") else -1
         except Exception:
             return -1

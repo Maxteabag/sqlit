@@ -20,7 +20,7 @@ class AdapterProtocol(Protocol):
     to execute queries against a database.
     """
 
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         """Connect to the database.
 
         Args:
@@ -31,9 +31,7 @@ class AdapterProtocol(Protocol):
         """
         ...
 
-    def execute_query(
-        self, conn: Any, query: str, max_rows: int | None = None
-    ) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a SELECT-type query.
 
         Args:
@@ -116,7 +114,7 @@ class TunnelFactoryProtocol(Protocol):
     SSH tunnels for database connections.
     """
 
-    def __call__(self, config: "ConnectionConfig") -> tuple[Any, str, int]:
+    def __call__(self, config: ConnectionConfig) -> tuple[Any, str, int]:
         """Create an SSH tunnel if enabled in config.
 
         Args:
@@ -137,7 +135,7 @@ class ConnectionStoreProtocol(Protocol):
     database connection configurations.
     """
 
-    def load(self) -> list["ConnectionConfig"]:
+    def load(self) -> list[ConnectionConfig]:
         """Load all saved connections.
 
         Returns:
@@ -145,7 +143,7 @@ class ConnectionStoreProtocol(Protocol):
         """
         ...
 
-    def save(self, connections: list["ConnectionConfig"]) -> None:
+    def save(self, connections: list[ConnectionConfig]) -> None:
         """Save connections.
 
         Args:

@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
-
-try:
-    import pyodbc
-
-    PYODBC_AVAILABLE = True
-except ImportError:
-    PYODBC_AVAILABLE = False
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
+from textual.timer import Timer
 from textual.widgets import DataTable, Static, TextArea, Tree
+from textual.worker import Worker
 
+from .compat import PYODBC_AVAILABLE
 from .config import (
     ConnectionConfig,
     load_connections,
@@ -25,8 +22,8 @@ from .config import (
 from .db import DatabaseAdapter
 from .mocks import MockProfile
 from .state_machine import (
-    get_leader_bindings,
     UIStateMachine,
+    get_leader_bindings,
 )
 from .ui.mixins import (
     AutocompleteMixin,
@@ -245,21 +242,21 @@ class SSMSTUI(
         self._last_notification: str = ""
         self._last_notification_severity: str = "information"
         self._last_notification_time: str = ""
-        self._notification_timer = None
+        self._notification_timer: Timer | None = None
         self._notification_history: list = []
         self._connection_failed: bool = False
-        self._leader_timer = None
+        self._leader_timer: Timer | None = None
         self._leader_pending: bool = False
-        self._query_worker = None
+        self._query_worker: Worker[Any] | None = None
         self._query_executing: bool = False
         self._cancellable_query: Any | None = None
         self._spinner_index: int = 0
-        self._spinner_timer = None
+        self._spinner_timer: Timer | None = None
         # Schema indexing state
         self._schema_indexing: bool = False
-        self._schema_worker = None
+        self._schema_worker: Worker[Any] | None = None
         self._schema_spinner_index: int = 0
-        self._schema_spinner_timer = None
+        self._schema_spinner_timer: Timer | None = None
         self._table_metadata: dict = {}
         self._columns_loading: set[str] = set()
         self._state_machine = UIStateMachine()
@@ -267,19 +264,19 @@ class SSMSTUI(
         if mock_profile:
             self._session_factory = self._create_mock_session_factory(mock_profile)
 
-    def _create_mock_session_factory(self, profile: MockProfile):
+    def _create_mock_session_factory(self, profile: MockProfile) -> Any:
         """Create a session factory that uses mock adapters."""
         from .services import ConnectionSession
 
-        def mock_adapter_factory(db_type: str):
+        def mock_adapter_factory(db_type: str) -> Any:
             """Return mock adapter for the given db type."""
             return profile.get_adapter(db_type)
 
-        def mock_tunnel_factory(config):
+        def mock_tunnel_factory(config: Any) -> Any:
             """Return no tunnel for mock connections."""
             return None, config.server, int(config.port or "0")
 
-        def factory(config):
+        def factory(config: Any) -> Any:
             return ConnectionSession.create(
                 config,
                 adapter_factory=mock_adapter_factory,
@@ -301,19 +298,19 @@ class SSMSTUI(
         return self.query_one("#results-table", DataTable)
 
     @property
-    def sidebar(self):
+    def sidebar(self) -> Any:
         return self.query_one("#sidebar")
 
     @property
-    def main_panel(self):
+    def main_panel(self) -> Any:
         return self.query_one("#main-panel")
 
     @property
-    def query_area(self):
+    def query_area(self) -> Any:
         return self.query_one("#query-area")
 
     @property
-    def results_area(self):
+    def results_area(self) -> Any:
         return self.query_one("#results-area")
 
     @property
@@ -321,17 +318,27 @@ class SSMSTUI(
         return self.query_one("#status-bar", Static)
 
     @property
-    def autocomplete_dropdown(self):
+    def autocomplete_dropdown(self) -> Any:
         from .widgets import AutocompleteDropdown
+
         return self.query_one("#autocomplete-dropdown", AutocompleteDropdown)
 
-    def push_screen(self, screen, callback=None, wait_for_dismiss: bool = False):
+    def push_screen(
+        self,
+        screen: Any,
+        callback: Callable[[Any], None] | Callable[[Any], Awaitable[None]] | None = None,
+        wait_for_dismiss: bool = False,
+    ) -> Any:
         """Override push_screen to update footer when screen changes."""
-        result = super().push_screen(screen, callback, wait_for_dismiss=wait_for_dismiss)
+        if wait_for_dismiss:
+            future = super().push_screen(screen, callback, wait_for_dismiss=True)
+            self._update_footer_bindings()
+            return future
+        mount = super().push_screen(screen, callback, wait_for_dismiss=False)
         self._update_footer_bindings()
-        return result
+        return mount
 
-    def pop_screen(self):
+    def pop_screen(self) -> Any:
         """Override pop_screen to update footer when screen changes."""
         result = super().pop_screen()
         self._update_footer_bindings()
@@ -349,19 +356,15 @@ class SSMSTUI(
         with Vertical(id="main-container"):
             with Horizontal(id="content"):
                 with Vertical(id="sidebar"):
-                    yield Static(
-                        r"\[E] Explorer", classes="section-label", id="label-explorer"
-                    )
-                    tree = Tree("Servers", id="object-tree")
+                    yield Static(r"\[E] Explorer", classes="section-label", id="label-explorer")
+                    tree: Tree[Any] = Tree("Servers", id="object-tree")
                     tree.show_root = False
                     tree.guide_depth = 2
                     yield tree
 
                 with Vertical(id="main-panel"):
                     with Container(id="query-area"):
-                        yield Static(
-                            r"\[q] Query", classes="section-label", id="label-query"
-                        )
+                        yield Static(r"\[q] Query", classes="section-label", id="label-query")
                         yield TextArea(
                             "",
                             language="sql",
@@ -371,9 +374,7 @@ class SSMSTUI(
                         yield AutocompleteDropdown(id="autocomplete-dropdown")
 
                     with Container(id="results-area"):
-                        yield Static(
-                            r"\[r] Results", classes="section-label", id="label-results"
-                        )
+                        yield Static(r"\[r] Results", classes="section-label", id="label-results")
                         yield DataTable(id="results-table", zebra_stripes=True)
 
             yield Static("Not connected", id="status-bar")
@@ -441,7 +442,7 @@ class SSMSTUI(
         installed = get_installed_drivers()
         self.push_screen(DriverSetupScreen(installed), self._handle_driver_result)
 
-    def _handle_driver_result(self, result) -> None:
+    def _handle_driver_result(self, result: Any) -> None:
         """Handle result from driver setup screen."""
         if not result:
             return
@@ -455,55 +456,17 @@ class SSMSTUI(
             self._run_driver_install(commands)
 
     def _run_driver_install(self, commands: list[str]) -> None:
-        """Run driver installation commands."""
-        import subprocess
+        """Run driver installation commands in a terminal."""
+        from .terminal import run_in_terminal
 
         self.notify("Running installation commands...", timeout=3)
+        result = run_in_terminal(commands)
 
-        full_command = " && ".join(commands)
-
-        try:
-            import shutil
-
-            if shutil.which("gnome-terminal"):
-                subprocess.Popen([
-                    "gnome-terminal", "--", "bash", "-c",
-                    f'{full_command}; echo ""; echo "Press Enter to close..."; read'
-                ])
-            elif shutil.which("konsole"):
-                subprocess.Popen([
-                    "konsole", "-e", "bash", "-c",
-                    f'{full_command}; echo ""; echo "Press Enter to close..."; read'
-                ])
-            elif shutil.which("xterm"):
-                subprocess.Popen([
-                    "xterm", "-e", "bash", "-c",
-                    f'{full_command}; echo ""; echo "Press Enter to close..."; read'
-                ])
-            elif shutil.which("open"):  # macOS
-                import tempfile
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
-                    f.write("#!/bin/bash\n")
-                    f.write(full_command + "\n")
-                    f.write('echo ""\necho "Press Enter to close..."\nread\n')
-                    script_path = f.name
-                import os
-                os.chmod(script_path, 0o755)
-                subprocess.Popen(["open", "-a", "Terminal", script_path])
-            else:
-                self.notify(
-                    "No terminal found. Run these commands manually:\n" + full_command,
-                    severity="warning",
-                    timeout=15,
-                )
-                return
-
-            self.notify(
-                "Installation started in new terminal. Restart sqlit when done.",
-                timeout=10,
-            )
-        except Exception as e:
-            self.notify(f"Failed to start installation: {e}", severity="error")
+        if result.success:
+            self.notify("Installation started in new terminal. Restart sqlit when done.", timeout=10)
+        else:
+            cmd_str = " && ".join(commands)
+            self.notify(f"No terminal found. Run manually:\n{cmd_str}", severity="warning", timeout=15)
 
     def watch_theme(self, old_theme: str, new_theme: str) -> None:
         """Save theme whenever it changes."""

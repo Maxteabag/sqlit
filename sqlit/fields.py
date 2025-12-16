@@ -7,8 +7,9 @@ that metadata into UI widgets.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 # Re-export types from schema for backward compatibility
 from .db.schema import FieldType, SelectOption
@@ -101,7 +102,7 @@ def get_credential_fields() -> list[FieldDefinition]:
 # Transform functions: convert pure schema metadata to UI field definitions
 
 
-def schema_field_to_definition(schema_field: "SchemaField") -> FieldDefinition:
+def schema_field_to_definition(schema_field: SchemaField) -> FieldDefinition:
     """Convert a SchemaField (pure metadata) to a FieldDefinition (UI-specific).
 
     Args:
@@ -136,7 +137,7 @@ def schema_field_to_definition(schema_field: "SchemaField") -> FieldDefinition:
     )
 
 
-def schema_to_field_definitions(schema: "ConnectionSchema") -> list[FieldDefinition]:
+def schema_to_field_definitions(schema: ConnectionSchema) -> list[FieldDefinition]:
     """Convert a ConnectionSchema to a list of FieldDefinitions.
 
     Args:

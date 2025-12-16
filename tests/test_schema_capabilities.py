@@ -3,6 +3,7 @@
 from sqlit.db.schema import (
     get_default_port,
     get_display_name,
+    get_supported_db_types,
     has_advanced_auth,
     is_file_based,
     supports_ssh,
@@ -32,3 +33,27 @@ class TestGetDefaultPort:
 class TestGetDisplayName:
     def test_unknown_type_returns_input(self):
         assert get_display_name("nonexistent") == "nonexistent"
+
+
+class TestCatalogConsistency:
+    def test_provider_schema_ids_match_keys(self):
+        from sqlit.db.providers import PROVIDERS
+
+        for db_type, spec in PROVIDERS.items():
+            assert spec.schema.db_type == db_type
+
+    def test_database_type_enum_matches_schema(self):
+        from sqlit.config import DatabaseType
+
+        assert {t.value for t in DatabaseType} == set(get_supported_db_types())
+
+    def test_adapter_factory_matches_schema(self):
+        from sqlit.db.adapters import get_supported_adapter_db_types
+
+        assert set(get_supported_adapter_db_types()) == set(get_supported_db_types())
+
+    def test_display_names_match_config_labels(self):
+        from sqlit.config import DATABASE_TYPE_LABELS, DatabaseType
+
+        for db_type in DatabaseType:
+            assert DATABASE_TYPE_LABELS[db_type] == get_display_name(db_type.value)

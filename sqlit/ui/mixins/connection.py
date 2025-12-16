@@ -2,51 +2,25 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
-from textual.widgets import Static
-
+from ..protocols import AppProtocol
 from ..tree_nodes import ConnectionNode
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
-    from ...services import ConnectionSession
+    from ...db import DatabaseAdapter
 
 
 class ConnectionMixin:
-    """Mixin providing connection management functionality.
+    """Mixin providing connection management functionality."""
 
-    Attributes:
-        _session_factory: Optional factory for creating ConnectionSession.
-            Set this in tests to inject a mock session factory.
-            Defaults to ConnectionSession.create when None.
-    """
+    current_config: ConnectionConfig | None = None
+    current_adapter: DatabaseAdapter | None = None
 
-    # These attributes are defined in the main app class
-    connections: list
-    current_connection: Any
-    current_config: "ConnectionConfig | None"
-    current_adapter: Any
-    current_ssh_tunnel: Any
-    _session: "ConnectionSession | None"
-
-    # DI seam for testing - set to override session creation
-    _session_factory: Callable[["ConnectionConfig"], "ConnectionSession"] | None = None
-
-    def connect_to_server(self, config: "ConnectionConfig") -> None:
+    def connect_to_server(self: AppProtocol, config: ConnectionConfig) -> None:
         """Connect to a database (async, non-blocking)."""
         from ...services import ConnectionSession
-
-        # Check for pyodbc only if it's a SQL Server connection
-        try:
-            import pyodbc
-            PYODBC_AVAILABLE = True
-        except ImportError:
-            PYODBC_AVAILABLE = False
-
-        if config.db_type == "mssql" and not PYODBC_AVAILABLE:
-            self.notify("pyodbc not installed. Run: pip install pyodbc", severity="error")
-            return
 
         # Close any existing session first
         if hasattr(self, "_session") and self._session:
@@ -64,11 +38,11 @@ class ConnectionMixin:
         # Use injected factory or default
         create_session = self._session_factory or ConnectionSession.create
 
-        def work() -> "ConnectionSession":
+        def work() -> ConnectionSession:
             """Create connection in worker thread."""
             return create_session(config)
 
-        def on_success(session: "ConnectionSession") -> None:
+        def on_success(session: ConnectionSession) -> None:
             """Handle successful connection on main thread."""
             self._connection_failed = False
             self._session = session
@@ -83,11 +57,24 @@ class ConnectionMixin:
 
         def on_error(error: Exception) -> None:
             """Handle connection failure on main thread."""
-            from ..screens import ErrorScreen
+            from ...db.exceptions import MissingDriverError
+            from ..screens import ConfirmScreen, ErrorScreen
 
             self._connection_failed = True
             self._update_status_bar()
-            self.push_screen(ErrorScreen("Connection Failed", str(error)))
+
+            if isinstance(error, MissingDriverError):
+                self.push_screen(
+                    ConfirmScreen(
+                        "Missing driver",
+                        f"This connection requires the {error.driver_name} driver.\n\nInstall it now?",
+                        yes_label="Install now",
+                        no_label="Manual steps",
+                    ),
+                    lambda confirmed: self._handle_install_confirmation(confirmed, error),
+                )
+            else:
+                self.push_screen(ErrorScreen("Connection Failed", str(error)))
 
         def do_work() -> None:
             """Worker function with error handling."""
@@ -99,7 +86,7 @@ class ConnectionMixin:
 
         self.run_worker(do_work, name=f"connect-{config.name}", thread=True, exclusive=True)
 
-    def _disconnect_silent(self) -> None:
+    def _disconnect_silent(self: AppProtocol) -> None:
         """Disconnect from current database without notification."""
         # Use session's close method for proper cleanup
         if hasattr(self, "_session") and self._session:
@@ -112,7 +99,7 @@ class ConnectionMixin:
         self.current_adapter = None
         self.current_ssh_tunnel = None
 
-    def action_disconnect(self) -> None:
+    def action_disconnect(self: AppProtocol) -> None:
         """Disconnect from current database."""
         if self.current_connection:
             self._disconnect_silent()
@@ -122,14 +109,14 @@ class ConnectionMixin:
             self.refresh_tree()
             self.notify("Disconnected")
 
-    def action_new_connection(self) -> None:
+    def action_new_connection(self: AppProtocol) -> None:
         """Show new connection dialog."""
         from ..screens import ConnectionScreen
 
         self._set_connection_screen_footer()
         self.push_screen(ConnectionScreen(), self._wrap_connection_result)
 
-    def action_edit_connection(self) -> None:
+    def action_edit_connection(self: AppProtocol) -> None:
         """Edit the selected connection."""
         from ..screens import ConnectionScreen
 
@@ -143,11 +130,9 @@ class ConnectionMixin:
             return
 
         self._set_connection_screen_footer()
-        self.push_screen(
-            ConnectionScreen(data.config, editing=True), self._wrap_connection_result
-        )
+        self.push_screen(ConnectionScreen(data.config, editing=True), self._wrap_connection_result)
 
-    def _set_connection_screen_footer(self) -> None:
+    def _set_connection_screen_footer(self: AppProtocol) -> None:
         """Set footer bindings for connection screen."""
         from ...widgets import ContextFooter
 
@@ -157,12 +142,12 @@ class ConnectionMixin:
             return
         footer.set_bindings([], [])
 
-    def _wrap_connection_result(self, result: tuple | None) -> None:
+    def _wrap_connection_result(self: AppProtocol, result: tuple | None) -> None:
         """Wrapper to restore footer after connection dialog."""
         self._update_footer_bindings()
         self.handle_connection_result(result)
 
-    def handle_connection_result(self, result: tuple | None) -> None:
+    def handle_connection_result(self: AppProtocol, result: tuple | None) -> None:
         """Handle result from connection dialog."""
         from ...config import save_connections
 
@@ -174,11 +159,14 @@ class ConnectionMixin:
         if action == "save":
             self.connections = [c for c in self.connections if c.name != config.name]
             self.connections.append(config)
-            save_connections(self.connections)
+            if getattr(self, "_mock_profile", None):
+                self.notify("Mock mode: connection changes are not persisted")
+            else:
+                save_connections(self.connections)
             self.refresh_tree()
             self.notify(f"Connection '{config.name}' saved")
 
-    def action_duplicate_connection(self) -> None:
+    def action_duplicate_connection(self: AppProtocol) -> None:
         """Duplicate the selected connection."""
         from dataclasses import replace
 
@@ -206,11 +194,9 @@ class ConnectionMixin:
         duplicated = replace(config, name=new_name)
 
         self._set_connection_screen_footer()
-        self.push_screen(
-            ConnectionScreen(duplicated, editing=False), self._wrap_connection_result
-        )
+        self.push_screen(ConnectionScreen(duplicated, editing=False), self._wrap_connection_result)
 
-    def action_delete_connection(self) -> None:
+    def action_delete_connection(self: AppProtocol) -> None:
         """Delete the selected connection."""
         from ..screens import ConfirmScreen
 
@@ -234,16 +220,35 @@ class ConnectionMixin:
             lambda confirmed: self._do_delete_connection(config) if confirmed else None,
         )
 
-    def _do_delete_connection(self, config: "ConnectionConfig") -> None:
+    def _do_delete_connection(self: AppProtocol, config: ConnectionConfig) -> None:
         """Actually delete the connection after confirmation."""
         from ...config import save_connections
 
         self.connections = [c for c in self.connections if c.name != config.name]
-        save_connections(self.connections)
+        if getattr(self, "_mock_profile", None):
+            self.notify("Mock mode: connection changes are not persisted")
+        else:
+            save_connections(self.connections)
         self.refresh_tree()
         self.notify(f"Connection '{config.name}' deleted")
 
-    def action_connect_selected(self) -> None:
+    def _handle_install_confirmation(self: AppProtocol, confirmed: bool | None, error: Any) -> None:
+        """Handle the result of the driver install confirmation."""
+        from ...db.adapters.base import _create_driver_import_error_hint
+        from ...services.installer import Installer
+        from ..screens import ErrorScreen
+
+        if confirmed is True:
+            installer = Installer(self)  # self is the App instance
+            self.call_next(installer.install, error)  # Schedule the async install method
+        elif confirmed is False:
+            hint = _create_driver_import_error_hint(error.driver_name, error.extra_name, error.package_name)
+            self.push_screen(ErrorScreen("Manual Installation Required", hint))
+        else:
+            # Cancelled.
+            return
+
+    def action_connect_selected(self: AppProtocol) -> None:
         """Connect to the selected connection."""
         node = self.object_tree.cursor_node
 
@@ -259,7 +264,7 @@ class ConnectionMixin:
                 self._disconnect_silent()
             self.connect_to_server(config)
 
-    def action_show_connection_picker(self) -> None:
+    def action_show_connection_picker(self: AppProtocol) -> None:
         """Show connection picker dialog."""
         from ..screens import ConnectionPickerScreen
 
@@ -268,7 +273,7 @@ class ConnectionMixin:
             self._handle_connection_picker_result,
         )
 
-    def _handle_connection_picker_result(self, result: str | None) -> None:
+    def _handle_connection_picker_result(self: AppProtocol, result: str | None) -> None:
         """Handle connection picker selection."""
         if result is None:
             return

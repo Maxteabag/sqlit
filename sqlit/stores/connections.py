@@ -16,19 +16,19 @@ class ConnectionStore(JSONFileStore):
     Connections are stored as a JSON array in ~/.sqlit/connections.json
     """
 
-    _instance: "ConnectionStore | None" = None
+    _instance: ConnectionStore | None = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(CONFIG_DIR / "connections.json")
 
     @classmethod
-    def get_instance(cls) -> "ConnectionStore":
+    def get_instance(cls) -> ConnectionStore:
         """Get the singleton instance."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
-    def load_all(self) -> list["ConnectionConfig"]:
+    def load_all(self) -> list[ConnectionConfig]:
         """Load all saved connections.
 
         Returns:
@@ -40,11 +40,17 @@ class ConnectionStore(JSONFileStore):
         if data is None:
             return []
         try:
-            return [ConnectionConfig(**conn) for conn in data]
+            migrated = []
+            for conn in data:
+                if isinstance(conn, dict) and "host" in conn and "server" not in conn:
+                    conn = {**conn, "server": conn.get("host", "")}
+                    conn.pop("host", None)
+                migrated.append(conn)
+            return [ConnectionConfig(**conn) for conn in migrated]
         except (TypeError, KeyError):
             return []
 
-    def save_all(self, connections: list["ConnectionConfig"]) -> None:
+    def save_all(self, connections: list[ConnectionConfig]) -> None:
         """Save all connections.
 
         Args:
@@ -52,7 +58,7 @@ class ConnectionStore(JSONFileStore):
         """
         self._write_json([vars(c) for c in connections])
 
-    def get_by_name(self, name: str) -> "ConnectionConfig | None":
+    def get_by_name(self, name: str) -> ConnectionConfig | None:
         """Get a connection by name.
 
         Args:
@@ -66,7 +72,7 @@ class ConnectionStore(JSONFileStore):
                 return conn
         return None
 
-    def add(self, connection: "ConnectionConfig") -> None:
+    def add(self, connection: ConnectionConfig) -> None:
         """Add a new connection.
 
         Args:
@@ -81,7 +87,7 @@ class ConnectionStore(JSONFileStore):
         connections.append(connection)
         self.save_all(connections)
 
-    def update(self, connection: "ConnectionConfig") -> None:
+    def update(self, connection: ConnectionConfig) -> None:
         """Update an existing connection.
 
         Args:
@@ -128,11 +134,11 @@ class ConnectionStore(JSONFileStore):
 _store = ConnectionStore()
 
 
-def load_connections() -> list["ConnectionConfig"]:
+def load_connections() -> list[ConnectionConfig]:
     """Load saved connections from config file."""
     return _store.load_all()
 
 
-def save_connections(connections: list["ConnectionConfig"]) -> None:
+def save_connections(connections: list[ConnectionConfig]) -> None:
     """Save connections to config file."""
     _store.save_all(connections)

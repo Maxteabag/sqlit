@@ -11,11 +11,19 @@ adding or overriding specific behaviors.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
-from .ui.tree_nodes import ConnectionNode, DatabaseNode, FolderNode, SchemaNode, TableNode, ViewNode
+from .ui.tree_nodes import (
+    ConnectionNode,
+    DatabaseNode,
+    FolderNode,
+    SchemaNode,
+    TableNode,
+    ViewNode,
+)
 
 if TYPE_CHECKING:
     from .app import SSMSTUI
@@ -86,14 +94,11 @@ def get_leader_binding_actions() -> set[str]:
     return {cmd.binding_action for cmd in get_leader_commands()}
 
 
-def get_leader_bindings():
+def get_leader_bindings() -> tuple:
     """Generate Textual Bindings from leader commands."""
     from textual.binding import Binding
 
-    return tuple(
-        Binding(cmd.key, cmd.binding_action, show=False)
-        for cmd in get_leader_commands()
-    )
+    return tuple(Binding(cmd.key, cmd.binding_action, show=False) for cmd in get_leader_commands())
 
 
 class ActionResult(Enum):
@@ -248,9 +253,7 @@ class State(ABC):
 
         return ActionResult.UNHANDLED
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         """Get bindings to display in footer (left, right).
 
         Returns bindings from this state and ancestors, with this state's
@@ -345,9 +348,7 @@ class ModalActiveState(State):
         # Block everything else - modal handles its own bindings
         return ActionResult.FORBIDDEN
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         # Modal screens provide their own footer/UI
         return [], []
 
@@ -383,9 +384,7 @@ class MainScreenState(State):
     def is_active(self, app: SSMSTUI) -> bool:
         from textual.screen import ModalScreen
 
-        return not any(
-            isinstance(screen, ModalScreen) for screen in app.screen_stack[1:]
-        )
+        return not any(isinstance(screen, ModalScreen) for screen in app.screen_stack[1:])
 
 
 # ============================================================
@@ -420,9 +419,7 @@ class LeaderPendingState(State):
 
         return ActionResult.FORBIDDEN
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         # During leader pending, we show a minimal indicator
         # The actual menu will appear via LeaderMenuScreen
         return [], [DisplayBinding(key="...", label="Waiting", action="leader_pending")]
@@ -463,18 +460,14 @@ class TreeOnConnectionState(State):
             config = node.data.config
             if not app.current_connection:
                 return True
-            return (
-                config
-                and app.current_config
-                and config.name != app.current_config.name
-            )
+            return bool(config and app.current_config and config.name != app.current_config.name)
 
         def is_connected_to_this(app: SSMSTUI) -> bool:
             node = app.object_tree.cursor_node
             if not node or not isinstance(node.data, ConnectionNode):
                 return False
             config = node.data.config
-            return (
+            return bool(
                 app.current_connection is not None
                 and config
                 and app.current_config
@@ -488,9 +481,7 @@ class TreeOnConnectionState(State):
         self.allows("delete_connection", key="d", label="Delete", help="Delete connection")
         self.allows("duplicate_connection", key="D", label="Duplicate", help="Duplicate connection")
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         """Custom display logic for connection node."""
         left: list[DisplayBinding] = []
         seen: set[str] = set()
@@ -550,9 +541,7 @@ class TreeOnTableState(State):
     def _setup_actions(self) -> None:
         self.allows("select_table", key="s", label="Select TOP 100", help="Select TOP 100 (table/view)")
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
         seen: set[str] = set()
 
@@ -577,7 +566,7 @@ class TreeOnTableState(State):
         if not app.object_tree.has_focus:
             return False
         node = app.object_tree.cursor_node
-        return node is not None and isinstance(node.data, (TableNode, ViewNode))
+        return node is not None and isinstance(node.data, TableNode | ViewNode)
 
 
 class TreeOnFolderState(State):
@@ -586,9 +575,7 @@ class TreeOnFolderState(State):
     def _setup_actions(self) -> None:
         pass  # Just inherits from parent
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
         seen: set[str] = set()
 
@@ -611,7 +598,7 @@ class TreeOnFolderState(State):
         if not app.object_tree.has_focus:
             return False
         node = app.object_tree.cursor_node
-        return node is not None and isinstance(node.data, (FolderNode, DatabaseNode, SchemaNode))
+        return node is not None and isinstance(node.data, FolderNode | DatabaseNode | SchemaNode)
 
 
 # ============================================================
@@ -635,8 +622,6 @@ class QueryNormalModeState(State):
     help_category = "Query Editor (Normal)"
 
     def _setup_actions(self) -> None:
-        from .widgets import VimMode
-
         self.allows("enter_insert_mode", key="i", label="Insert Mode", help="Enter INSERT mode")
         self.allows("execute_query", key="enter", label="Execute", help="Execute query")
         self.allows("clear_query", key="d", label="Clear", help="Clear query")
@@ -649,9 +634,7 @@ class QueryNormalModeState(State):
             help="Query history",
         )
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
         seen: set[str] = set()
 
@@ -703,9 +686,7 @@ class QueryInsertModeState(State):
             "show_help",
         )
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = [
             DisplayBinding(key="esc", label="Normal Mode", action="exit_insert_mode"),
             DisplayBinding(key="f5", label="Execute", action="execute_query_insert"),
@@ -735,9 +716,7 @@ class ResultsFocusedState(State):
         self.allows("copy_row", key="Y", label="Copy row", help="Copy selected row")
         self.allows("copy_results", key="a", label="Copy all", help="Copy all results")
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
         seen: set[str] = set()
 
@@ -776,7 +755,7 @@ class ResultsFocusedState(State):
 class UIStateMachine:
     """Hierarchical state machine for UI action validation and binding display."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.root = RootState()
 
         # Modal state (highest priority, blocks everything)
@@ -837,9 +816,7 @@ class UIStateMachine:
         # UNHANDLED and FORBIDDEN both block the action
         return result == ActionResult.ALLOWED
 
-    def get_display_bindings(
-        self, app: SSMSTUI
-    ) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         """Get bindings to display in footer for current state."""
         state = self.get_active_state(app)
         return state.get_display_bindings(app)
@@ -863,8 +840,7 @@ class UIStateMachine:
                     entries_by_category[entry.category].append(entry)
 
         entries_by_category["Commands (<space>)"] = [
-            HelpEntry(cmd.key, cmd.label, "Commands (<space>)")
-            for cmd in get_leader_commands()
+            HelpEntry(f"<space>+{cmd.key}", cmd.label, "Commands (<space>)") for cmd in get_leader_commands()
         ]
 
         category_order = [
@@ -897,9 +873,33 @@ class UIStateMachine:
     def _format_key_for_help(key: str) -> str:
         """Format a key for help display, wrapping special keys in angle brackets."""
         special_keys = {
-            "enter", "space", "esc", "escape", "tab", "delete", "backspace",
-            "up", "down", "left", "right", "home", "end", "pageup", "pagedown",
-            "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+            "enter",
+            "space",
+            "esc",
+            "escape",
+            "tab",
+            "delete",
+            "backspace",
+            "up",
+            "down",
+            "left",
+            "right",
+            "home",
+            "end",
+            "pageup",
+            "pagedown",
+            "f1",
+            "f2",
+            "f3",
+            "f4",
+            "f5",
+            "f6",
+            "f7",
+            "f8",
+            "f9",
+            "f10",
+            "f11",
+            "f12",
         }
 
         if key.lower() in special_keys:

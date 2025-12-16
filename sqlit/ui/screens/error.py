@@ -57,6 +57,12 @@ class ErrorScreen(ModalScreen):
     def action_close(self) -> None:
         self.dismiss()
 
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        # Prevent underlying screens from receiving actions when another modal is on top.
+        if self.app.screen is not self:
+            return False
+        return super().check_action(action, parameters)
+
     def action_copy_message(self) -> None:
         self.app.copy_to_clipboard(self.message)
         # Flash the message to indicate copy

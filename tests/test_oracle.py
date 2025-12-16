@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 
 class TestOracleIntegration:
     """Integration tests for Oracle database operations via CLI.
@@ -16,21 +14,29 @@ class TestOracleIntegration:
 
     def test_create_oracle_connection(self, oracle_db, cli_runner):
         """Test creating an Oracle connection via CLI."""
-        from .conftest import ORACLE_HOST, ORACLE_PORT, ORACLE_USER, ORACLE_PASSWORD
+        from .conftest import ORACLE_HOST, ORACLE_PASSWORD, ORACLE_PORT, ORACLE_USER
 
         connection_name = "test_create_oracle"
 
         try:
             # Create connection
             result = cli_runner(
-                "connection", "create",
-                "--name", connection_name,
-                "--db-type", "oracle",
-                "--server", ORACLE_HOST,
-                "--port", str(ORACLE_PORT),
-                "--database", oracle_db,
-                "--username", ORACLE_USER,
-                "--password", ORACLE_PASSWORD,
+                "connection",
+                "create",
+                "--name",
+                connection_name,
+                "--db-type",
+                "oracle",
+                "--server",
+                ORACLE_HOST,
+                "--port",
+                str(ORACLE_PORT),
+                "--database",
+                oracle_db,
+                "--username",
+                ORACLE_USER,
+                "--password",
+                ORACLE_PASSWORD,
             )
             assert result.returncode == 0
             assert "created successfully" in result.stdout
@@ -55,8 +61,10 @@ class TestOracleIntegration:
         """Test executing SELECT query on Oracle."""
         result = cli_runner(
             "query",
-            "-c", oracle_connection,
-            "-q", "SELECT * FROM test_users ORDER BY id",
+            "-c",
+            oracle_connection,
+            "-q",
+            "SELECT * FROM test_users ORDER BY id",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -68,8 +76,10 @@ class TestOracleIntegration:
         """Test executing SELECT with WHERE clause on Oracle."""
         result = cli_runner(
             "query",
-            "-c", oracle_connection,
-            "-q", "SELECT name, email FROM test_users WHERE id = 1",
+            "-c",
+            oracle_connection,
+            "-q",
+            "SELECT name, email FROM test_users WHERE id = 1",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -80,8 +90,10 @@ class TestOracleIntegration:
         """Test Oracle FETCH FIRST clause."""
         result = cli_runner(
             "query",
-            "-c", oracle_connection,
-            "-q", "SELECT * FROM test_users ORDER BY id FETCH FIRST 2 ROWS ONLY",
+            "-c",
+            oracle_connection,
+            "-q",
+            "SELECT * FROM test_users ORDER BY id FETCH FIRST 2 ROWS ONLY",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -92,9 +104,12 @@ class TestOracleIntegration:
         """Test query output in JSON format."""
         result = cli_runner(
             "query",
-            "-c", oracle_connection,
-            "-q", "SELECT id, name FROM test_users ORDER BY id FETCH FIRST 2 ROWS ONLY",
-            "--format", "json",
+            "-c",
+            oracle_connection,
+            "-q",
+            "SELECT id, name FROM test_users ORDER BY id FETCH FIRST 2 ROWS ONLY",
+            "--format",
+            "json",
         )
         assert result.returncode == 0
 
@@ -110,9 +125,12 @@ class TestOracleIntegration:
         """Test query output in CSV format."""
         result = cli_runner(
             "query",
-            "-c", oracle_connection,
-            "-q", "SELECT id, name FROM test_users ORDER BY id FETCH FIRST 2 ROWS ONLY",
-            "--format", "csv",
+            "-c",
+            oracle_connection,
+            "-q",
+            "SELECT id, name FROM test_users ORDER BY id FETCH FIRST 2 ROWS ONLY",
+            "--format",
+            "csv",
         )
         assert result.returncode == 0
         # Oracle may return uppercase column names
@@ -124,8 +142,10 @@ class TestOracleIntegration:
         """Test querying a view on Oracle."""
         result = cli_runner(
             "query",
-            "-c", oracle_connection,
-            "-q", "SELECT * FROM test_user_emails ORDER BY id",
+            "-c",
+            oracle_connection,
+            "-q",
+            "SELECT * FROM test_user_emails ORDER BY id",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -135,8 +155,10 @@ class TestOracleIntegration:
         """Test aggregate query on Oracle."""
         result = cli_runner(
             "query",
-            "-c", oracle_connection,
-            "-q", "SELECT COUNT(*) as user_count FROM test_users",
+            "-c",
+            oracle_connection,
+            "-q",
+            "SELECT COUNT(*) as user_count FROM test_users",
         )
         assert result.returncode == 0
         assert "3" in result.stdout
@@ -145,35 +167,47 @@ class TestOracleIntegration:
         """Test INSERT statement on Oracle."""
         result = cli_runner(
             "query",
-            "-c", oracle_connection,
-            "-q", "INSERT INTO test_users (id, name, email) VALUES (4, 'David', 'david@example.com')",
+            "-c",
+            oracle_connection,
+            "-q",
+            "INSERT INTO test_users (id, name, email) VALUES (4, 'David', 'david@example.com')",
         )
         assert result.returncode == 0
 
         # Verify the insert
         result = cli_runner(
             "query",
-            "-c", oracle_connection,
-            "-q", "SELECT * FROM test_users WHERE id = 4",
+            "-c",
+            oracle_connection,
+            "-q",
+            "SELECT * FROM test_users WHERE id = 4",
         )
         assert "David" in result.stdout
 
     def test_delete_oracle_connection(self, oracle_db, cli_runner):
         """Test deleting an Oracle connection."""
-        from .conftest import ORACLE_HOST, ORACLE_PORT, ORACLE_USER, ORACLE_PASSWORD
+        from .conftest import ORACLE_HOST, ORACLE_PASSWORD, ORACLE_PORT, ORACLE_USER
 
         connection_name = "test_delete_oracle"
 
         # Create connection first
         cli_runner(
-            "connection", "create",
-            "--name", connection_name,
-            "--db-type", "oracle",
-            "--server", ORACLE_HOST,
-            "--port", str(ORACLE_PORT),
-            "--database", oracle_db,
-            "--username", ORACLE_USER,
-            "--password", ORACLE_PASSWORD,
+            "connection",
+            "create",
+            "--name",
+            connection_name,
+            "--db-type",
+            "oracle",
+            "--server",
+            ORACLE_HOST,
+            "--port",
+            str(ORACLE_PORT),
+            "--database",
+            oracle_db,
+            "--username",
+            ORACLE_USER,
+            "--password",
+            ORACLE_PASSWORD,
         )
 
         # Delete it

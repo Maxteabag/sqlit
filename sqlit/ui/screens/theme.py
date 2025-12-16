@@ -73,7 +73,7 @@ class ThemeScreen(ModalScreen[str | None]):
                 option_list.highlighted = i
                 break
 
-    def on_option_list_option_selected(self, event) -> None:
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         self.dismiss(event.option.id)
 
     def action_select_option(self) -> None:

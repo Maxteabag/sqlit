@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from .test_database_base import BaseDatabaseTestsWithLimit, DatabaseTestConfig
 
 
@@ -26,20 +24,33 @@ class TestCockroachDBIntegration(BaseDatabaseTestsWithLimit):
 
     def test_create_cockroachdb_connection(self, cockroachdb_db, cli_runner):
         """Test creating a CockroachDB connection via CLI."""
-        from .conftest import COCKROACHDB_HOST, COCKROACHDB_PORT, COCKROACHDB_USER, COCKROACHDB_PASSWORD
+        from .conftest import (
+            COCKROACHDB_HOST,
+            COCKROACHDB_PASSWORD,
+            COCKROACHDB_PORT,
+            COCKROACHDB_USER,
+        )
 
         connection_name = "test_create_cockroachdb"
 
         try:
             args = [
-                "connection", "create",
-                "--name", connection_name,
-                "--db-type", "cockroachdb",
-                "--server", COCKROACHDB_HOST,
-                "--port", str(COCKROACHDB_PORT),
-                "--database", cockroachdb_db,
-                "--username", COCKROACHDB_USER,
-                "--password", COCKROACHDB_PASSWORD or "",
+                "connection",
+                "create",
+                "--name",
+                connection_name,
+                "--db-type",
+                "cockroachdb",
+                "--server",
+                COCKROACHDB_HOST,
+                "--port",
+                str(COCKROACHDB_PORT),
+                "--database",
+                cockroachdb_db,
+                "--username",
+                COCKROACHDB_USER,
+                "--password",
+                COCKROACHDB_PASSWORD or "",
             ]
             result = cli_runner(*args)
             assert result.returncode == 0
@@ -56,19 +67,32 @@ class TestCockroachDBIntegration(BaseDatabaseTestsWithLimit):
 
     def test_delete_cockroachdb_connection(self, cockroachdb_db, cli_runner):
         """Test deleting a CockroachDB connection."""
-        from .conftest import COCKROACHDB_HOST, COCKROACHDB_PORT, COCKROACHDB_USER, COCKROACHDB_PASSWORD
+        from .conftest import (
+            COCKROACHDB_HOST,
+            COCKROACHDB_PASSWORD,
+            COCKROACHDB_PORT,
+            COCKROACHDB_USER,
+        )
 
         connection_name = "test_delete_cockroachdb"
 
         args = [
-            "connection", "create",
-            "--name", connection_name,
-            "--db-type", "cockroachdb",
-            "--server", COCKROACHDB_HOST,
-            "--port", str(COCKROACHDB_PORT),
-            "--database", cockroachdb_db,
-            "--username", COCKROACHDB_USER,
-            "--password", COCKROACHDB_PASSWORD or "",
+            "connection",
+            "create",
+            "--name",
+            connection_name,
+            "--db-type",
+            "cockroachdb",
+            "--server",
+            COCKROACHDB_HOST,
+            "--port",
+            str(COCKROACHDB_PORT),
+            "--database",
+            cockroachdb_db,
+            "--username",
+            COCKROACHDB_USER,
+            "--password",
+            COCKROACHDB_PASSWORD or "",
         ]
         cli_runner(*args)
 

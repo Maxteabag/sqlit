@@ -101,9 +101,7 @@ class QueryHistoryScreen(ModalScreen):
                         if len(entry.query) > 60:
                             query_preview += "..."
 
-                        options.append(
-                            Option(f"[dim]{time_str}[/]  {query_preview}", id=entry.timestamp)
-                        )
+                        options.append(Option(f"[dim]{time_str}[/]  {query_preview}", id=entry.timestamp))
 
                     yield OptionList(*options, id="history-list")
                 else:
@@ -121,7 +119,7 @@ class QueryHistoryScreen(ModalScreen):
             except Exception:
                 pass
 
-    def on_option_list_option_highlighted(self, event) -> None:
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         if event.option_list.id == "history-list":
             idx = event.option_list.highlighted
             if idx is not None:
@@ -147,7 +145,7 @@ class QueryHistoryScreen(ModalScreen):
         except Exception:
             self.dismiss(None)
 
-    def on_option_list_option_selected(self, event) -> None:
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id == "history-list":
             idx = event.option_list.highlighted
             if idx is not None and idx < len(self.history):

@@ -45,7 +45,7 @@ class JSONFileStore:
         if not self._file_path.exists():
             return None
         try:
-            with open(self._file_path, "r", encoding="utf-8") as f:
+            with open(self._file_path, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, TypeError):
             return None

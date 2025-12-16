@@ -6,8 +6,9 @@ of database connections and SSH tunnels, ensuring proper cleanup.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..config import ConnectionConfig
@@ -40,8 +41,8 @@ class ConnectionSession:
     def __init__(
         self,
         connection: Any,
-        adapter: "DatabaseAdapter",
-        config: "ConnectionConfig",
+        adapter: DatabaseAdapter,
+        config: ConnectionConfig,
         tunnel: Any | None = None,
     ):
         """Initialize a connection session.
@@ -57,16 +58,15 @@ class ConnectionSession:
         self._config = config
         self._tunnel = tunnel
         self._closed = False
-        self._executor: "DatabaseExecutor | None" = None
+        self._executor: DatabaseExecutor | None = None
 
     @classmethod
     def create(
         cls,
-        config: "ConnectionConfig",
-        adapter_factory: Callable[[str], "DatabaseAdapter"] | None = None,
-        tunnel_factory: Callable[["ConnectionConfig"], tuple[Any, str, int]]
-        | None = None,
-    ) -> "ConnectionSession":
+        config: ConnectionConfig,
+        adapter_factory: Callable[[str], DatabaseAdapter] | None = None,
+        tunnel_factory: Callable[[ConnectionConfig], tuple[Any, str, int]] | None = None,
+    ) -> ConnectionSession:
         """Create a new connection session.
 
         This factory method handles SSH tunnel creation (if enabled) and
@@ -112,12 +112,12 @@ class ConnectionSession:
         return self._connection
 
     @property
-    def adapter(self) -> "DatabaseAdapter":
+    def adapter(self) -> DatabaseAdapter:
         """Get the database adapter."""
         return self._adapter
 
     @property
-    def config(self) -> "ConnectionConfig":
+    def config(self) -> ConnectionConfig:
         """Get the connection configuration."""
         return self._config
 
@@ -137,7 +137,7 @@ class ConnectionSession:
         return self._closed
 
     @property
-    def executor(self) -> "DatabaseExecutor":
+    def executor(self) -> DatabaseExecutor:
         """Get or create the database executor for serialized operations.
 
         The executor is lazily created on first access. All database operations
@@ -197,7 +197,7 @@ class ConnectionSession:
 
         self._closed = True
 
-    def __enter__(self) -> "ConnectionSession":
+    def __enter__(self) -> ConnectionSession:
         """Enter the context manager."""
         return self
 

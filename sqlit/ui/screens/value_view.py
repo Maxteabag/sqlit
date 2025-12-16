@@ -84,7 +84,7 @@ class ValueViewScreen(ModalScreen):
     def on_mount(self) -> None:
         self.query_one("#value-scroll").focus()
 
-    def action_dismiss(self) -> None:
+    def action_dismiss(self) -> None:  # type: ignore[override]
         self.dismiss(None)
 
     def action_copy(self) -> None:

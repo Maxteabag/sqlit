@@ -25,7 +25,7 @@ class QueryHistoryEntry:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "QueryHistoryEntry":
+    def from_dict(cls, data: dict) -> QueryHistoryEntry:
         """Create from dictionary."""
         return cls(
             query=data["query"],
@@ -42,13 +42,13 @@ class HistoryStore(JSONFileStore):
     """
 
     MAX_ENTRIES_PER_CONNECTION = 100
-    _instance: "HistoryStore | None" = None
+    _instance: HistoryStore | None = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(CONFIG_DIR / "query_history.json")
 
     @classmethod
-    def get_instance(cls) -> "HistoryStore":
+    def get_instance(cls) -> HistoryStore:
         """Get the singleton instance."""
         if cls._instance is None:
             cls._instance = cls()
@@ -96,8 +96,7 @@ class HistoryStore(JSONFileStore):
 
         # Check if query already exists
         for entry in all_entries:
-            if (entry.get("connection_name") == connection_name
-                    and entry.get("query", "").strip() == query_stripped):
+            if entry.get("connection_name") == connection_name and entry.get("query", "").strip() == query_stripped:
                 entry["timestamp"] = now
                 break
         else:
@@ -110,15 +109,11 @@ class HistoryStore(JSONFileStore):
             all_entries.append(new_entry.to_dict())
 
         # Limit entries per connection
-        connection_entries = [
-            e for e in all_entries if e.get("connection_name") == connection_name
-        ]
-        other_entries = [
-            e for e in all_entries if e.get("connection_name") != connection_name
-        ]
+        connection_entries = [e for e in all_entries if e.get("connection_name") == connection_name]
+        other_entries = [e for e in all_entries if e.get("connection_name") != connection_name]
 
         connection_entries.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
-        connection_entries = connection_entries[:self.MAX_ENTRIES_PER_CONNECTION]
+        connection_entries = connection_entries[: self.MAX_ENTRIES_PER_CONNECTION]
 
         self._write_json(other_entries + connection_entries)
 
@@ -136,9 +131,9 @@ class HistoryStore(JSONFileStore):
         original_count = len(all_entries)
 
         all_entries = [
-            e for e in all_entries
-            if not (e.get("timestamp") == timestamp
-                    and e.get("connection_name") == connection_name)
+            e
+            for e in all_entries
+            if not (e.get("timestamp") == timestamp and e.get("connection_name") == connection_name)
         ]
 
         if len(all_entries) < original_count:
@@ -158,10 +153,7 @@ class HistoryStore(JSONFileStore):
         all_entries = self._load_all_entries()
         original_count = len(all_entries)
 
-        all_entries = [
-            e for e in all_entries
-            if e.get("connection_name") != connection_name
-        ]
+        all_entries = [e for e in all_entries if e.get("connection_name") != connection_name]
 
         deleted = original_count - len(all_entries)
         if deleted > 0:

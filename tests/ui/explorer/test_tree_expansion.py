@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from sqlit.ui.mixins.tree import TreeMixin
 from sqlit.ui.tree_nodes import FolderNode, LoadingNode, SchemaNode, TableNode
 
@@ -13,7 +11,7 @@ from sqlit.ui.tree_nodes import FolderNode, LoadingNode, SchemaNode, TableNode
 class MockTreeNode:
     """Mock tree node for testing expansion."""
 
-    def __init__(self, label: str = "", data: tuple = None, parent: "MockTreeNode | None" = None):
+    def __init__(self, label: str = "", data: tuple = None, parent: MockTreeNode | None = None):
         self.label = label
         self.data = data
         self.parent = parent
@@ -21,12 +19,12 @@ class MockTreeNode:
         self.allow_expand = False
         self.is_expanded = False
 
-    def add(self, label: str) -> "MockTreeNode":
+    def add(self, label: str) -> MockTreeNode:
         child = MockTreeNode(label, parent=self)
         self.children.append(child)
         return child
 
-    def add_leaf(self, label: str) -> "MockTreeNode":
+    def add_leaf(self, label: str) -> MockTreeNode:
         return self.add(label)
 
     def remove(self):

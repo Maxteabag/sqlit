@@ -14,9 +14,7 @@ if TYPE_CHECKING:
     from .protocols import AdapterProtocol, HistoryStoreProtocol
 
 # Query types that return result sets (SELECT-like queries)
-SELECT_KEYWORDS = frozenset(
-    ["SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA"]
-)
+SELECT_KEYWORDS = frozenset(["SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA"])
 
 
 def is_select_query(query: str) -> bool:
@@ -60,7 +58,7 @@ class QueryService:
             If not provided, uses the default HistoryStore singleton.
     """
 
-    def __init__(self, history_store: "HistoryStoreProtocol | None" = None):
+    def __init__(self, history_store: HistoryStoreProtocol | None = None):
         """Initialize the query service.
 
         Args:
@@ -71,9 +69,9 @@ class QueryService:
     def execute(
         self,
         connection: Any,
-        adapter: "AdapterProtocol",
+        adapter: AdapterProtocol,
         query: str,
-        config: "ConnectionConfig | None" = None,
+        config: ConnectionConfig | None = None,
         max_rows: int | None = None,
         save_to_history: bool = True,
     ) -> QueryResult | NonQueryResult:
@@ -93,6 +91,7 @@ class QueryService:
         Raises:
             Any exceptions raised by the underlying database driver.
         """
+        result: QueryResult | NonQueryResult
         if is_select_query(query):
             columns, rows, truncated = adapter.execute_query(connection, query, max_rows)
             result = QueryResult(

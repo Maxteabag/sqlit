@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,6 +56,53 @@ class DatabaseAdapter(ABC):
     """
 
     @property
+    def install_hint(self) -> str | None:
+        """Installation hint for the adapter's dependencies."""
+        if not self.install_extra or not self.install_package:
+            return None
+        return _create_driver_import_error_hint(self.name, self.install_extra, self.install_package).strip()
+
+    @property
+    def driver_import_names(self) -> tuple[str, ...]:
+        """Import names used to verify required driver dependencies are installed."""
+        return ()
+
+    def ensure_driver_available(self) -> None:
+        """Verify required dependencies can be imported, raising MissingDriverError if not."""
+        forced_missing = os.environ.get("SQLIT_MOCK_MISSING_DRIVERS", "").strip()
+        if forced_missing:
+            forced = {s.strip() for s in forced_missing.split(",") if s.strip()}
+            db_type = getattr(self, "_db_type", None)
+            if db_type in forced:
+                from ...db.exceptions import MissingDriverError
+
+                if not self.install_extra or not self.install_package:
+                    raise ImportError(f"Missing driver for {self.name}")
+                raise MissingDriverError(self.name, self.install_extra, self.install_package)
+
+        if not self.driver_import_names:
+            return
+        try:
+            for module_name in self.driver_import_names:
+                importlib.import_module(module_name)
+        except ImportError as e:
+            from ...db.exceptions import MissingDriverError
+
+            if not self.install_extra or not self.install_package:
+                raise e
+            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+
+    @property
+    def install_extra(self) -> str | None:
+        """Name of the [extra] for pip install."""
+        return None
+
+    @property
+    def install_package(self) -> str | None:
+        """Name of the package for pipx inject."""
+        return None
+
+    @property
     @abstractmethod
     def name(self) -> str:
         """Human-readable name for this database type."""
@@ -94,7 +143,7 @@ class DatabaseAdapter(ABC):
         return f"{schema}.{name}"
 
     @abstractmethod
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         """Create a connection to the database."""
         pass
 
@@ -146,9 +195,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None, schema: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build a SELECT query with limit.
 
         Args:
@@ -160,9 +207,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def execute_query(
-        self, conn: Any, query: str, max_rows: int | None = None
-    ) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query and return (columns, rows, truncated).
 
         Args:
@@ -188,9 +233,7 @@ class CursorBasedAdapter(DatabaseAdapter):
     Provides common implementations for execute_query and execute_non_query.
     """
 
-    def execute_query(
-        self, conn: Any, query: str, max_rows: int | None = None
-    ) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query using cursor-based approach with optional row limit."""
         cursor = conn.cursor()
         cursor.execute(query)
@@ -212,7 +255,7 @@ class CursorBasedAdapter(DatabaseAdapter):
         """Execute a non-query using cursor-based approach."""
         cursor = conn.cursor()
         cursor.execute(query)
-        rowcount = cursor.rowcount
+        rowcount = int(cursor.rowcount)
         conn.commit()
         return rowcount
 
@@ -259,14 +302,12 @@ class MySQLBaseAdapter(CursorBasedAdapter):
         cursor = conn.cursor()
         if database:
             cursor.execute(
-                "SELECT table_name FROM information_schema.views "
-                "WHERE table_schema = %s ORDER BY table_name",
+                "SELECT table_name FROM information_schema.views " "WHERE table_schema = %s ORDER BY table_name",
                 (database,),
             )
         else:
             cursor.execute(
-                "SELECT table_name FROM information_schema.views "
-                "WHERE table_schema = DATABASE() ORDER BY table_name"
+                "SELECT table_name FROM information_schema.views " "WHERE table_schema = DATABASE() ORDER BY table_name"
             )
         return [("", row[0]) for row in cursor.fetchall()]
 
@@ -317,9 +358,7 @@ class MySQLBaseAdapter(CursorBasedAdapter):
         escaped = name.replace("`", "``")
         return f"`{escaped}`"
 
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None, schema: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT LIMIT query. Schema parameter is ignored (MySQL has no schemas)."""
         if database:
             return f"SELECT * FROM `{database}`.`{table}` LIMIT {limit}"
@@ -387,9 +426,36 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         escaped = name.replace('"', '""')
         return f'"{escaped}"'
 
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None, schema: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT LIMIT query for PostgreSQL."""
         schema = schema or "public"
         return f'SELECT * FROM "{schema}"."{table}" LIMIT {limit}'
+
+
+def _create_driver_import_error_hint(driver_name: str, extra_name: str, package_name: str) -> str:
+    """Generate a context-aware hint for missing driver installation."""
+    import sys
+
+    pipx_override = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
+    is_pipx = "pipx" in sys.executable
+    if pipx_override in {"1", "true", "yes", "pipx"}:
+        is_pipx = True
+    elif pipx_override in {"0", "false", "no", "pip"}:
+        is_pipx = False
+
+    if is_pipx:
+        return f"""
+{driver_name} driver not found.
+
+To connect to {driver_name}, please add the required package to your sqlit-tui environment:
+
+  pipx inject sqlit-tui {package_name}
+"""
+    else:
+        return f"""
+{driver_name} driver not found.
+
+To connect to {driver_name}, please install the required package:
+
+  pip install "sqlit-tui[{extra_name}]"
+"""

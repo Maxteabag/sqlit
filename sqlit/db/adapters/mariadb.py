@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..schema import get_default_port
 from .base import ColumnInfo, MySQLBaseAdapter, TableInfo
 
 if TYPE_CHECKING:
@@ -21,12 +22,32 @@ class MariaDBAdapter(MySQLBaseAdapter):
     def name(self) -> str:
         return "MariaDB"
 
-    def connect(self, config: "ConnectionConfig") -> Any:
-        """Connect to MariaDB database."""
-        import mariadb
+    @property
+    def install_extra(self) -> str:
+        return "mariadb"
 
-        port = int(config.port) if config.port else 3306
-        return mariadb.connect(
+    @property
+    def install_package(self) -> str:
+        return "mariadb"
+
+    @property
+    def driver_import_names(self) -> tuple[str, ...]:
+        return ("mariadb",)
+
+    def connect(self, config: ConnectionConfig) -> Any:
+        """Connect to MariaDB database."""
+        try:
+            import mariadb
+        except ImportError as e:
+            from ...db.exceptions import MissingDriverError
+
+            if not self.install_extra or not self.install_package:
+                raise e
+            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+
+        port = int(config.port or get_default_port("mariadb"))
+        mariadb_any: Any = mariadb
+        return mariadb_any.connect(
             host=config.server,
             port=port,
             database=config.database or None,
@@ -56,14 +77,12 @@ class MariaDBAdapter(MySQLBaseAdapter):
         cursor = conn.cursor()
         if database:
             cursor.execute(
-                "SELECT table_name FROM information_schema.views "
-                "WHERE table_schema = ? ORDER BY table_name",
+                "SELECT table_name FROM information_schema.views " "WHERE table_schema = ? ORDER BY table_name",
                 (database,),
             )
         else:
             cursor.execute(
-                "SELECT table_name FROM information_schema.views "
-                "WHERE table_schema = DATABASE() ORDER BY table_name"
+                "SELECT table_name FROM information_schema.views " "WHERE table_schema = DATABASE() ORDER BY table_name"
             )
         return [("", row[0]) for row in cursor.fetchall()]
 

@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
     from .session import ConnectionSession
@@ -38,7 +39,7 @@ class DatabaseExecutor:
         session: The ConnectionSession this executor is bound to.
     """
 
-    def __init__(self, session: "ConnectionSession"):
+    def __init__(self, session: ConnectionSession):
         """Initialize the executor.
 
         Args:
@@ -54,7 +55,7 @@ class DatabaseExecutor:
         self._shutdown = False
 
     @property
-    def session(self) -> "ConnectionSession":
+    def session(self) -> ConnectionSession:
         """Get the session this executor is bound to."""
         return self._session
 

@@ -27,25 +27,55 @@ classifiers = [
     "Topic :: Database",
 ]
 dependencies = [
-    "textual[syntax]>=0.50.0",
-    "pyodbc>=5.0.0",
+    "textual[syntax]>=6.8.0",
     "pyperclip>=1.8.2",
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",  # sshtunnel requires paramiko<4.0.0 (DSSKey removed in 4.0)
 ]
 
 [project.optional-dependencies]
+all = [
+    "psycopg2-binary>=2.9.0",
+    "pyodbc>=5.0.0",
+    "mysql-connector-python>=8.0.0",
+    "mariadb>=1.1.0",
+    "oracledb>=2.0.0",
+    "duckdb>=0.9.0",
+    "requests>=2.0.0",
+    "libsql-client>=0.1.0",
+]
+postgres = ["psycopg2-binary>=2.9.0"]
+cockroachdb = ["psycopg2-binary>=2.9.0"]
+mssql = ["pyodbc>=5.0.0"]
+mysql = ["mysql-connector-python>=8.0.0"]
+mariadb = ["mariadb>=1.1.0"]
+oracle = ["oracledb>=2.0.0"]
+duckdb = ["duckdb>=0.9.0"]
+d1 = ["requests>=2.0.0"]
+turso = ["libsql-client>=0.1.0"]
 test = [
     "pytest>=7.0",
     "pytest-timeout>=2.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0",
 ]
 dev = [
     "pytest>=7.0",
     "pytest-timeout>=2.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0",
     "build",
+    "ruff>=0.8.0",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
 ]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]  # pycodestyle, pyflakes, isort, pyupgrade
 
 [project.scripts]
 sqlit = "sqlit.cli:main"
@@ -73,3 +103,40 @@ markers = [
     "oracle: Oracle database tests",
     "asyncio: async tests",
 ]
+
+[tool.coverage.run]
+source = ["sqlit"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+warn_redundant_casts = true
+strict_optional = true
+exclude = ["tests/"]
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = [
+    "mysql.connector",
+    "mariadb",
+    "oracledb",
+    "duckdb",
+    "libsql_client",
+    "sshtunnel"
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyodbc"
+ignore_missing_imports = true

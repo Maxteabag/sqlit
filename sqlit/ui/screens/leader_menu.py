@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.widgets import Static
+
+if TYPE_CHECKING:
+    from ...app import SSMSTUI
 
 
 class LeaderMenuScreen(ModalScreen):
@@ -34,7 +39,7 @@ class LeaderMenuScreen(ModalScreen):
     }
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         from ...state_machine import get_leader_commands
 
@@ -50,6 +55,7 @@ class LeaderMenuScreen(ModalScreen):
 
         lines = []
         leader_commands = get_leader_commands()
+        app = cast("SSMSTUI", self.app)
 
         categories: dict[str, list] = {}
         for cmd in leader_commands:
@@ -60,7 +66,7 @@ class LeaderMenuScreen(ModalScreen):
         for category, commands in categories.items():
             lines.append(f"[bold $text-muted]{category}[/]")
             for cmd in commands:
-                if cmd.is_allowed(self.app):
+                if cmd.is_allowed(app):
                     lines.append(f"  [bold $warning]{cmd.key}[/] {cmd.label}")
             lines.append("")
 
@@ -69,22 +75,22 @@ class LeaderMenuScreen(ModalScreen):
         content = "\n".join(lines)
         yield Static(content, id="leader-menu")
 
-    def action_dismiss(self) -> None:
+    def action_dismiss(self) -> None:  # type: ignore[override]
         self.dismiss(None)
 
     def _run_and_dismiss(self, action_name: str) -> None:
         """Run an app action and dismiss the menu."""
         self.dismiss(action_name)
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         """Handle cmd_* actions dynamically from leader commands."""
         if name.startswith("action_cmd_"):
-            action = name[len("action_cmd_"):]
+            action = name[len("action_cmd_") :]
             if action in self._cmd_actions:
                 cmd = self._cmd_actions[action]
 
-                def handler():
-                    if cmd.is_allowed(self.app):
+                def handler() -> None:
+                    if cmd.is_allowed(cast("SSMSTUI", self.app)):
                         self._run_and_dismiss(cmd.action)
 
                 return handler

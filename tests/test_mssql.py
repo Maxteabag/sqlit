@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 
 class TestMSSQLIntegration:
     """Integration tests for SQL Server database operations via CLI.
@@ -16,21 +14,29 @@ class TestMSSQLIntegration:
 
     def test_create_mssql_connection(self, mssql_db, cli_runner):
         """Test creating a SQL Server connection via CLI."""
-        from .conftest import MSSQL_HOST, MSSQL_PORT, MSSQL_USER, MSSQL_PASSWORD
+        from .conftest import MSSQL_HOST, MSSQL_PASSWORD, MSSQL_PORT, MSSQL_USER
 
         connection_name = "test_create_mssql"
 
         try:
             # Create connection
             result = cli_runner(
-                "connection", "create",
-                "--name", connection_name,
-                "--db-type", "mssql",
-                "--server", f"{MSSQL_HOST},{MSSQL_PORT}" if MSSQL_PORT != 1433 else MSSQL_HOST,
-                "--database", mssql_db,
-                "--auth-type", "sql",
-                "--username", MSSQL_USER,
-                "--password", MSSQL_PASSWORD,
+                "connection",
+                "create",
+                "--name",
+                connection_name,
+                "--db-type",
+                "mssql",
+                "--server",
+                f"{MSSQL_HOST},{MSSQL_PORT}" if MSSQL_PORT != 1433 else MSSQL_HOST,
+                "--database",
+                mssql_db,
+                "--auth-type",
+                "sql",
+                "--username",
+                MSSQL_USER,
+                "--password",
+                MSSQL_PASSWORD,
             )
             assert result.returncode == 0
             assert "created successfully" in result.stdout
@@ -55,8 +61,10 @@ class TestMSSQLIntegration:
         """Test executing SELECT query on SQL Server."""
         result = cli_runner(
             "query",
-            "-c", mssql_connection,
-            "-q", "SELECT * FROM test_users ORDER BY id",
+            "-c",
+            mssql_connection,
+            "-q",
+            "SELECT * FROM test_users ORDER BY id",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -68,8 +76,10 @@ class TestMSSQLIntegration:
         """Test executing SELECT with WHERE clause on SQL Server."""
         result = cli_runner(
             "query",
-            "-c", mssql_connection,
-            "-q", "SELECT name, email FROM test_users WHERE id = 1",
+            "-c",
+            mssql_connection,
+            "-q",
+            "SELECT name, email FROM test_users WHERE id = 1",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -80,8 +90,10 @@ class TestMSSQLIntegration:
         """Test SQL Server specific TOP clause."""
         result = cli_runner(
             "query",
-            "-c", mssql_connection,
-            "-q", "SELECT TOP 2 * FROM test_users ORDER BY id",
+            "-c",
+            mssql_connection,
+            "-q",
+            "SELECT TOP 2 * FROM test_users ORDER BY id",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -92,9 +104,12 @@ class TestMSSQLIntegration:
         """Test query output in JSON format."""
         result = cli_runner(
             "query",
-            "-c", mssql_connection,
-            "-q", "SELECT TOP 2 id, name FROM test_users ORDER BY id",
-            "--format", "json",
+            "-c",
+            mssql_connection,
+            "-q",
+            "SELECT TOP 2 id, name FROM test_users ORDER BY id",
+            "--format",
+            "json",
         )
         assert result.returncode == 0
 
@@ -109,9 +124,12 @@ class TestMSSQLIntegration:
         """Test query output in CSV format."""
         result = cli_runner(
             "query",
-            "-c", mssql_connection,
-            "-q", "SELECT TOP 2 id, name FROM test_users ORDER BY id",
-            "--format", "csv",
+            "-c",
+            mssql_connection,
+            "-q",
+            "SELECT TOP 2 id, name FROM test_users ORDER BY id",
+            "--format",
+            "csv",
         )
         assert result.returncode == 0
         assert "id,name" in result.stdout
@@ -122,8 +140,10 @@ class TestMSSQLIntegration:
         """Test querying a view on SQL Server."""
         result = cli_runner(
             "query",
-            "-c", mssql_connection,
-            "-q", "SELECT * FROM test_user_emails ORDER BY id",
+            "-c",
+            mssql_connection,
+            "-q",
+            "SELECT * FROM test_user_emails ORDER BY id",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -133,8 +153,10 @@ class TestMSSQLIntegration:
         """Test aggregate query on SQL Server."""
         result = cli_runner(
             "query",
-            "-c", mssql_connection,
-            "-q", "SELECT COUNT(*) as user_count FROM test_users",
+            "-c",
+            mssql_connection,
+            "-q",
+            "SELECT COUNT(*) as user_count FROM test_users",
         )
         assert result.returncode == 0
         assert "3" in result.stdout
@@ -143,35 +165,47 @@ class TestMSSQLIntegration:
         """Test INSERT statement on SQL Server."""
         result = cli_runner(
             "query",
-            "-c", mssql_connection,
-            "-q", "INSERT INTO test_users (id, name, email) VALUES (4, 'David', 'david@example.com')",
+            "-c",
+            mssql_connection,
+            "-q",
+            "INSERT INTO test_users (id, name, email) VALUES (4, 'David', 'david@example.com')",
         )
         assert result.returncode == 0
 
         # Verify the insert
         result = cli_runner(
             "query",
-            "-c", mssql_connection,
-            "-q", "SELECT * FROM test_users WHERE id = 4",
+            "-c",
+            mssql_connection,
+            "-q",
+            "SELECT * FROM test_users WHERE id = 4",
         )
         assert "David" in result.stdout
 
     def test_delete_mssql_connection(self, mssql_db, cli_runner):
         """Test deleting a SQL Server connection."""
-        from .conftest import MSSQL_HOST, MSSQL_PORT, MSSQL_USER, MSSQL_PASSWORD
+        from .conftest import MSSQL_HOST, MSSQL_PASSWORD, MSSQL_PORT, MSSQL_USER
 
         connection_name = "test_delete_mssql"
 
         # Create connection first
         cli_runner(
-            "connection", "create",
-            "--name", connection_name,
-            "--db-type", "mssql",
-            "--server", f"{MSSQL_HOST},{MSSQL_PORT}" if MSSQL_PORT != 1433 else MSSQL_HOST,
-            "--database", mssql_db,
-            "--auth-type", "sql",
-            "--username", MSSQL_USER,
-            "--password", MSSQL_PASSWORD,
+            "connection",
+            "create",
+            "--name",
+            connection_name,
+            "--db-type",
+            "mssql",
+            "--server",
+            f"{MSSQL_HOST},{MSSQL_PORT}" if MSSQL_PORT != 1433 else MSSQL_HOST,
+            "--database",
+            mssql_db,
+            "--auth-type",
+            "sql",
+            "--username",
+            MSSQL_USER,
+            "--password",
+            MSSQL_PASSWORD,
         )
 
         # Delete it

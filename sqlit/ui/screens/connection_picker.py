@@ -120,9 +120,7 @@ class ConnectionPickerScreen(ModalScreen):
                 display = highlight_matches(conn.name, indices)
                 db_type = conn.db_type.upper() if conn.db_type else "DB"
                 info = conn.get_display_info()
-                options.append(
-                    Option(f"{display} [{db_type}] [dim]({info})[/]", id=conn.name)
-                )
+                options.append(Option(f"{display} [{db_type}] [dim]({info})[/]", id=conn.name))
         return options
 
     def on_mount(self) -> None:
@@ -192,7 +190,7 @@ class ConnectionPickerScreen(ModalScreen):
 
         self.dismiss(None)
 
-    def on_option_list_option_selected(self, event) -> None:
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id == "picker-list":
             if event.option:
                 self.dismiss(event.option.id)

@@ -116,7 +116,7 @@ class DriverSetupScreen(ModalScreen):
             option = option_list.get_option_at_index(option_list.highlighted)
             self.dismiss(("select", option.id))
 
-    def on_option_list_option_selected(self, event) -> None:
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         self.dismiss(("select", event.option.id))
 
     def action_install_driver(self) -> None:
@@ -126,6 +126,7 @@ class DriverSetupScreen(ModalScreen):
             return
 
         from ...drivers import get_os_info
+
         os_type, _ = get_os_info()
 
         # On Windows, just show instructions

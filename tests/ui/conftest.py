@@ -89,10 +89,12 @@ def mock_failing_adapter():
 @pytest.fixture
 def patch_stores(mock_connection_store, mock_settings_store):
     """Patch all stores with mocks for isolated testing."""
-    with patch("sqlit.config.load_connections", mock_connection_store.load_all), \
-         patch("sqlit.config.save_connections", mock_connection_store.save_all), \
-         patch("sqlit.config.load_settings", mock_settings_store.load_all), \
-         patch("sqlit.config.save_settings", mock_settings_store.save_all):
+    with (
+        patch("sqlit.config.load_connections", mock_connection_store.load_all),
+        patch("sqlit.config.save_connections", mock_connection_store.save_all),
+        patch("sqlit.config.load_settings", mock_settings_store.load_all),
+        patch("sqlit.config.save_settings", mock_settings_store.save_all),
+    ):
         yield {
             "connections": mock_connection_store,
             "settings": mock_settings_store,
@@ -102,10 +104,12 @@ def patch_stores(mock_connection_store, mock_settings_store):
 @pytest.fixture
 def patch_stores_with_data(mock_connection_store_with_data, mock_settings_store):
     """Patch stores with sample data."""
-    with patch("sqlit.config.load_connections", mock_connection_store_with_data.load_all), \
-         patch("sqlit.config.save_connections", mock_connection_store_with_data.save_all), \
-         patch("sqlit.config.load_settings", mock_settings_store.load_all), \
-         patch("sqlit.config.save_settings", mock_settings_store.save_all):
+    with (
+        patch("sqlit.config.load_connections", mock_connection_store_with_data.load_all),
+        patch("sqlit.config.save_connections", mock_connection_store_with_data.save_all),
+        patch("sqlit.config.load_settings", mock_settings_store.load_all),
+        patch("sqlit.config.save_settings", mock_settings_store.save_all),
+    ):
         yield {
             "connections": mock_connection_store_with_data,
             "settings": mock_settings_store,

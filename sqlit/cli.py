@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from .config import AuthType, DatabaseType
@@ -13,7 +14,7 @@ def main() -> int:
     """Entry point for the CLI."""
     parser = argparse.ArgumentParser(
         prog="sqlit",
-        description="A terminal UI for SQL Server, PostgreSQL, MySQL, and SQLite databases",
+        description="A terminal UI for SQL databases",
     )
 
     # Global options for TUI mode
@@ -22,14 +23,29 @@ def main() -> int:
         metavar="PROFILE",
         help="Run with mock data (profiles: sqlite-demo, empty, multi-db)",
     )
+    parser.add_argument(
+        "--mock-missing-drivers",
+        metavar="DB_TYPES",
+        help="Force missing Python drivers for the given db types (comma-separated), e.g. postgresql,mysql",
+    )
+    parser.add_argument(
+        "--mock-install",
+        choices=["real", "success", "fail"],
+        default="real",
+        help="Mock the driver install result in the UI (default: real).",
+    )
+    parser.add_argument(
+        "--mock-pipx",
+        choices=["auto", "pipx", "pip"],
+        default="auto",
+        help="Mock whether sqlit is running under pipx for install hints (default: auto).",
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Connection commands
     conn_parser = subparsers.add_parser("connection", help="Manage connections")
-    conn_subparsers = conn_parser.add_subparsers(
-        dest="conn_command", help="Connection commands"
-    )
+    conn_subparsers = conn_parser.add_subparsers(dest="conn_command", help="Connection commands")
 
     # connection list
     conn_subparsers.add_parser("list", help="List all saved connections")
@@ -46,10 +62,9 @@ def main() -> int:
     )
     # Server-based database options (SQL Server, PostgreSQL, MySQL)
     create_parser.add_argument("--server", "-s", help="Server address")
-    create_parser.add_argument("--port", "-P", help="Port (default: 1433/5432/3306)")
-    create_parser.add_argument(
-        "--database", "-d", default="", help="Database name (empty = browse all)"
-    )
+    create_parser.add_argument("--host", help="Alias for --server (e.g. Cloudflare D1 Account ID)")
+    create_parser.add_argument("--port", "-P", help="Port (default: provider default)")
+    create_parser.add_argument("--database", "-d", default="", help="Database name (empty = browse all)")
     create_parser.add_argument("--username", "-u", help="Username")
     create_parser.add_argument("--password", "-p", help="Password")
     # SQL Server specific options
@@ -77,6 +92,7 @@ def main() -> int:
     edit_parser.add_argument("--name", "-n", help="New connection name")
     # Server-based database options (SQL Server, PostgreSQL, MySQL)
     edit_parser.add_argument("--server", "-s", help="Server address")
+    edit_parser.add_argument("--host", help="Alias for --server (e.g. Cloudflare D1 Account ID)")
     edit_parser.add_argument("--port", "-P", help="Port")
     edit_parser.add_argument("--database", "-d", help="Database name")
     edit_parser.add_argument("--username", "-u", help="Username")
@@ -97,12 +113,8 @@ def main() -> int:
 
     # query command
     query_parser = subparsers.add_parser("query", help="Execute a SQL query")
-    query_parser.add_argument(
-        "--connection", "-c", required=True, help="Connection name to use"
-    )
-    query_parser.add_argument(
-        "--database", "-d", help="Database to query (overrides connection default)"
-    )
+    query_parser.add_argument("--connection", "-c", required=True, help="Connection name to use")
+    query_parser.add_argument("--database", "-d", help="Database to query (overrides connection default)")
     query_parser.add_argument("--query", "-q", help="SQL query to execute")
     query_parser.add_argument("--file", "-f", help="SQL file to execute")
     query_parser.add_argument(
@@ -121,6 +133,16 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+    if args.mock_missing_drivers:
+        os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = str(args.mock_missing_drivers)
+    if args.mock_install and args.mock_install != "real":
+        os.environ["SQLIT_MOCK_INSTALL_RESULT"] = str(args.mock_install)
+    else:
+        os.environ.pop("SQLIT_MOCK_INSTALL_RESULT", None)
+    if args.mock_pipx and args.mock_pipx != "auto":
+        os.environ["SQLIT_MOCK_PIPX"] = str(args.mock_pipx)
+    else:
+        os.environ.pop("SQLIT_MOCK_PIPX", None)
 
     # No command = launch TUI
     if args.command is None:

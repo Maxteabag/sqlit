@@ -27,9 +27,7 @@ class TestLeaderKeybindings:
             await pilot.press(leader_key, connection_key)
             await pilot.pause()
 
-            has_picker = any(
-                isinstance(screen, ConnectionPickerScreen) for screen in app.screen_stack
-            )
+            has_picker = any(isinstance(screen, ConnectionPickerScreen) for screen in app.screen_stack)
             assert has_picker
 
     @pytest.mark.asyncio
@@ -47,9 +45,7 @@ class TestLeaderKeybindings:
             await pilot.press(leader_key, help_key)
             await pilot.pause()
 
-            has_help = any(
-                isinstance(screen, HelpScreen) for screen in app.screen_stack
-            )
+            has_help = any(isinstance(screen, HelpScreen) for screen in app.screen_stack)
             assert has_help
 
     @pytest.mark.asyncio
@@ -65,7 +61,5 @@ class TestLeaderKeybindings:
             await pilot.press(connection_key)
             await pilot.pause()
 
-            has_picker = any(
-                isinstance(screen, ConnectionPickerScreen) for screen in app.screen_stack
-            )
+            has_picker = any(isinstance(screen, ConnectionPickerScreen) for screen in app.screen_stack)
             assert not has_picker

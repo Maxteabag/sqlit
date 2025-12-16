@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from .test_database_base import BaseDatabaseTestsWithLimit, DatabaseTestConfig
 
 
@@ -22,8 +20,10 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
             connection_fixture="duckdb_connection",
             db_fixture="duckdb_db",
             create_connection_args=lambda db: [
-                "--db-type", "duckdb",
-                "--file-path", str(db),
+                "--db-type",
+                "duckdb",
+                "--file-path",
+                str(db),
             ],
         )
 
@@ -34,10 +34,14 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
         try:
             # Create connection
             result = cli_runner(
-                "connection", "create",
-                "--name", connection_name,
-                "--db-type", "duckdb",
-                "--file-path", str(duckdb_db),
+                "connection",
+                "create",
+                "--name",
+                connection_name,
+                "--db-type",
+                "duckdb",
+                "--file-path",
+                str(duckdb_db),
             )
             assert result.returncode == 0
             assert "created successfully" in result.stdout
@@ -55,8 +59,10 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
         """Test JOIN query on DuckDB."""
         result = cli_runner(
             "query",
-            "-c", duckdb_connection,
-            "-q", """
+            "-c",
+            duckdb_connection,
+            "-q",
+            """
                 SELECT u.name, p.name as product, p.price
                 FROM test_users u
                 CROSS JOIN test_products p
@@ -71,16 +77,20 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
         """Test UPDATE statement on DuckDB."""
         result = cli_runner(
             "query",
-            "-c", duckdb_connection,
-            "-q", "UPDATE test_users SET name = 'Alicia' WHERE id = 1",
+            "-c",
+            duckdb_connection,
+            "-q",
+            "UPDATE test_users SET name = 'Alicia' WHERE id = 1",
         )
         assert result.returncode == 0
 
         # Verify the update
         result = cli_runner(
             "query",
-            "-c", duckdb_connection,
-            "-q", "SELECT name FROM test_users WHERE id = 1",
+            "-c",
+            duckdb_connection,
+            "-q",
+            "SELECT name FROM test_users WHERE id = 1",
         )
         assert "Alicia" in result.stdout
 
@@ -90,10 +100,14 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
 
         # Create connection first
         cli_runner(
-            "connection", "create",
-            "--name", connection_name,
-            "--db-type", "duckdb",
-            "--file-path", str(duckdb_db),
+            "connection",
+            "create",
+            "--name",
+            connection_name,
+            "--db-type",
+            "duckdb",
+            "--file-path",
+            str(duckdb_db),
         )
 
         # Delete it
@@ -109,8 +123,10 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
         """Test handling of invalid SQL query."""
         result = cli_runner(
             "query",
-            "-c", duckdb_connection,
-            "-q", "SELECT * FROM nonexistent_table",
+            "-c",
+            duckdb_connection,
+            "-q",
+            "SELECT * FROM nonexistent_table",
             check=False,
         )
         # Should fail gracefully

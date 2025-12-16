@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from ..config import ConnectionConfig
     from ..db import DatabaseAdapter
-    from .query import QueryResult, NonQueryResult
+    from .query import NonQueryResult, QueryResult
 
 
 @dataclass
@@ -44,8 +44,8 @@ class CancellableQuery:
     """
 
     sql: str
-    config: "ConnectionConfig"
-    adapter: "DatabaseAdapter"
+    config: ConnectionConfig
+    adapter: DatabaseAdapter
 
     def __post_init__(self) -> None:
         """Initialize internal state."""
@@ -58,7 +58,7 @@ class CancellableQuery:
     def execute(
         self,
         max_rows: int | None = None,
-    ) -> "QueryResult | NonQueryResult":
+    ) -> QueryResult | NonQueryResult:
         """Execute the query on a dedicated connection.
 
         Creates a new connection, executes the query, and returns the result.
@@ -102,9 +102,7 @@ class CancellableQuery:
 
             # Execute query using adapter methods
             if is_select_query(self.sql):
-                columns, rows, truncated = self.adapter.execute_query(
-                    self._connection, self.sql, max_rows
-                )
+                columns, rows, truncated = self.adapter.execute_query(self._connection, self.sql, max_rows)
                 return QueryResult(
                     columns=columns,
                     rows=rows,
@@ -113,9 +111,7 @@ class CancellableQuery:
                 )
             else:
                 # Non-SELECT query
-                rows_affected = self.adapter.execute_non_query(
-                    self._connection, self.sql
-                )
+                rows_affected = self.adapter.execute_non_query(self._connection, self.sql)
                 return NonQueryResult(rows_affected=rows_affected)
 
         finally:

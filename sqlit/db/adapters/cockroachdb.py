@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..schema import get_default_port
 from .base import PostgresBaseAdapter
 
 if TYPE_CHECKING:
@@ -18,14 +19,33 @@ class CockroachDBAdapter(PostgresBaseAdapter):
         return "CockroachDB"
 
     @property
+    def install_extra(self) -> str:
+        return "cockroachdb"
+
+    @property
+    def install_package(self) -> str:
+        return "psycopg2-binary"
+
+    @property
+    def driver_import_names(self) -> tuple[str, ...]:
+        return ("psycopg2",)
+
+    @property
     def supports_stored_procedures(self) -> bool:
         return False  # CockroachDB has limited stored procedure support
 
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         """Connect to CockroachDB database."""
-        import psycopg2
+        try:
+            import psycopg2
+        except ImportError as e:
+            from ...db.exceptions import MissingDriverError
 
-        port = int(config.port) if config.port else 26257
+            if not self.install_extra or not self.install_package:
+                raise e
+            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+
+        port = int(config.port or get_default_port("cockroachdb"))
         conn = psycopg2.connect(
             host=config.server,
             port=port,
@@ -42,9 +62,7 @@ class CockroachDBAdapter(PostgresBaseAdapter):
     def get_databases(self, conn: Any) -> list[str]:
         """Get list of databases from CockroachDB."""
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT database_name FROM [SHOW DATABASES] ORDER BY database_name"
-        )
+        cursor.execute("SELECT database_name FROM [SHOW DATABASES] ORDER BY database_name")
         return [row[0] for row in cursor.fetchall()]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:

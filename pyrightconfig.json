@@ -1,0 +1,10 @@
+{
+  "include": ["sqlit"],
+  "exclude": ["tests", "**/__pycache__", ".venv", "venv"],
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic",
+  "useLibraryCodeForTypes": true,
+  "reportMissingImports": false,
+  "reportMissingTypeStubs": false,
+  "stubPath": ""
+}

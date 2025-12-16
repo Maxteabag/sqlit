@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from ..config import ConnectionConfig
 
 
-def create_ssh_tunnel(config: "ConnectionConfig") -> tuple[Any, str, int]:
+def create_ssh_tunnel(config: ConnectionConfig) -> tuple[Any, str, int]:
     """Create an SSH tunnel for the connection if SSH is enabled.
 
     Returns:

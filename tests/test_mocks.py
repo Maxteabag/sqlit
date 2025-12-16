@@ -42,12 +42,12 @@ class TestMockDatabaseAdapter:
         assert adapter.get_columns(MockConnection(), "nonexistent") == []
 
     def test_execute_query_pattern_matching(self):
-        adapter = MockDatabaseAdapter(query_results={
-            "users": (["id", "name"], [(1, "Alice"), (2, "Bob")]),
-        })
-        cols, rows, truncated = adapter.execute_query(
-            MockConnection(), "SELECT * FROM users WHERE id = 1"
+        adapter = MockDatabaseAdapter(
+            query_results={
+                "users": (["id", "name"], [(1, "Alice"), (2, "Bob")]),
+            }
         )
+        cols, rows, truncated = adapter.execute_query(MockConnection(), "SELECT * FROM users WHERE id = 1")
         assert cols == ["id", "name"]
         assert len(rows) == 2
         assert not truncated
@@ -67,12 +67,12 @@ class TestMockDatabaseAdapter:
         assert rows == [("default",)]
 
     def test_execute_query_respects_max_rows(self):
-        adapter = MockDatabaseAdapter(query_results={
-            "users": (["id"], [(1,), (2,), (3,), (4,), (5,)]),
-        })
-        cols, rows, truncated = adapter.execute_query(
-            MockConnection(), "SELECT * FROM users", max_rows=2
+        adapter = MockDatabaseAdapter(
+            query_results={
+                "users": (["id"], [(1,), (2,), (3,), (4,), (5,)]),
+            }
         )
+        cols, rows, truncated = adapter.execute_query(MockConnection(), "SELECT * FROM users", max_rows=2)
         assert len(rows) == 2
         assert truncated is True
 
@@ -136,19 +136,14 @@ class TestAdapterInterfaceCompliance:
 
     def test_method_signatures_match_base(self):
         import inspect
+
         from sqlit.db.adapters.base import DatabaseAdapter
 
         for method_name in ["build_select_query", "execute_query"]:
-            base_params = list(inspect.signature(
-                getattr(DatabaseAdapter, method_name)
-            ).parameters.keys())
-            mock_params = list(inspect.signature(
-                getattr(MockDatabaseAdapter, method_name)
-            ).parameters.keys())
+            base_params = list(inspect.signature(getattr(DatabaseAdapter, method_name)).parameters.keys())
+            mock_params = list(inspect.signature(getattr(MockDatabaseAdapter, method_name)).parameters.keys())
 
-            assert base_params == mock_params, (
-                f"{method_name}: {mock_params} != {base_params}"
-            )
+            assert base_params == mock_params, f"{method_name}: {mock_params} != {base_params}"
 
     def test_all_abstract_methods_callable(self):
         adapter = MockDatabaseAdapter()

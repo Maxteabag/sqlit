@@ -6,8 +6,8 @@ New code should import directly from sqlit.db or sqlit.db.adapters.
 
 # Re-export everything from the new location for backward compatibility
 from .db import (
-    ColumnInfo,
     CockroachDBAdapter,
+    ColumnInfo,
     DatabaseAdapter,
     DuckDBAdapter,
     MariaDBAdapter,

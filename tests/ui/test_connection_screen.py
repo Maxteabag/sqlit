@@ -11,19 +11,11 @@ from .conftest import ConnectionScreenTestApp
 
 
 def _get_providers_with_advanced_tab() -> set[str]:
-    return {
-        db_type
-        for db_type, schema in get_all_schemas().items()
-        if any(f.advanced for f in schema.fields)
-    }
+    return {db_type for db_type, schema in get_all_schemas().items() if any(f.advanced for f in schema.fields)}
 
 
 def _get_providers_without_advanced_tab() -> set[str]:
-    return {
-        db_type
-        for db_type, schema in get_all_schemas().items()
-        if not any(f.advanced for f in schema.fields)
-    }
+    return {db_type for db_type, schema in get_all_schemas().items() if not any(f.advanced for f in schema.fields)}
 
 
 class TestConnectionScreen:
@@ -172,7 +164,7 @@ class TestTabNavigation:
         config = ConnectionConfig(name="", db_type="sqlite", file_path="")
         app = ConnectionScreenTestApp(config, editing=False)
 
-        async with app.run_test(size=(100, 35)) as pilot:
+        async with app.run_test(size=(100, 35)) as _pilot:
             screen = app.screen
 
             # Get the list of focusable fields
@@ -220,7 +212,6 @@ class TestTabNavigation:
             await pilot.press("tab")
             assert screen.focused.id == "conn-name", "Tab should cycle back to conn-name, not go to tab bar"
 
-
     @pytest.mark.asyncio
     async def test_shift_tab_from_first_field_goes_to_tab_bar(self):
         """Pressing Shift+Tab from the first field should focus the tab bar.
@@ -254,8 +245,7 @@ class TestTabNavigation:
 
             # Focus should be on the Tabs widget (tab bar)
             assert isinstance(screen.focused, Tabs), (
-                f"Shift+Tab from first field should focus tab bar, "
-                f"but focused is {type(screen.focused).__name__}"
+                f"Shift+Tab from first field should focus tab bar, " f"but focused is {type(screen.focused).__name__}"
             )
 
 
@@ -266,7 +256,7 @@ class TestAdvancedTab:
         config = ConnectionConfig(name="test", db_type=db_type)
         app = ConnectionScreenTestApp(config, editing=True)
 
-        async with app.run_test(size=(100, 35)) as pilot:
+        async with app.run_test(size=(100, 35)) as _pilot:
             screen = app.screen
             tabs = screen.query_one("#connection-tabs")
             advanced_pane = screen.query_one("#tab-advanced")
@@ -280,7 +270,7 @@ class TestAdvancedTab:
         config = ConnectionConfig(name="test", db_type=db_type)
         app = ConnectionScreenTestApp(config, editing=True)
 
-        async with app.run_test(size=(100, 35)) as pilot:
+        async with app.run_test(size=(100, 35)) as _pilot:
             screen = app.screen
             tabs = screen.query_one("#connection-tabs")
             advanced_pane = screen.query_one("#tab-advanced")

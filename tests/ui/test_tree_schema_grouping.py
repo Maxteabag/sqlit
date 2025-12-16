@@ -46,12 +46,12 @@ class MockTreeNode:
         self.children: list[MockTreeNode] = []
         self.allow_expand = False
 
-    def add(self, label: str) -> "MockTreeNode":
+    def add(self, label: str) -> MockTreeNode:
         child = MockTreeNode(label)
         self.children.append(child)
         return child
 
-    def add_leaf(self, label: str) -> "MockTreeNode":
+    def add_leaf(self, label: str) -> MockTreeNode:
         return self.add(label)
 
 
@@ -370,8 +370,10 @@ class TestRichMarkupRendering:
         name = "[bold]test"
         escaped = escape_markup(name)
         # Rich should be able to render this without error
-        from rich.console import Console
         from io import StringIO
+
+        from rich.console import Console
+
         console = Console(file=StringIO(), force_terminal=True)
         # This should not raise an error
         console.print(f"[dim]{escaped}[/dim]")
@@ -394,8 +396,9 @@ class TestRichMarkupRendering:
             "name/with/slashes",
         ]
 
-        from rich.console import Console
         from io import StringIO
+
+        from rich.console import Console
 
         for name in problematic_names:
             escaped = escape_markup(name)

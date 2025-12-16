@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
@@ -50,7 +51,7 @@ class ContextFooter(Horizontal):
     }
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._left_bindings: list[KeyBinding] = []
         self._right_bindings: list[KeyBinding] = []
@@ -67,6 +68,7 @@ class ContextFooter(Horizontal):
 
     def _rebuild(self) -> None:
         """Rebuild the footer content with left and right sections."""
+
         def format_binding(binding: KeyBinding) -> str:
             if binding.disabled:
                 return f"[$text-muted strike]{binding.label}: {binding.key}[/]"
@@ -112,8 +114,8 @@ class Dialog(Container):
         self,
         title: str | None = None,
         shortcuts: list[tuple[str, str]] | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         """Initialize the dialog.
 
         Args:
@@ -125,9 +127,7 @@ class Dialog(Container):
         if title is not None:
             self.border_title = title
         if shortcuts:
-            subtitle = "  ".join(
-                f"{action}: [bold]{key}[/]" for action, key in shortcuts
-            )
+            subtitle = "  ".join(f"{action}: [bold]{key}[/]" for action, key in shortcuts)
             self.border_subtitle = subtitle
 
 
@@ -162,7 +162,7 @@ class AutocompleteDropdown(Static):
     }
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__("", *args, **kwargs)
         self.items: list[str] = []
         self.filtered_items: list[str] = []
@@ -175,9 +175,7 @@ class AutocompleteDropdown(Static):
         self.filter_text = filter_text.lower()
 
         if self.filter_text:
-            self.filtered_items = [
-                item for item in items if item.lower().startswith(self.filter_text)
-            ]
+            self.filtered_items = [item for item in items if item.lower().startswith(self.filter_text)]
         else:
             self.filtered_items = items[:20]
 

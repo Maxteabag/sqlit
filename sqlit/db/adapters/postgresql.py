@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..schema import get_default_port
 from .base import PostgresBaseAdapter
 
 if TYPE_CHECKING:
@@ -17,11 +18,30 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
     def name(self) -> str:
         return "PostgreSQL"
 
-    def connect(self, config: "ConnectionConfig") -> Any:
-        """Connect to PostgreSQL database."""
-        import psycopg2
+    @property
+    def install_extra(self) -> str:
+        return "postgres"
 
-        port = int(config.port) if config.port else 5432
+    @property
+    def install_package(self) -> str:
+        return "psycopg2-binary"
+
+    @property
+    def driver_import_names(self) -> tuple[str, ...]:
+        return ("psycopg2",)
+
+    def connect(self, config: ConnectionConfig) -> Any:
+        """Connect to PostgreSQL database."""
+        try:
+            import psycopg2
+        except ImportError as e:
+            from ...db.exceptions import MissingDriverError
+
+            if not self.install_extra or not self.install_package:
+                raise e
+            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+
+        port = int(config.port or get_default_port("postgresql"))
         conn = psycopg2.connect(
             host=config.server,
             port=port,
@@ -37,10 +57,7 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
     def get_databases(self, conn: Any) -> list[str]:
         """Get list of databases from PostgreSQL."""
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT datname FROM pg_database "
-            "WHERE datistemplate = false ORDER BY datname"
-        )
+        cursor.execute("SELECT datname FROM pg_database " "WHERE datistemplate = false ORDER BY datname")
         return [row[0] for row in cursor.fetchall()]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
+from textual.events import ScreenResume, ScreenSuspend
 from textual.screen import ModalScreen
 from textual.widgets import (
     Input,
@@ -18,14 +21,24 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from ...config import (
-    AUTH_TYPE_LABELS,
-    AuthType,
-    ConnectionConfig,
     DATABASE_TYPE_LABELS,
+    ConnectionConfig,
     DatabaseType,
 )
-from ...db import create_ssh_tunnel, get_adapter, get_connection_schema, has_advanced_auth, is_file_based, supports_ssh
-from ...fields import FieldDefinition, FieldGroup, FieldType, schema_to_field_definitions
+from ...db import (
+    create_ssh_tunnel,
+    get_adapter,
+    get_connection_schema,
+    has_advanced_auth,
+    is_file_based,
+    supports_ssh,
+)
+from ...fields import (
+    FieldDefinition,
+    FieldGroup,
+    FieldType,
+    schema_to_field_definitions,
+)
 from ...validation import ValidationState, validate_connection_form
 from ...widgets import Dialog
 
@@ -222,21 +235,45 @@ class ConnectionScreen(ModalScreen):
         super().__init__()
         self.config = config
         self.editing = editing
-        self._field_widgets: dict[str, Input | OptionList] = {}
+        self._field_widgets: dict[str, Input | OptionList | Select[str]] = {}
         self._field_definitions: dict[str, FieldDefinition] = {}
         self._current_db_type: DatabaseType = self._get_initial_db_type()
         self._last_test_error: str = ""
         self._last_test_ok: bool | None = None
         self._focused_container_id: str | None = None
         self.validation_state: ValidationState = ValidationState()
+        self._saved_dialog_subtitle: str | None = None
+
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        # Prevent underlying screens from receiving actions when another modal is on top.
+        if self.app.screen is not self:
+            return False
+        return super().check_action(action, parameters)
+
+    def on_screen_suspend(self, event: ScreenSuspend) -> None:
+        # Hide this dialog's shortcut subtitle when another modal overlays it.
+        try:
+            dialog = self.query_one("#connection-dialog", Dialog)
+            self._saved_dialog_subtitle = dialog.border_subtitle
+            dialog.border_subtitle = ""
+        except Exception:
+            pass
+
+    def on_screen_resume(self, event: ScreenResume) -> None:
+        try:
+            dialog = self.query_one("#connection-dialog", Dialog)
+            if self._saved_dialog_subtitle is not None:
+                dialog.border_subtitle = self._saved_dialog_subtitle
+        except Exception:
+            pass
 
     def _get_initial_db_type(self) -> DatabaseType:
         """Get the initial database type from config."""
         if self.config:
             return self.config.get_db_type()
-        return DatabaseType.MSSQL
+        return DatabaseType.MSSQL  # type: ignore[attr-defined, no-any-return]
 
-    def _get_adapter_for_type(self, db_type: DatabaseType):
+    def _get_adapter_for_type(self, db_type: DatabaseType) -> Any:
         """Get the adapter instance for a database type."""
         return get_adapter(db_type.value)
 
@@ -357,9 +394,7 @@ class ConnectionScreen(ModalScreen):
                             with Container(classes=width_class):
                                 yield from self._create_field_widget(field_def, group.name)
 
-    def _split_groups_by_advanced(
-        self, groups: list[FieldGroup]
-    ) -> tuple[list[FieldGroup], list[FieldGroup]]:
+    def _split_groups_by_advanced(self, groups: list[FieldGroup]) -> tuple[list[FieldGroup], list[FieldGroup]]:
         general: list[FieldGroup] = []
         advanced: list[FieldGroup] = []
         for group in groups:
@@ -436,12 +471,9 @@ class ConnectionScreen(ModalScreen):
         shortcuts = [("Test", "^T"), ("Save", "^S"), ("Cancel", "<esc>")]
 
         with Dialog(id="connection-dialog", title=title, shortcuts=shortcuts):
-
             with TabbedContent(id="connection-tabs"):
                 with TabPane("General", id="tab-general"):
-                    name_container = Container(
-                        id="container-name", classes="field-container"
-                    )
+                    name_container = Container(id="container-name", classes="field-container")
                     name_container.border_title = "Name"
                     with name_container:
                         yield Input(
@@ -452,9 +484,7 @@ class ConnectionScreen(ModalScreen):
                         yield Static("", id="error-name", classes="error-text hidden")
 
                     db_types = list(DatabaseType)
-                    dbtype_container = Container(
-                        id="container-dbtype", classes="field-container"
-                    )
+                    dbtype_container = Container(id="container-dbtype", classes="field-container")
                     dbtype_container.border_title = "Database Type"
                     with dbtype_container:
                         yield Select(
@@ -467,18 +497,14 @@ class ConnectionScreen(ModalScreen):
 
                     with Container(id="dynamic-fields-general"):
                         field_groups = self._get_field_groups_for_type(db_type, tab="general")
-                        general_groups, _advanced_groups = self._split_groups_by_advanced(
-                            field_groups
-                        )
+                        general_groups, _advanced_groups = self._split_groups_by_advanced(field_groups)
                         for group in general_groups:
                             yield from self._create_field_group(group)
 
                 with TabPane("Advanced", id="tab-advanced"):
                     with Container(id="dynamic-fields-advanced"):
                         field_groups = self._get_field_groups_for_type(db_type, tab="general")
-                        _general_groups, advanced_groups = self._split_groups_by_advanced(
-                            field_groups
-                        )
+                        _general_groups, advanced_groups = self._split_groups_by_advanced(field_groups)
                         for group in advanced_groups:
                             yield from self._create_field_group(group)
 
@@ -503,7 +529,7 @@ class ConnectionScreen(ModalScreen):
         self._set_advanced_tab_enabled(bool(advanced))
         self._update_ssh_tab_enabled(self._current_db_type)
 
-    def on_descendant_focus(self, event) -> None:
+    def on_descendant_focus(self, event: Any) -> None:
         focused = self.focused
         if focused is None:
             return
@@ -523,9 +549,7 @@ class ConnectionScreen(ModalScreen):
 
         if self._focused_container_id and self._focused_container_id != container_id:
             try:
-                self.query_one(
-                    f"#{self._focused_container_id}", Container
-                ).remove_class("focused")
+                self.query_one(f"#{self._focused_container_id}", Container).remove_class("focused")
             except Exception:
                 pass
 
@@ -570,9 +594,7 @@ class ConnectionScreen(ModalScreen):
         ssh_container.remove_children()
 
         field_groups = self._get_field_groups_for_type(db_type, tab="general")
-        general_groups, advanced_groups = self._split_groups_by_advanced(
-            field_groups
-        )
+        general_groups, advanced_groups = self._split_groups_by_advanced(field_groups)
         self._set_advanced_tab_enabled(bool(advanced_groups))
         for group in general_groups:
             for widget in self._create_field_group_widgets(group):
@@ -644,18 +666,14 @@ class ConnectionScreen(ModalScreen):
             self._field_widgets[field_def.name] = select
             self._field_definitions[field_def.name] = field_def
             container.compose_add_child(select)
-            container.compose_add_child(
-                Static("", id=f"error-{field_def.name}", classes="error-text hidden")
-            )
+            container.compose_add_child(Static("", id=f"error-{field_def.name}", classes="error-text hidden"))
         elif field_def.field_type == FieldType.SELECT:
             options = [Option(opt.label, id=opt.value) for opt in field_def.options]
             option_list = OptionList(*options, id=field_id, classes="select-field")
             self._field_widgets[field_def.name] = option_list
             self._field_definitions[field_def.name] = field_def
             container.compose_add_child(option_list)
-            container.compose_add_child(
-                Static("", id=f"error-{field_def.name}", classes="error-text hidden")
-            )
+            container.compose_add_child(Static("", id=f"error-{field_def.name}", classes="error-text hidden"))
         else:
             value = self._get_field_value(field_def.name) or field_def.default
             input_widget = Input(
@@ -667,9 +685,7 @@ class ConnectionScreen(ModalScreen):
             self._field_widgets[field_def.name] = input_widget
             self._field_definitions[field_def.name] = field_def
             container.compose_add_child(input_widget)
-            container.compose_add_child(
-                Static("", id=f"error-{field_def.name}", classes="error-text hidden")
-            )
+            container.compose_add_child(Static("", id=f"error-{field_def.name}", classes="error-text hidden"))
 
         widgets.append(container)
         return widgets
@@ -691,7 +707,7 @@ class ConnectionScreen(ModalScreen):
         if event.select.id and str(event.select.id).startswith("field-"):
             self._update_field_visibility()
 
-    def on_option_list_option_highlighted(self, event) -> None:
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         # A select field changed - update visibility of dependent fields
         if event.option_list.id and event.option_list.id.startswith("field-"):
             self._update_field_visibility()
@@ -731,8 +747,13 @@ class ConnectionScreen(ModalScreen):
 
         if active_tab == "tab-ssh":
             ssh_fields = [
-                "ssh_enabled", "ssh_host", "ssh_port", "ssh_username",
-                "ssh_auth_type", "ssh_key_path", "ssh_password"
+                "ssh_enabled",
+                "ssh_host",
+                "ssh_port",
+                "ssh_username",
+                "ssh_auth_type",
+                "ssh_key_path",
+                "ssh_password",
             ]
             for field in ssh_fields:
                 try:
@@ -745,10 +766,12 @@ class ConnectionScreen(ModalScreen):
             return fields
 
         if active_tab == "tab-general":
-            fields.extend([
-                self.query_one("#conn-name", Input),
-                self.query_one("#dbtype-select", Select),
-            ])
+            fields.extend(
+                [
+                    self.query_one("#conn-name", Input),
+                    self.query_one("#dbtype-select", Select),
+                ]
+            )
             for name, widget in self._field_widgets.items():
                 if name.startswith("ssh_"):
                     continue
@@ -868,7 +891,12 @@ class ConnectionScreen(ModalScreen):
         """Get set of existing connection names."""
         try:
             connections = getattr(self.app, "connections", []) or []
-            return {getattr(c, "name", None) for c in connections} - {None}
+            names: set[str] = set()
+            for conn in connections:
+                name = getattr(conn, "name", None)
+                if isinstance(name, str) and name:
+                    names.add(name)
+            return names
         except Exception:
             return set()
 
@@ -877,7 +905,7 @@ class ConnectionScreen(ModalScreen):
         name = self.query_one("#conn-name", Input).value.strip()
         if not name:
             return
-        existing = []
+        existing: list[Any] = []
         try:
             existing = getattr(self.app, "connections", []) or []
         except Exception:
@@ -901,12 +929,16 @@ class ConnectionScreen(ModalScreen):
             if not is_visible:
                 continue
             widget = self._field_widgets.get(field_name)
-            if isinstance(widget, Input) and not widget.value.strip():
-                widget.focus()
-                return
-            if isinstance(widget, OptionList) and widget.highlighted is None:
-                widget.focus()
-                return
+            if widget is None:
+                continue
+            if isinstance(widget, Input):
+                if not widget.value.strip():
+                    widget.focus()
+                    return
+            if isinstance(widget, OptionList):
+                if widget.highlighted is None:
+                    widget.focus()
+                    return
 
     def action_next_field(self) -> None:
         from textual.widgets import Tabs
@@ -993,7 +1025,7 @@ class ConnectionScreen(ModalScreen):
         try:
             db_type = DatabaseType(str(db_type_value))
         except Exception:
-            db_type = DatabaseType.MSSQL
+            db_type = DatabaseType.MSSQL  # type: ignore[attr-defined]
 
         values = self._get_current_form_values()
 
@@ -1050,7 +1082,7 @@ class ConnectionScreen(ModalScreen):
 
         if has_advanced_auth(db_type.value):
             auth_type = values.get("auth_type", "sql")
-            config_kwargs["trusted_connection"] = (auth_type == "windows")
+            config_kwargs["trusted_connection"] = auth_type == "windows"
 
         if supports_ssh(db_type.value):
             config_kwargs["ssh_enabled"] = values.get("ssh_enabled") == "enabled"
@@ -1065,19 +1097,44 @@ class ConnectionScreen(ModalScreen):
 
     def _get_package_install_hint(self, db_type: str) -> str | None:
         """Get pip install command for missing database packages."""
-        hints = {
-            "postgresql": "pip install psycopg2-binary",
-            "mysql": "pip install mysql-connector-python",
-            "oracle": "pip install oracledb",
-            "mariadb": "pip install mariadb",
-            "duckdb": "pip install duckdb",
-            "cockroachdb": "pip install psycopg2-binary",
-            "turso": "pip install libsql-client",
-        }
-        return hints.get(db_type)
+        try:
+            adapter = get_adapter(db_type)
+            return adapter.install_hint
+        except (ValueError, ImportError):
+            return None
+
+    def _prompt_install_missing_driver(self, error: Exception) -> None:
+        from ...db.adapters.base import _create_driver_import_error_hint
+        from ...db.exceptions import MissingDriverError
+        from ...services.installer import Installer
+        from ..screens import ConfirmScreen, ErrorScreen
+
+        if not isinstance(error, MissingDriverError):
+            return
+
+        def on_confirm(confirmed: bool | None) -> None:
+            if confirmed is True:
+                Installer(self.app).install(error)
+            elif confirmed is False:
+                hint = _create_driver_import_error_hint(error.driver_name, error.extra_name, error.package_name)
+                self.app.push_screen(ErrorScreen("Manual Installation Required", hint))
+            else:
+                return
+
+        self.app.push_screen(
+            ConfirmScreen(
+                "Missing driver",
+                f"This connection requires the {error.driver_name} driver.\n\nInstall it now?",
+                yes_label="Install now",
+                no_label="Manual steps",
+            ),
+            on_confirm,
+        )
 
     def action_test_connection(self) -> None:
         from dataclasses import replace
+
+        from ...db.exceptions import MissingDriverError
 
         config = self._get_config()
         if not config:
@@ -1119,22 +1176,11 @@ class ConnectionScreen(ModalScreen):
                 pass
             self._last_test_ok = True
             self.query_one("#test-status", Static).update("Last test: OK")
-        except ModuleNotFoundError as e:
-            hint = self._get_package_install_hint(config.db_type)
-            if hint:
-                self.query_one("#test-status", Static).update(f"Last test: failed (missing package)")
-                err = self.query_one("#test-error", TextArea)
-                err.text = f"{e}\n\nInstall with:\n  {hint}"
-                err.remove_class("hidden")
-                self._last_test_error = err.text
-            else:
-                self.query_one("#test-status", Static).update("Last test: failed")
-                err = self.query_one("#test-error", TextArea)
-                err.text = f"{e}"
-                err.remove_class("hidden")
-                self._last_test_error = err.text
+        except MissingDriverError as e:
+            self._prompt_install_missing_driver(e)
             self._last_test_ok = False
-        except ImportError as e:
+            self.query_one("#test-status", Static).update("Last test: failed (missing driver)")
+        except (ModuleNotFoundError, ImportError) as e:
             hint = self._get_package_install_hint(config.db_type)
             if hint:
                 self.query_one("#test-status", Static).update("Last test: failed (missing package)")
@@ -1172,8 +1218,18 @@ class ConnectionScreen(ModalScreen):
 
     def action_save(self) -> None:
         config = self._get_config()
-        if config:
-            self.dismiss(("save", config))
+        if not config:
+            return
+
+        from ...db.exceptions import MissingDriverError
+
+        try:
+            get_adapter(config.db_type).ensure_driver_available()
+        except MissingDriverError as e:
+            self._prompt_install_missing_driver(e)
+            return
+
+        self.dismiss(("save", config))
 
     def action_cancel(self) -> None:
         self.dismiss(None)

@@ -16,8 +16,8 @@ Usage:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
@@ -85,13 +85,9 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("f", "toggle_fullscreen", "Toggle Maximize", "View"),
             # Connection
             LeaderCommandDef("c", "show_connection_picker", "Connect", "Connection"),
-            LeaderCommandDef(
-                "x", "disconnect", "Disconnect", "Connection", guard="has_connection"
-            ),
+            LeaderCommandDef("x", "disconnect", "Disconnect", "Connection", guard="has_connection"),
             # Actions
-            LeaderCommandDef(
-                "z", "cancel_operation", "Cancel", "Actions", guard="query_executing"
-            ),
+            LeaderCommandDef("z", "cancel_operation", "Cancel", "Actions", guard="query_executing"),
             LeaderCommandDef("t", "change_theme", "Change Theme", "Actions"),
             LeaderCommandDef("h", "show_help", "Help", "Actions"),
             LeaderCommandDef("q", "quit", "Quit", "Actions"),

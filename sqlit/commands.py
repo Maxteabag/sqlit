@@ -5,25 +5,26 @@ from __future__ import annotations
 import csv
 import json
 import sys
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from .config import (
     AUTH_TYPE_LABELS,
+    DATABASE_TYPE_LABELS,
     AuthType,
     ConnectionConfig,
-    DATABASE_TYPE_LABELS,
     DatabaseType,
     load_connections,
     save_connections,
 )
-from .db.schema import get_default_port, has_advanced_auth, is_file_based
+from .db.providers import get_default_port, has_advanced_auth, is_file_based
 from .services import ConnectionSession, QueryResult, QueryService
 
 if TYPE_CHECKING:
-    from .services import HistoryStoreProtocol
+    pass
 
 
-def cmd_connection_list(args) -> int:
+def cmd_connection_list(args: Any) -> int:
     """List all saved connections."""
     connections = load_connections()
     if not connections:
@@ -46,13 +47,11 @@ def cmd_connection_list(args) -> int:
             conn_info = f"{conn.server}@{conn.database}" if conn.database else conn.server
             conn_info = conn_info[:38] + ".." if len(conn_info) > 40 else conn_info
             auth_label = f"User: {conn.username}" if conn.username else "N/A"
-        print(
-            f"{conn.name:<20} {db_type_label:<10} {conn_info:<40} {auth_label:<25}"
-        )
+        print(f"{conn.name:<20} {db_type_label:<10} {conn_info:<40} {auth_label:<25}")
     return 0
 
 
-def cmd_connection_create(args) -> int:
+def cmd_connection_create(args: Any) -> int:
     """Create a new connection."""
     connections = load_connections()
 
@@ -82,7 +81,8 @@ def cmd_connection_create(args) -> int:
         )
     elif has_advanced_auth(db_type):
         # SQL Server connection (has Windows/Azure AD auth)
-        if not args.server:
+        server = getattr(args, "server", None) or getattr(args, "host", None)
+        if not server:
             print("Error: --server is required for SQL Server connections.")
             return 1
 
@@ -97,7 +97,7 @@ def cmd_connection_create(args) -> int:
         config = ConnectionConfig(
             name=args.name,
             db_type=db_type,
-            server=args.server,
+            server=server,
             port=args.port or get_default_port(db_type),
             database=args.database or "",
             username=args.username or "",
@@ -114,7 +114,8 @@ def cmd_connection_create(args) -> int:
         )
     else:
         # Server-based databases with simple auth
-        if not args.server:
+        server = getattr(args, "server", None) or getattr(args, "host", None)
+        if not server:
             db_label = DATABASE_TYPE_LABELS.get(DatabaseType(db_type), db_type.upper())
             print(f"Error: --server is required for {db_label} connections.")
             return 1
@@ -122,7 +123,7 @@ def cmd_connection_create(args) -> int:
         config = ConnectionConfig(
             name=args.name,
             db_type=db_type,
-            server=args.server,
+            server=server,
             port=args.port or get_default_port(db_type),
             database=args.database or "",
             username=args.username or "",
@@ -142,7 +143,7 @@ def cmd_connection_create(args) -> int:
     return 0
 
 
-def cmd_connection_edit(args) -> int:
+def cmd_connection_edit(args: Any) -> int:
     """Edit an existing connection."""
     connections = load_connections()
 
@@ -165,8 +166,9 @@ def cmd_connection_edit(args) -> int:
         conn.name = args.name
 
     # SQL Server fields
-    if args.server:
-        conn.server = args.server
+    server = getattr(args, "server", None) or getattr(args, "host", None)
+    if server:
+        conn.server = server
     if args.port:
         conn.port = args.port
     if args.database:
@@ -195,7 +197,7 @@ def cmd_connection_edit(args) -> int:
     return 0
 
 
-def cmd_connection_delete(args) -> int:
+def cmd_connection_delete(args: Any) -> int:
     """Delete a connection."""
     connections = load_connections()
 
@@ -215,7 +217,7 @@ def cmd_connection_delete(args) -> int:
     return 0
 
 
-def _stream_csv_output(cursor, columns: list[str]) -> int:
+def _stream_csv_output(cursor: Any, columns: list[str]) -> int:
     """Stream CSV output from cursor using fetchmany."""
     writer = csv.writer(sys.stdout)
     writer.writerow(columns)
@@ -231,7 +233,7 @@ def _stream_csv_output(cursor, columns: list[str]) -> int:
     return row_count
 
 
-def _stream_json_output(cursor, columns: list[str]) -> int:
+def _stream_json_output(cursor: Any, columns: list[str]) -> int:
     """Stream JSON output from cursor using fetchmany (JSON array format)."""
     print("[")
     first = True
@@ -266,7 +268,7 @@ def _output_table(columns: list[str], rows: list[tuple], truncated: bool) -> Non
     # Print header
     header_parts = []
     for i, col in enumerate(columns):
-        col_display = col[:col_widths[i]] if len(col) > col_widths[i] else col
+        col_display = col[: col_widths[i]] if len(col) > col_widths[i] else col
         header_parts.append(col_display.ljust(col_widths[i]))
     header = " | ".join(header_parts)
     print(header)
@@ -290,7 +292,7 @@ def _output_table(columns: list[str], rows: list[tuple], truncated: bool) -> Non
 
 
 def cmd_query(
-    args,
+    args: Any,
     *,
     session_factory: Callable[[ConnectionConfig], ConnectionSession] | None = None,
     query_service: QueryService | None = None,
@@ -327,12 +329,12 @@ def cmd_query(
         query = args.query
     elif args.file:
         try:
-            with open(args.file, "r", encoding="utf-8") as f:
+            with open(args.file, encoding="utf-8") as f:
                 query = f.read()
         except FileNotFoundError:
             print(f"Error: File '{args.file}' not found.")
             return 1
-        except IOError as e:
+        except OSError as e:
             print(f"Error reading file: {e}")
             return 1
     else:
@@ -353,9 +355,7 @@ def cmd_query(
             from .services.query import is_select_query
 
             # Check if connection supports cursors (some adapters like Turso don't)
-            has_cursor = hasattr(session.connection, "cursor") and callable(
-                getattr(session.connection, "cursor", None)
-            )
+            has_cursor = hasattr(session.connection, "cursor") and callable(getattr(session.connection, "cursor", None))
 
             if max_rows is None and args.format in ("csv", "json") and is_select_query(query) and has_cursor:
                 # Stream directly from cursor for unlimited CSV/JSON
@@ -403,8 +403,7 @@ def cmd_query(
                         print(f"\n({len(rows)} row(s) returned)", file=sys.stderr)
                 elif args.format == "json":
                     json_result = [
-                        dict(zip(columns, [val if val is not None else None for val in row]))
-                        for row in rows
+                        dict(zip(columns, [val if val is not None else None for val in row])) for row in rows
                     ]
                     print(json.dumps(json_result, indent=2, default=str))
                     if result.truncated:

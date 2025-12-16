@@ -34,3 +34,6 @@ aur/src/
 aur/pkg/
 aur/*.pkg.tar.*
 sqlit-notifications/
+
+# Integration test artifacts
+tests/integration/python_packages/artifacts/

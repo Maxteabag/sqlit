@@ -4,10 +4,13 @@ Usage:
     sqlit --mock=sqlite-demo   # Pre-configured SQLite with demo data
     sqlit --mock=empty         # Empty connections, but mock adapters available
     sqlit --mock=multi-db      # Multiple database connections
+    sqlit --mock=driver-install-success --mock-missing-drivers=postgresql --mock-install=success
+    sqlit --mock=driver-install-fail --mock-missing-drivers=mysql --mock-install=fail
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,13 +21,13 @@ from .db.adapters.base import ColumnInfo, DatabaseAdapter
 class MockConnection:
     """Mock database connection object."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.closed = False
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
 
-    def cursor(self):
+    def cursor(self) -> MockCursor:
         return MockCursor()
 
 
@@ -112,16 +115,12 @@ class MockDatabaseAdapter(DatabaseAdapter):
     def quote_identifier(self, name: str) -> str:
         return f'"{name}"'
 
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None, schema: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         if schema:
             return f'SELECT * FROM "{schema}"."{table}" LIMIT {limit}'
         return f'SELECT * FROM "{table}" LIMIT {limit}'
 
-    def execute_query(
-        self, conn: Any, query: str, max_rows: int | None = None
-    ) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query and return (columns, rows, truncated)."""
         query_lower = query.lower().strip()
 
@@ -146,6 +145,7 @@ class MockDatabaseAdapter(DatabaseAdapter):
 # =============================================================================
 # Default Mock Adapters - used when profiles don't define their own
 # =============================================================================
+
 
 def create_default_sqlite_adapter() -> MockDatabaseAdapter:
     """Create a default SQLite mock adapter with demo data."""
@@ -262,7 +262,7 @@ def create_default_mysql_adapter() -> MockDatabaseAdapter:
 
 
 # Registry of default adapters by database type
-DEFAULT_MOCK_ADAPTERS: dict[str, callable] = {
+DEFAULT_MOCK_ADAPTERS: dict[str, Callable[[], MockDatabaseAdapter]] = {
     "sqlite": create_default_sqlite_adapter,
     "postgresql": create_default_postgresql_adapter,
     "mysql": create_default_mysql_adapter,
@@ -281,6 +281,7 @@ def get_default_mock_adapter(db_type: str) -> MockDatabaseAdapter:
 # =============================================================================
 # Mock Profiles
 # =============================================================================
+
 
 @dataclass
 class MockProfile:
@@ -362,11 +363,53 @@ def _create_multi_db_profile() -> MockProfile:
     )
 
 
+def _create_driver_install_success_profile() -> MockProfile:
+    """Profile intended for demoing the driver install UX."""
+    connections = [
+        ConnectionConfig(
+            name="PostgreSQL (missing driver)",
+            db_type="postgresql",
+            server="localhost",
+            port="5432",
+            database="postgres",
+            username="user",
+        ),
+    ]
+    return MockProfile(
+        name="driver-install-success",
+        connections=connections,
+        adapters={},
+        use_default_adapters=True,
+    )
+
+
+def _create_driver_install_fail_profile() -> MockProfile:
+    """Profile intended for demoing the driver install failure UX."""
+    connections = [
+        ConnectionConfig(
+            name="MySQL (missing driver)",
+            db_type="mysql",
+            server="localhost",
+            port="3306",
+            database="test_sqlit",
+            username="user",
+        ),
+    ]
+    return MockProfile(
+        name="driver-install-fail",
+        connections=connections,
+        adapters={},
+        use_default_adapters=True,
+    )
+
+
 # Registry of available mock profiles
-MOCK_PROFILES: dict[str, callable] = {
+MOCK_PROFILES: dict[str, Callable[[], MockProfile]] = {
     "sqlite-demo": _create_sqlite_demo_profile,
     "empty": _create_empty_profile,
     "multi-db": _create_multi_db_profile,
+    "driver-install-success": _create_driver_install_success_profile,
+    "driver-install-fail": _create_driver_install_fail_profile,
 }
 
 

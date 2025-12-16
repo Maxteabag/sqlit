@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from sqlit.keymap import (
+    ActionKeyDef,
     KeymapProvider,
     LeaderCommandDef,
-    ActionKeyDef,
     reset_keymap,
 )
 

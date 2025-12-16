@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..schema import get_default_port
 from .base import ColumnInfo, DatabaseAdapter, TableInfo
 
 if TYPE_CHECKING:
@@ -22,6 +23,18 @@ class OracleAdapter(DatabaseAdapter):
         return "Oracle"
 
     @property
+    def install_extra(self) -> str:
+        return "oracle"
+
+    @property
+    def install_package(self) -> str:
+        return "oracledb"
+
+    @property
+    def driver_import_names(self) -> tuple[str, ...]:
+        return ("oracledb",)
+
+    @property
     def supports_multiple_databases(self) -> bool:
         # Oracle uses schemas within a single database, not multiple databases
         return False
@@ -30,11 +43,18 @@ class OracleAdapter(DatabaseAdapter):
     def supports_stored_procedures(self) -> bool:
         return True
 
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         """Connect to Oracle database."""
-        import oracledb
+        try:
+            import oracledb
+        except ImportError as e:
+            from ...db.exceptions import MissingDriverError
 
-        port = int(config.port) if config.port else 1521
+            if not self.install_extra or not self.install_package:
+                raise e
+            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+
+        port = int(config.port or get_default_port("oracle"))
         # Use Easy Connect string format: host:port/service_name
         dsn = f"{config.server}:{port}/{config.database}"
         return oracledb.connect(
@@ -50,18 +70,14 @@ class OracleAdapter(DatabaseAdapter):
     def get_tables(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of tables from Oracle. Returns (schema, name) with empty schema."""
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT table_name FROM user_tables ORDER BY table_name"
-        )
+        cursor.execute("SELECT table_name FROM user_tables ORDER BY table_name")
         # user_tables returns only current user's tables, so no schema prefix needed
         return [("", row[0]) for row in cursor.fetchall()]
 
     def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of views from Oracle. Returns (schema, name) with empty schema."""
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT view_name FROM user_views ORDER BY view_name"
-        )
+        cursor.execute("SELECT view_name FROM user_views ORDER BY view_name")
         return [("", row[0]) for row in cursor.fetchall()]
 
     def get_columns(
@@ -70,8 +86,7 @@ class OracleAdapter(DatabaseAdapter):
         """Get columns for a table from Oracle. Schema parameter is ignored."""
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT column_name, data_type FROM user_tab_columns "
-            "WHERE table_name = :1 ORDER BY column_id",
+            "SELECT column_name, data_type FROM user_tab_columns " "WHERE table_name = :1 ORDER BY column_id",
             (table.upper(),),
         )
         return [ColumnInfo(name=row[0], data_type=row[1]) for row in cursor.fetchall()]
@@ -80,8 +95,7 @@ class OracleAdapter(DatabaseAdapter):
         """Get stored procedures from Oracle."""
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT object_name FROM user_procedures "
-            "WHERE object_type = 'PROCEDURE' ORDER BY object_name"
+            "SELECT object_name FROM user_procedures " "WHERE object_type = 'PROCEDURE' ORDER BY object_name"
         )
         return [row[0] for row in cursor.fetchall()]
 
@@ -93,15 +107,11 @@ class OracleAdapter(DatabaseAdapter):
         escaped = name.replace('"', '""')
         return f'"{escaped}"'
 
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None, schema: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT query with FETCH FIRST for Oracle 12c+. Schema parameter is ignored."""
         return f'SELECT * FROM "{table}" FETCH FIRST {limit} ROWS ONLY'
 
-    def execute_query(
-        self, conn: Any, query: str, max_rows: int | None = None
-    ) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on Oracle with optional row limit."""
         cursor = conn.cursor()
         cursor.execute(query)
@@ -122,6 +132,6 @@ class OracleAdapter(DatabaseAdapter):
         """Execute a non-query on Oracle."""
         cursor = conn.cursor()
         cursor.execute(query)
-        rowcount = cursor.rowcount
+        rowcount = int(cursor.rowcount)
         conn.commit()
         return rowcount

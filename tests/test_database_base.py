@@ -11,8 +11,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import pytest
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -56,8 +54,10 @@ class BaseDatabaseTests(ABC):
         connection = request.getfixturevalue(self.config.connection_fixture)
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT * FROM test_users ORDER BY id",
+            "-c",
+            connection,
+            "-q",
+            "SELECT * FROM test_users ORDER BY id",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -70,8 +70,10 @@ class BaseDatabaseTests(ABC):
         connection = request.getfixturevalue(self.config.connection_fixture)
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT name, email FROM test_users WHERE id = 1",
+            "-c",
+            connection,
+            "-q",
+            "SELECT name, email FROM test_users WHERE id = 1",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -83,9 +85,12 @@ class BaseDatabaseTests(ABC):
         connection = request.getfixturevalue(self.config.connection_fixture)
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT id, name FROM test_users ORDER BY id LIMIT 2",
-            "--format", "json",
+            "-c",
+            connection,
+            "-q",
+            "SELECT id, name FROM test_users ORDER BY id LIMIT 2",
+            "--format",
+            "json",
         )
         assert result.returncode == 0
 
@@ -101,9 +106,12 @@ class BaseDatabaseTests(ABC):
         connection = request.getfixturevalue(self.config.connection_fixture)
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT id, name FROM test_users ORDER BY id LIMIT 2",
-            "--format", "csv",
+            "-c",
+            connection,
+            "-q",
+            "SELECT id, name FROM test_users ORDER BY id LIMIT 2",
+            "--format",
+            "csv",
         )
         assert result.returncode == 0
         assert "id,name" in result.stdout
@@ -115,8 +123,10 @@ class BaseDatabaseTests(ABC):
         connection = request.getfixturevalue(self.config.connection_fixture)
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT * FROM test_user_emails ORDER BY id",
+            "-c",
+            connection,
+            "-q",
+            "SELECT * FROM test_user_emails ORDER BY id",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout
@@ -127,8 +137,10 @@ class BaseDatabaseTests(ABC):
         connection = request.getfixturevalue(self.config.connection_fixture)
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT COUNT(*) as user_count FROM test_users",
+            "-c",
+            connection,
+            "-q",
+            "SELECT COUNT(*) as user_count FROM test_users",
         )
         assert result.returncode == 0
         assert "3" in result.stdout
@@ -138,19 +150,22 @@ class BaseDatabaseTests(ABC):
         connection = request.getfixturevalue(self.config.connection_fixture)
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "INSERT INTO test_users (id, name, email) VALUES (4, 'David', 'david@example.com')",
+            "-c",
+            connection,
+            "-q",
+            "INSERT INTO test_users (id, name, email) VALUES (4, 'David', 'david@example.com')",
         )
         assert result.returncode == 0
 
         # Verify the insert
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT * FROM test_users WHERE id = 4",
+            "-c",
+            connection,
+            "-q",
+            "SELECT * FROM test_users WHERE id = 4",
         )
         assert "David" in result.stdout
-
 
     def test_cancellable_query_select(self, request):
         """Test CancellableQuery execution (used by TUI).
@@ -222,9 +237,12 @@ class BaseDatabaseTests(ABC):
         # No --max-rows to trigger the streaming path for cursor-based adapters
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT id, name FROM test_users ORDER BY id",
-            "--format", "csv",
+            "-c",
+            connection,
+            "-q",
+            "SELECT id, name FROM test_users ORDER BY id",
+            "--format",
+            "csv",
         )
         assert result.returncode == 0
         assert "id,name" in result.stdout
@@ -235,9 +253,12 @@ class BaseDatabaseTests(ABC):
         connection = request.getfixturevalue(self.config.connection_fixture)
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT id, name FROM test_users ORDER BY id",
-            "--format", "json",
+            "-c",
+            connection,
+            "-q",
+            "SELECT id, name FROM test_users ORDER BY id",
+            "--format",
+            "json",
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -256,16 +277,16 @@ class BaseDatabaseTests(ABC):
 
         # Required methods that should work without cursor
         required_methods = [
-            'connect',
-            'execute_query',
-            'execute_non_query',
-            'get_tables',
-            'get_views',
-            'get_columns',
-            'get_databases',
-            'get_procedures',
-            'quote_identifier',
-            'build_select_query',
+            "connect",
+            "execute_query",
+            "execute_non_query",
+            "get_tables",
+            "get_views",
+            "get_columns",
+            "get_databases",
+            "get_procedures",
+            "quote_identifier",
+            "build_select_query",
         ]
 
         for method_name in required_methods:
@@ -275,9 +296,9 @@ class BaseDatabaseTests(ABC):
 
         # Required properties
         required_properties = [
-            'name',
-            'supports_multiple_databases',
-            'supports_stored_procedures',
+            "name",
+            "supports_multiple_databases",
+            "supports_stored_procedures",
         ]
 
         for prop_name in required_properties:
@@ -326,8 +347,10 @@ class BaseDatabaseTestsWithLimit(BaseDatabaseTests):
         connection = request.getfixturevalue(self.config.connection_fixture)
         result = cli_runner(
             "query",
-            "-c", connection,
-            "-q", "SELECT * FROM test_users ORDER BY id LIMIT 2",
+            "-c",
+            connection,
+            "-q",
+            "SELECT * FROM test_users ORDER BY id LIMIT 2",
         )
         assert result.returncode == 0
         assert "Alice" in result.stdout

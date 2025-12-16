@@ -17,7 +17,7 @@ class SupabaseAdapter(PostgreSQLAdapter):
     def supports_multiple_databases(self) -> bool:
         return False
 
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         from dataclasses import replace
 
         transformed = replace(

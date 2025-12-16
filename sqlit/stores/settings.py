@@ -13,13 +13,13 @@ class SettingsStore(JSONFileStore):
     Settings are stored as a JSON object in ~/.sqlit/settings.json
     """
 
-    _instance: "SettingsStore | None" = None
+    _instance: SettingsStore | None = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(CONFIG_DIR / "settings.json")
 
     @classmethod
-    def get_instance(cls) -> "SettingsStore":
+    def get_instance(cls) -> SettingsStore:
         """Get the singleton instance."""
         if cls._instance is None:
             cls._instance = cls()

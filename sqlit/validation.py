@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .db.schema import is_file_based
+from .db.providers import is_file_based
 
 if TYPE_CHECKING:
     from .fields import FieldDefinition
@@ -46,7 +46,7 @@ def validate_connection_form(
     name: str,
     db_type: str,
     values: dict,
-    field_definitions: dict[str, "FieldDefinition"],
+    field_definitions: dict[str, FieldDefinition],
     existing_names: set[str],
     editing_name: str | None = None,
 ) -> ValidationState:

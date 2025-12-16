@@ -26,7 +26,7 @@ class SQLiteAdapter(DatabaseAdapter):
     def supports_stored_procedures(self) -> bool:
         return False
 
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         """Connect to SQLite database file."""
         file_path = resolve_file_path(config.file_path)
         # check_same_thread=False allows connection to be used from background threads
@@ -43,17 +43,14 @@ class SQLiteAdapter(DatabaseAdapter):
         """Get list of tables from SQLite. Returns (schema, name) with empty schema."""
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' "
-            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            "SELECT name FROM sqlite_master WHERE type='table' " "AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )
         return [("", row[0]) for row in cursor.fetchall()]
 
     def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of views from SQLite. Returns (schema, name) with empty schema."""
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='view' ORDER BY name"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='view' ORDER BY name")
         return [("", row[0]) for row in cursor.fetchall()]
 
     def get_columns(
@@ -79,15 +76,11 @@ class SQLiteAdapter(DatabaseAdapter):
         escaped = name.replace('"', '""')
         return f'"{escaped}"'
 
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None, schema: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT LIMIT query for SQLite. Schema parameter is ignored."""
         return f'SELECT * FROM "{table}" LIMIT {limit}'
 
-    def execute_query(
-        self, conn: Any, query: str, max_rows: int | None = None
-    ) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on SQLite with optional row limit."""
         cursor = conn.cursor()
         cursor.execute(query)
@@ -108,6 +101,6 @@ class SQLiteAdapter(DatabaseAdapter):
         """Execute a non-query on SQLite."""
         cursor = conn.cursor()
         cursor.execute(query)
-        rowcount = cursor.rowcount
+        rowcount = int(cursor.rowcount)
         conn.commit()
         return rowcount

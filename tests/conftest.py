@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import socket
 import sqlite3
 import subprocess
@@ -13,13 +12,17 @@ from pathlib import Path
 
 import pytest
 
+# Ensure tests never read/write real user config under ~/.sqlit.
+_TEST_CONFIG_DIR = Path(tempfile.mkdtemp(prefix="sqlit-test-config-"))
+os.environ.setdefault("SQLIT_CONFIG_DIR", str(_TEST_CONFIG_DIR))
+
 
 def is_port_open(host: str, port: int, timeout: float = 1.0) -> bool:
     """Check if a TCP port is open."""
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
-    except (OSError, socket.timeout):
+    except (TimeoutError, OSError):
         return False
 
 
@@ -44,7 +47,8 @@ def run_cli(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     if check and result.returncode != 0:
         # Ignore RuntimeWarning about module import order
         stderr_clean = "\n".join(
-            line for line in result.stderr.split("\n")
+            line
+            for line in result.stderr.split("\n")
             if "RuntimeWarning" not in line and "unpredictable behaviour" not in line
         ).strip()
         if stderr_clean:
@@ -136,10 +140,14 @@ def sqlite_connection(sqlite_db: Path) -> str:
 
     # Create the connection
     run_cli(
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "sqlite",
-        "--file-path", str(sqlite_db),
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "sqlite",
+        "--file-path",
+        str(sqlite_db),
     )
 
     yield connection_name
@@ -323,14 +331,22 @@ def mssql_connection(mssql_db: str) -> str:
 
     # Create the connection
     run_cli(
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "mssql",
-        "--server", f"{MSSQL_HOST},{MSSQL_PORT}" if MSSQL_PORT != 1433 else MSSQL_HOST,
-        "--database", mssql_db,
-        "--auth-type", "sql",
-        "--username", MSSQL_USER,
-        "--password", MSSQL_PASSWORD,
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "mssql",
+        "--server",
+        f"{MSSQL_HOST},{MSSQL_PORT}" if MSSQL_PORT != 1433 else MSSQL_HOST,
+        "--database",
+        mssql_db,
+        "--auth-type",
+        "sql",
+        "--username",
+        MSSQL_USER,
+        "--password",
+        MSSQL_PASSWORD,
     )
 
     yield connection_name
@@ -471,14 +487,22 @@ def postgres_connection(postgres_db: str) -> str:
 
     # Create the connection
     run_cli(
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "postgresql",
-        "--server", POSTGRES_HOST,
-        "--port", str(POSTGRES_PORT),
-        "--database", postgres_db,
-        "--username", POSTGRES_USER,
-        "--password", POSTGRES_PASSWORD,
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "postgresql",
+        "--server",
+        POSTGRES_HOST,
+        "--port",
+        str(POSTGRES_PORT),
+        "--database",
+        postgres_db,
+        "--username",
+        POSTGRES_USER,
+        "--password",
+        POSTGRES_PASSWORD,
     )
 
     yield connection_name
@@ -620,14 +644,22 @@ def mysql_connection(mysql_db: str) -> str:
 
     # Create the connection
     run_cli(
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "mysql",
-        "--server", MYSQL_HOST,
-        "--port", str(MYSQL_PORT),
-        "--database", mysql_db,
-        "--username", MYSQL_USER,
-        "--password", MYSQL_PASSWORD,
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "mysql",
+        "--server",
+        MYSQL_HOST,
+        "--port",
+        str(MYSQL_PORT),
+        "--database",
+        mysql_db,
+        "--username",
+        MYSQL_USER,
+        "--password",
+        MYSQL_PASSWORD,
     )
 
     yield connection_name
@@ -783,14 +815,22 @@ def oracle_connection(oracle_db: str) -> str:
 
     # Create the connection
     run_cli(
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "oracle",
-        "--server", ORACLE_HOST,
-        "--port", str(ORACLE_PORT),
-        "--database", oracle_db,
-        "--username", ORACLE_USER,
-        "--password", ORACLE_PASSWORD,
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "oracle",
+        "--server",
+        ORACLE_HOST,
+        "--port",
+        str(ORACLE_PORT),
+        "--database",
+        oracle_db,
+        "--username",
+        ORACLE_USER,
+        "--password",
+        ORACLE_PASSWORD,
     )
 
     yield connection_name
@@ -932,14 +972,22 @@ def mariadb_connection(mariadb_db: str) -> str:
 
     # Create the connection
     run_cli(
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "mariadb",
-        "--server", MARIADB_HOST,
-        "--port", str(MARIADB_PORT),
-        "--database", mariadb_db,
-        "--username", MARIADB_USER,
-        "--password", MARIADB_PASSWORD,
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "mariadb",
+        "--server",
+        MARIADB_HOST,
+        "--port",
+        str(MARIADB_PORT),
+        "--database",
+        mariadb_db,
+        "--username",
+        MARIADB_USER,
+        "--password",
+        MARIADB_PASSWORD,
     )
 
     yield connection_name
@@ -1023,10 +1071,14 @@ def duckdb_connection(duckdb_db: Path) -> str:
 
     # Create the connection
     run_cli(
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "duckdb",
-        "--file-path", str(duckdb_db),
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "duckdb",
+        "--file-path",
+        str(duckdb_db),
     )
 
     yield connection_name
@@ -1178,13 +1230,20 @@ def cockroachdb_connection(cockroachdb_db: str) -> str:
 
     # Create the connection
     args = [
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "cockroachdb",
-        "--server", COCKROACHDB_HOST,
-        "--port", str(COCKROACHDB_PORT),
-        "--database", cockroachdb_db,
-        "--username", COCKROACHDB_USER,
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "cockroachdb",
+        "--server",
+        COCKROACHDB_HOST,
+        "--port",
+        str(COCKROACHDB_PORT),
+        "--database",
+        cockroachdb_db,
+        "--username",
+        COCKROACHDB_USER,
     ]
     # Only add password if it's set
     if COCKROACHDB_PASSWORD:
@@ -1313,16 +1372,161 @@ def turso_connection(turso_db: str) -> str:
 
     # Create the connection (no auth token needed for local libsql-server)
     run_cli(
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "turso",
-        "--server", turso_db,
-        "--password", "",  # No auth token for local server
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "turso",
+        "--server",
+        turso_db,
+        "--password",
+        "",  # No auth token for local server
     )
 
     yield connection_name
 
     # Cleanup
+    cleanup_connection(connection_name)
+
+
+# =============================================================================
+# D1 Fixtures
+# =============================================================================
+
+# D1 connection settings for Docker (miniflare)
+D1_HOST = os.environ.get("D1_HOST", "localhost")
+D1_PORT = int(os.environ.get("D1_PORT", "8787"))
+D1_ACCOUNT_ID = "test-account"
+D1_DATABASE = "test-d1"
+D1_API_TOKEN = "test-token"
+os.environ["D1_API_BASE_URL"] = f"http://{D1_HOST}:{D1_PORT}"
+
+
+def d1_available() -> bool:
+    """Check if D1 (miniflare) is available."""
+    return is_port_open(D1_HOST, D1_PORT)
+
+
+@pytest.fixture(scope="session")
+def d1_server_ready() -> bool:
+    """Check if D1 is ready and return True/False."""
+    if not d1_available():
+        return False
+    time.sleep(1)
+    return True
+
+
+@pytest.fixture(scope="function")
+def d1_db(d1_server_ready: bool) -> str:
+    """Set up D1 test database."""
+    if not d1_server_ready:
+        pytest.skip("D1 (miniflare) is not available")
+
+    from sqlit.db.adapters.d1 import D1Adapter
+
+    adapter = D1Adapter()
+    config = {
+        "name": "d1-temp-setup",
+        "db_type": "d1",
+        "server": D1_ACCOUNT_ID,
+        "password": D1_API_TOKEN,
+        "database": D1_DATABASE,
+    }
+    from sqlit.config import ConnectionConfig
+
+    conn_config = ConnectionConfig(**config)
+    try:
+        conn = adapter.connect(conn_config)
+
+        # Drop tables if they exist and recreate
+        adapter.execute_non_query(conn, "DROP TABLE IF EXISTS test_users")
+        adapter.execute_non_query(conn, "DROP TABLE IF EXISTS test_products")
+        adapter.execute_non_query(conn, "DROP VIEW IF EXISTS test_user_emails")
+
+        # Create test tables
+        adapter.execute_non_query(
+            conn,
+            """
+            CREATE TABLE test_users (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE
+            )
+        """,
+        )
+        adapter.execute_non_query(
+            conn,
+            """
+            CREATE TABLE test_products (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                price REAL NOT NULL,
+                stock INTEGER DEFAULT 0
+            )
+        """,
+        )
+        # Create test view
+        adapter.execute_non_query(
+            conn,
+            """
+            CREATE VIEW test_user_emails AS
+            SELECT id, name, email FROM test_users WHERE email IS NOT NULL
+        """,
+        )
+        # Insert test data
+        adapter.execute_non_query(
+            conn,
+            "INSERT INTO test_users (id, name, email) VALUES (1, 'Alice', 'alice@example.com')",
+        )
+        adapter.execute_non_query(
+            conn,
+            "INSERT INTO test_users (id, name, email) VALUES (2, 'Bob', 'bob@example.com')",
+        )
+        adapter.execute_non_query(
+            conn,
+            "INSERT INTO test_users (id, name, email) VALUES (3, 'Charlie', 'charlie@example.com')",
+        )
+        adapter.execute_non_query(
+            conn,
+            "INSERT INTO test_products (id, name, price, stock) VALUES (1, 'Widget', 9.99, 100)",
+        )
+        adapter.execute_non_query(
+            conn,
+            "INSERT INTO test_products (id, name, price, stock) VALUES (2, 'Gadget', 19.99, 50)",
+        )
+        adapter.execute_non_query(
+            conn,
+            "INSERT INTO test_products (id, name, price, stock) VALUES (3, 'Gizmo', 29.99, 25)",
+        )
+    except Exception as e:
+        pytest.skip(f"Failed to setup D1 database: {e}")
+
+    yield D1_DATABASE
+
+
+@pytest.fixture(scope="function")
+def d1_connection(d1_db: str) -> str:
+    """Create a sqlit CLI connection for D1 and clean up after test."""
+    connection_name = f"test_d1_{os.getpid()}"
+    cleanup_connection(connection_name)
+
+    run_cli(
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "d1",
+        "--host",
+        D1_ACCOUNT_ID,
+        "--password",
+        D1_API_TOKEN,
+        "--database",
+        d1_db,
+    )
+
+    yield connection_name
     cleanup_connection(connection_name)
 
 
@@ -1369,9 +1573,6 @@ def ssh_postgres_db(ssh_server_ready: bool) -> str:
     # postgres-ssh container is accessible on port 5433
     pg_host = os.environ.get("SSH_DIRECT_PG_HOST", "localhost")
     pg_port = int(os.environ.get("SSH_DIRECT_PG_PORT", "5433"))
-    pg_user = POSTGRES_USER
-    pg_password = POSTGRES_PASSWORD
-    pg_database = POSTGRES_DATABASE
 
     try:
         conn = psycopg2.connect(
@@ -1466,20 +1667,33 @@ def ssh_connection(ssh_postgres_db: str) -> str:
 
     # Create the connection with SSH tunnel enabled
     run_cli(
-        "connection", "create",
-        "--name", connection_name,
-        "--db-type", "postgresql",
-        "--server", SSH_REMOTE_DB_HOST,
-        "--port", str(SSH_REMOTE_DB_PORT),
-        "--database", ssh_postgres_db,
-        "--username", POSTGRES_USER,
-        "--password", POSTGRES_PASSWORD,
+        "connection",
+        "create",
+        "--name",
+        connection_name,
+        "--db-type",
+        "postgresql",
+        "--server",
+        SSH_REMOTE_DB_HOST,
+        "--port",
+        str(SSH_REMOTE_DB_PORT),
+        "--database",
+        ssh_postgres_db,
+        "--username",
+        POSTGRES_USER,
+        "--password",
+        POSTGRES_PASSWORD,
         "--ssh-enabled",
-        "--ssh-host", SSH_HOST,
-        "--ssh-port", str(SSH_PORT),
-        "--ssh-username", SSH_USER,
-        "--ssh-auth-type", "password",
-        "--ssh-password", SSH_PASSWORD,
+        "--ssh-host",
+        SSH_HOST,
+        "--ssh-port",
+        str(SSH_PORT),
+        "--ssh-username",
+        SSH_USER,
+        "--ssh-auth-type",
+        "password",
+        "--ssh-password",
+        SSH_PASSWORD,
     )
 
     yield connection_name

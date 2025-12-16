@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from rich.markup import escape as escape_markup
 from textual.widgets import Tree
 
+from ..protocols import AppProtocol
 from ..tree_nodes import (
     ColumnNode,
     ConnectionNode,
@@ -20,21 +21,11 @@ from ..tree_nodes import (
 )
 
 if TYPE_CHECKING:
-    from ...config import ConnectionConfig
-    from ...services import ConnectionSession
+    pass
 
 
 class TreeMixin:
     """Mixin providing tree/explorer functionality."""
-
-    # These attributes are defined in the main app class
-    connections: list
-    current_connection: Any
-    current_config: "ConnectionConfig | None"
-    current_adapter: Any
-    _expanded_paths: set[str]
-    _session: "ConnectionSession | None"
-    _loading_nodes: set
 
     def _db_type_badge(self, db_type: str) -> str:
         """Get short badge for database type."""
@@ -51,7 +42,7 @@ class TreeMixin:
         }
         return badge_map.get(db_type, db_type.upper() if db_type else "DB")
 
-    def refresh_tree(self) -> None:
+    def refresh_tree(self: AppProtocol) -> None:
         """Refresh the explorer tree."""
         self.object_tree.clear()
         self.object_tree.root.expand()
@@ -60,23 +51,21 @@ class TreeMixin:
             display_info = escape_markup(conn.get_display_info())
             db_type_label = self._db_type_badge(conn.db_type)
             escaped_name = escape_markup(conn.name)
-            node = self.object_tree.root.add(
-                f"[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})"
-            )
+            node = self.object_tree.root.add(f"[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})")
             node.data = ConnectionNode(config=conn)
             node.allow_expand = True
 
         if self.current_connection and self.current_config:
             self.populate_connected_tree()
 
-    def populate_connected_tree(self) -> None:
+    def populate_connected_tree(self: AppProtocol) -> None:
         """Populate tree with database objects when connected."""
         if not self.current_connection or not self.current_config or not self.current_adapter:
             return
 
         adapter = self.current_adapter
 
-        def get_conn_label(config, connected=False):
+        def get_conn_label(config: Any, connected: Any = False) -> str:
             display_info = escape_markup(config.get_display_info())
             db_type_label = self._db_type_badge(config.db_type)
             escaped_name = escape_markup(config.name)
@@ -95,9 +84,7 @@ class TreeMixin:
                     break
 
         if not active_node:
-            active_node = self.object_tree.root.add(
-                get_conn_label(self.current_config, connected=True)
-            )
+            active_node = self.object_tree.root.add(get_conn_label(self.current_config, connected=True))
             active_node.data = ConnectionNode(config=self.current_config)
 
         active_node.remove_children()
@@ -130,7 +117,7 @@ class TreeMixin:
         except Exception as e:
             self.notify(f"Error loading objects: {e}", severity="error")
 
-    def _add_database_object_nodes(self, parent_node, database: str | None) -> None:
+    def _add_database_object_nodes(self: AppProtocol, parent_node: Any, database: str | None) -> None:
         """Add Tables, Views, and optionally Stored Procedures nodes."""
         tables_node = parent_node.add("Tables")
         tables_node.data = FolderNode(folder_type="tables", database=database)
@@ -145,7 +132,7 @@ class TreeMixin:
             procs_node.data = FolderNode(folder_type="procedures", database=database)
             procs_node.allow_expand = True
 
-    def _get_node_path(self, node) -> str:
+    def _get_node_path(self, node: Any) -> str:
         """Get a unique path string for a tree node."""
         parts = []
         current = node
@@ -159,13 +146,13 @@ class TreeMixin:
                 parts.append(f"folder:{data.folder_type}")
             elif isinstance(data, SchemaNode):
                 parts.append(f"schema:{data.schema}")
-            elif isinstance(data, (TableNode, ViewNode)):
+            elif isinstance(data, TableNode | ViewNode):
                 node_type = "table" if isinstance(data, TableNode) else "view"
                 parts.append(f"{node_type}:{data.schema}.{data.name}")
             current = current.parent
         return "/".join(reversed(parts))
 
-    def _restore_subtree_expansion(self, node) -> None:
+    def _restore_subtree_expansion(self: AppProtocol, node: Any) -> None:
         """Recursively expand nodes that should be expanded."""
         for child in node.children:
             if child.data:
@@ -174,13 +161,13 @@ class TreeMixin:
                     child.expand()
             self._restore_subtree_expansion(child)
 
-    def _save_expanded_state(self) -> None:
+    def _save_expanded_state(self: AppProtocol) -> None:
         """Save which nodes are expanded."""
         from ...config import load_settings, save_settings
 
         expanded = []
 
-        def collect_expanded(node):
+        def collect_expanded(node: Any) -> None:
             if node.is_expanded and node.data:
                 path = self._get_node_path(node)
                 if path:
@@ -195,11 +182,11 @@ class TreeMixin:
         settings["expanded_nodes"] = expanded
         save_settings(settings)
 
-    def on_tree_node_collapsed(self, event: Tree.NodeCollapsed) -> None:
+    def on_tree_node_collapsed(self: AppProtocol, event: Tree.NodeCollapsed) -> None:
         """Save state when a node is collapsed."""
         self.call_later(self._save_expanded_state)
 
-    def on_tree_node_expanded(self, event: Tree.NodeExpanded) -> None:
+    def on_tree_node_expanded(self: AppProtocol, event: Tree.NodeExpanded) -> None:
         """Load child objects when a node is expanded."""
         node = event.node
 
@@ -229,7 +216,7 @@ class TreeMixin:
             return  # Already loading this node
 
         # Handle table/view column expansion
-        if isinstance(data, (TableNode, ViewNode)):
+        if isinstance(data, TableNode | ViewNode):
             self._loading_nodes.add(node_path)
             loading_node = node.add_leaf("[dim italic]Loading...[/]")
             loading_node.data = LoadingNode()
@@ -244,7 +231,7 @@ class TreeMixin:
             self._load_folder_async(node, data)
             return
 
-    def _load_columns_async(self, node, data: TableNode | ViewNode) -> None:
+    def _load_columns_async(self: AppProtocol, node: Any, data: TableNode | ViewNode) -> None:
         """Spawn worker to load columns for a table/view."""
         db_name = data.database
         schema_name = data.schema
@@ -267,7 +254,9 @@ class TreeMixin:
 
         self.run_worker(work, name=f"load-columns-{obj_name}", thread=True, exclusive=False)
 
-    def _on_columns_loaded(self, node, db_name: str | None, schema_name: str, obj_name: str, columns: list) -> None:
+    def _on_columns_loaded(
+        self: AppProtocol, node: Any, db_name: str | None, schema_name: str, obj_name: str, columns: list
+    ) -> None:
         """Handle column load completion on main thread."""
         node_path = self._get_node_path(node)
         self._loading_nodes.discard(node_path)
@@ -282,7 +271,7 @@ class TreeMixin:
             child = node.add_leaf(f"[dim]{col_name}[/] [italic dim]{col_type}[/]")
             child.data = ColumnNode(database=db_name, schema=schema_name, table=obj_name, name=col.name)
 
-    def _load_folder_async(self, node, data: FolderNode) -> None:
+    def _load_folder_async(self: AppProtocol, node: Any, data: FolderNode) -> None:
         """Spawn worker to load folder contents (tables/views/procedures)."""
         folder_type = data.folder_type
         db_name = data.database
@@ -302,7 +291,7 @@ class TreeMixin:
                         items = [("view", s, v) for s, v in adapter.get_views(conn, db_name)]
                     elif folder_type == "procedures":
                         if adapter.supports_stored_procedures:
-                            items = [("procedure", p) for p in adapter.get_procedures(conn, db_name)]
+                            items = [("procedure", "", p) for p in adapter.get_procedures(conn, db_name)]
                         else:
                             items = []
                     else:
@@ -315,7 +304,7 @@ class TreeMixin:
 
         self.run_worker(work, name=f"load-folder-{folder_type}", thread=True, exclusive=False)
 
-    def _on_folder_loaded(self, node, db_name: str | None, folder_type: str, items: list) -> None:
+    def _on_folder_loaded(self: AppProtocol, node: Any, db_name: str | None, folder_type: str, items: list) -> None:
         """Handle folder load completion on main thread."""
         node_path = self._get_node_path(node)
         self._loading_nodes.discard(node_path)
@@ -334,15 +323,15 @@ class TreeMixin:
         else:
             for item in items:
                 if item[0] == "procedure":
-                    child = node.add(escape_markup(item[1]))
-                    child.data = ProcedureNode(database=db_name, name=item[1])
+                    child = node.add(escape_markup(item[2]))
+                    child.data = ProcedureNode(database=db_name, name=item[2])
 
     def _add_schema_grouped_items(
         self,
-        node,
+        node: Any,
         db_name: str | None,
         folder_type: str,
-        items: list,
+        items: list[Any],
         default_schema: str,
     ) -> None:
         """Add tables/views grouped by schema."""
@@ -359,7 +348,7 @@ class TreeMixin:
 
         sorted_schemas = sorted(by_schema.keys(), key=schema_sort_key)
         has_multiple_schemas = len(sorted_schemas) > 1
-        schema_nodes: dict[str, any] = {}
+        schema_nodes: dict[str, Any] = {}
 
         for schema in sorted_schemas:
             schema_items = by_schema[schema]
@@ -372,7 +361,9 @@ class TreeMixin:
                     display_name = schema if schema else default_schema
                     escaped_name = escape_markup(display_name)
                     schema_node = node.add(f"[dim]\\[{escaped_name}][/]")
-                    schema_node.data = SchemaNode(database=db_name, schema=schema or default_schema, folder_type=folder_type)
+                    schema_node.data = SchemaNode(
+                        database=db_name, schema=schema or default_schema, folder_type=folder_type
+                    )
                     schema_node.allow_expand = True
                     schema_nodes[schema] = schema_node
                 parent = schema_nodes[schema]
@@ -386,7 +377,7 @@ class TreeMixin:
                     child.data = ViewNode(database=db_name, schema=schema_name, name=obj_name)
                 child.allow_expand = True
 
-    def _on_tree_load_error(self, node, error_message: str) -> None:
+    def _on_tree_load_error(self: AppProtocol, node: Any, error_message: str) -> None:
         """Handle tree load error on main thread."""
         node_path = self._get_node_path(node)
         self._loading_nodes.discard(node_path)
@@ -397,7 +388,7 @@ class TreeMixin:
 
         self.notify(escape_markup(error_message), severity="error")
 
-    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+    def on_tree_node_selected(self: AppProtocol, event: Tree.NodeSelected) -> None:
         """Handle tree node selection (double-click/enter)."""
         node = event.node
         if not node.data:
@@ -413,18 +404,19 @@ class TreeMixin:
                 self._disconnect_silent()
             self.connect_to_server(config)
 
-    def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
+    def on_tree_node_highlighted(self: AppProtocol, event: Tree.NodeHighlighted) -> None:
         """Update footer when tree selection changes."""
         self._update_footer_bindings()
 
-    def action_refresh_tree(self) -> None:
+    def action_refresh_tree(self: AppProtocol) -> None:
         """Refresh the explorer."""
         self.refresh_tree()
         self.notify("Refreshed")
 
-    def action_collapse_tree(self) -> None:
+    def action_collapse_tree(self: AppProtocol) -> None:
         """Collapse all nodes in the explorer."""
-        def collapse_all(node):
+
+        def collapse_all(node: Any) -> None:
             for child in node.children:
                 collapse_all(child)
                 child.collapse()
@@ -433,7 +425,7 @@ class TreeMixin:
         self._expanded_paths.clear()
         self._save_expanded_state()
 
-    def action_select_table(self) -> None:
+    def action_select_table(self: AppProtocol) -> None:
         """Generate and execute SELECT query for selected table/view."""
         if not self.current_adapter:
             return
@@ -444,7 +436,7 @@ class TreeMixin:
             return
 
         data = node.data
-        if not isinstance(data, (TableNode, ViewNode)):
+        if not isinstance(data, TableNode | ViewNode):
             return
 
         self.query_input.text = self.current_adapter.build_select_query(data.name, 100, data.database, data.schema)

@@ -55,7 +55,17 @@ jobs:
 
       - name: Run unit tests
         run: |
-          pytest tests/test_validation.py tests/ui/ -v --timeout=60
+          pytest tests/ -v --timeout=60 \
+            --ignore=tests/test_sqlite.py \
+            --ignore=tests/test_mssql.py \
+            --ignore=tests/test_postgresql.py \
+            --ignore=tests/test_mysql.py \
+            --ignore=tests/test_oracle.py \
+            --ignore=tests/test_mariadb.py \
+            --ignore=tests/test_duckdb.py \
+            --ignore=tests/test_cockroachdb.py \
+            --ignore=tests/test_turso.py \
+            --ignore=tests/test_ssh.py
 
   test-sqlite:
     runs-on: ubuntu-latest

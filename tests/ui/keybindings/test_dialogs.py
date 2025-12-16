@@ -31,9 +31,7 @@ class TestDialogKeybindings:
             await pilot.pause()
 
             # Verify dialog is shown
-            has_error = any(
-                isinstance(screen, ErrorScreen) for screen in app.screen_stack
-            )
+            has_error = any(isinstance(screen, ErrorScreen) for screen in app.screen_stack)
             assert has_error
 
             # Try to focus query - should be blocked by modal
@@ -91,7 +89,6 @@ class TestDialogKeybindings:
         copied_text = {"value": None}
 
         async with app.run_test(size=(100, 35)) as pilot:
-            original_copy = app.copy_to_clipboard
 
             def mock_copy(text):
                 copied_text["value"] = text
@@ -249,9 +246,7 @@ class TestDialogKeybindings:
             await pilot.pause()
 
             # Only the error dialog should be open, not theme picker
-            error_count = sum(
-                1 for screen in app.screen_stack if isinstance(screen, ErrorScreen)
-            )
+            error_count = sum(1 for screen in app.screen_stack if isinstance(screen, ErrorScreen))
             assert error_count == 1
             # Screen stack should just have main screen + error dialog
             assert len(app.screen_stack) == 2

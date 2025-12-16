@@ -32,7 +32,7 @@ A lightweight TUI for people who just want to run some queries fast.
 
 
 ## Motivation
-I usually do my work in the terminal, but I found myself either having to boot up massively bloated GUI's like SSMS or Vscode for the simple task of merely browsing my databases and doing some queries toward them. For the vast majority of my use cases, I never used any of the advanced features for inspection and debugging that SSMS and other feature-rich clients provide. 
+I usually do my work in the terminal, but I found myself either having to boot up massively bloated GUI's like SSMS or Vscode for the simple task of merely browsing my databases and doing some queries toward them. For the vast majority of my use cases, I never used any of the advanced features for inspection and debugging that SSMS and other feature-rich clients provide.
 
 I had the unfortunate situation where doing queries became a pain-point due to the massive operation it is to open SSMS and it's lack of intuitive keyboard only navigation.
 
@@ -45,11 +45,47 @@ sqlit is a lightweight database TUI that is easy to use and beautiful to look at
 
 ## Installation
 
-```bash
-pip install sqlit-tui
-```
+### Method 1: `pipx` (Recommended)
 
-If you are missing Python packages for your database provider, sqlit will help you install them when you attempt to connect. If you want to pre-install requirements, see [Adapter Requirements](#adapter-requirements).
+This is the recommended method. It installs `sqlit-tui` and its dependencies in an isolated environment, preventing any conflicts with your other Python projects.
+
+1.  **Install pipx:** If you don't have pipx, you can install it with:
+    ```bash
+    python3 -m pip install --user pipx
+    python3 -m pipx ensurepath
+    ```
+    *(You may need to restart your terminal after this step)*
+
+2.  **Install sqlit-tui:**
+    ```bash
+    pipx install sqlit-tui
+    ```
+
+3.  **Install Drivers:** To add database drivers, use `pipx inject`. The application will guide you if a driver is missing, but you can also pre-install them. For example:
+    ```bash
+    # To add PostgreSQL support
+    pipx inject sqlit-tui psycopg2-binary
+
+    # To add MySQL support
+    pipx inject sqlit-tui mysql-connector-python
+    ```
+
+### Method 2: `pip` (Alternative)
+
+*(Note: To avoid dependency conflicts, installing in a virtual environment is recommended.)*
+
+You can install `sqlit-tui` and drivers directly with `pip` using "extras". The application will guide you if a driver is missing.
+
+```bash
+# To install with PostgreSQL and MySQL support
+pip install "sqlit-tui[postgres,mysql]"
+
+# To add a driver to an existing installation
+pip install "sqlit-tui[mariadb]"
+
+# To install all drivers
+pip install "sqlit-tui[all]"
+```
 
 ## Usage
 
@@ -141,7 +177,7 @@ Credentials are stored in plain text in a protected directory (`~/.sqlit/`) with
 sqlit is inspired by [lazygit](https://github.com/jesseduffield/lazygit) - you can just jump in and there's no need for external documentation. The keybindings are shown at the bottom of the screen and the UI is designed to be intuitive without memorizing shortcuts.
 
 Key differences:
-- **No need for external documentation** - Sqlit embrace the "lazy" approach in that a user should be able to jump in and use it right away intuitively. There should be no setup instructions. If python packages are required for certain adapters, sqlit will help you install them as you need them. 
+- **No need for external documentation** - Sqlit embrace the "lazy" approach in that a user should be able to jump in and use it right away intuitively. There should be no setup instructions. If python packages are required for certain adapters, sqlit will help you install them as you need them.
 - **No CLI config required** - Just run `sqlit` and pick a connection from the UI
 - **Lightweight** - While Lazysql or Harlequin offer more features, I experienced that for the vast majority of cases, all I needed was a simple and fast way to connect and run queries. Sqlit is focused on doing a limited amount of things really well.
 
@@ -155,24 +191,25 @@ sqlit is built with [Textual](https://github.com/Textualize/textual) and inspire
 
 See `CONTRIBUTING.md` for development setup, testing, CI, and CockroachDB quickstart steps.
 
-## Adapter Requirements
+### Driver Reference
 
-Each database provider requires specific Python packages. sqlit will prompt you to install these when needed, but you can also pre-install them:
+While the application will guide you to install missing drivers, you can also pre-install them.
 
-| Database | Package | Install Command |
-|----------|---------|-----------------|
-| SQLite | *(built-in)* | No installation needed |
-| SQL Server | `pyodbc` | `pip install pyodbc` |
-| PostgreSQL | `psycopg2-binary` | `pip install psycopg2-binary` |
-| MySQL | `mysql-connector-python` | `pip install mysql-connector-python` |
-| MariaDB | `mariadb` | `pip install mariadb` |
-| Oracle | `oracledb` | `pip install oracledb` |
-| DuckDB | `duckdb` | `pip install duckdb` |
-| CockroachDB | `psycopg2-binary` | `pip install psycopg2-binary` |
-| Supabase | `psycopg2-binary` | `pip install psycopg2-binary` |
-| Turso | `libsql-client` | `pip install libsql-client` |
+| Database | `pip install` Command | `pipx inject` Command |
+| :--- | :--- | :--- |
+| SQLite | *(built-in)* | *(built-in)* |
+| PostgreSQL | `pip install "sqlit-tui[postgres]"` | `pipx inject sqlit-tui psycopg2-binary` |
+| CockroachDB | `pip install "sqlit-tui[cockroachdb]"` | `pipx inject sqlit-tui psycopg2-binary` |
+| Supabase | `pip install "sqlit-tui[postgres]"` | `pipx inject sqlit-tui psycopg2-binary` |
+| SQL Server | `pip install "sqlit-tui[mssql]"` | `pipx inject sqlit-tui pyodbc` |
+| MySQL | `pip install "sqlit-tui[mysql]"` | `pipx inject sqlit-tui mysql-connector-python` |
+| MariaDB | `pip install "sqlit-tui[mariadb]"` | `pipx inject sqlit-tui mariadb` |
+| Oracle | `pip install "sqlit-tui[oracle]"` | `pipx inject sqlit-tui oracledb` |
+| DuckDB | `pip install "sqlit-tui[duckdb]"` | `pipx inject sqlit-tui duckdb` |
+| Turso | `pip install "sqlit-tui[turso]"` | `pipx inject sqlit-tui libsql-client`|
+| Cloudflare D1 | `pip install "sqlit-tui[d1]"` | `pipx inject sqlit-tui requests` |
 
-**Note:** SQL Server also requires the ODBC driver. On first connection attempt, sqlit will detect if it's missing and help you install it.
+**Note:** SQL Server also requires the platform-specific ODBC driver. On your first connection attempt, `sqlit` can help you install it if it's missing.
 
 ## License
 

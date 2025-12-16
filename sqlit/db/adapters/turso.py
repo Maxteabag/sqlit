@@ -22,6 +22,18 @@ class TursoAdapter(DatabaseAdapter):
         return "Turso"
 
     @property
+    def install_extra(self) -> str:
+        return "turso"
+
+    @property
+    def install_package(self) -> str:
+        return "libsql-client"
+
+    @property
+    def driver_import_names(self) -> tuple[str, ...]:
+        return ("libsql_client",)
+
+    @property
     def supports_multiple_databases(self) -> bool:
         return False
 
@@ -29,13 +41,20 @@ class TursoAdapter(DatabaseAdapter):
     def supports_stored_procedures(self) -> bool:
         return False
 
-    def connect(self, config: "ConnectionConfig") -> Any:
+    def connect(self, config: ConnectionConfig) -> Any:
         """Connect to Turso database.
 
         Uses config.server for the database URL and config.password for the auth token.
         Supports libsql://, https://, and http:// URLs.
         """
-        from libsql_client import create_client_sync
+        try:
+            from libsql_client import create_client_sync
+        except ImportError as e:
+            from ...db.exceptions import MissingDriverError
+
+            if not self.install_extra or not self.install_package:
+                raise e
+            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
 
         url = config.server
         # Ensure URL has proper scheme
@@ -61,9 +80,7 @@ class TursoAdapter(DatabaseAdapter):
 
     def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of views from Turso. Returns (schema, name) with empty schema."""
-        result = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='view' ORDER BY name"
-        )
+        result = conn.execute("SELECT name FROM sqlite_master WHERE type='view' ORDER BY name")
         return [("", row[0]) for row in result.rows]
 
     def get_columns(
@@ -87,15 +104,11 @@ class TursoAdapter(DatabaseAdapter):
         escaped = name.replace('"', '""')
         return f'"{escaped}"'
 
-    def build_select_query(
-        self, table: str, limit: int, database: str | None = None, schema: str | None = None
-    ) -> str:
+    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT LIMIT query for Turso. Schema parameter is ignored."""
         return f'SELECT * FROM "{table}" LIMIT {limit}'
 
-    def execute_query(
-        self, conn: Any, query: str, max_rows: int | None = None
-    ) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on Turso with optional row limit."""
         result = conn.execute(query)
         if result.columns:
@@ -109,4 +122,4 @@ class TursoAdapter(DatabaseAdapter):
     def execute_non_query(self, conn: Any, query: str) -> int:
         """Execute a non-query on Turso."""
         result = conn.execute(query)
-        return result.rows_affected
+        return int(result.rows_affected or 0)
