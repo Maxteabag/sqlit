@@ -57,19 +57,79 @@ class ConnectionMixin:
 
         def on_error(error: Exception) -> None:
             """Handle connection failure on main thread."""
-            from ...db.exceptions import MissingDriverError
-            from ..screens import ConfirmScreen, ErrorScreen
+            from ...config import save_connections
+            from ...db.exceptions import MissingDriverError, MissingODBCDriverError
+            from ...terminal import run_in_terminal
+            from ..screens import ConfirmScreen, DriverSetupScreen, ErrorScreen, MessageScreen
 
             self._connection_failed = True
             self._update_status_bar()
 
             if isinstance(error, MissingDriverError):
+                from ...services.installer import Installer
+                from ..screens import PackageSetupScreen
+
+                self.push_screen(
+                    PackageSetupScreen(error, on_install=lambda err: Installer(self).install(err)),
+                )
+            elif isinstance(error, MissingODBCDriverError):
+
+                def on_confirm(confirmed: bool | None) -> None:
+                    if confirmed is not True:
+                        self.push_screen(
+                            MessageScreen(
+                                "Missing ODBC driver",
+                                (
+                                    "SQL Server requires an ODBC driver.\n\n"
+                                    "Open connection settings (Advanced) to configure drivers."
+                                ),
+                            )
+                        )
+                        return
+
+                    def on_driver_result(result: Any) -> None:
+                        if not result:
+                            return
+                        action = result[0]
+                        if action == "select":
+                            driver = result[1]
+                            config.driver = driver
+                            for i, c in enumerate(self.connections):
+                                if c.name == config.name:
+                                    self.connections[i] = config
+                                    break
+                            save_connections(self.connections)
+                            self.call_later(lambda: self.connect_to_server(config))
+                            return
+                        if action == "install":
+                            commands = result[1]
+                            res = run_in_terminal(commands)
+                            if res.success:
+                                self.push_screen(
+                                    MessageScreen(
+                                        "Driver install",
+                                        "Installation started in a new terminal.\n\nPlease restart to apply.",
+                                    )
+                                )
+                            else:
+                                self.push_screen(
+                                    MessageScreen(
+                                        "Couldn't install automatically",
+                                        "Couldn't install automatically, please install manually.",
+                                    ),
+                                    lambda _=None: self.push_screen(
+                                        DriverSetupScreen(error.installed_drivers), on_driver_result
+                                    ),
+                                )
+
+                    self.push_screen(DriverSetupScreen(error.installed_drivers), on_driver_result)
+
                 self.push_screen(
                     ConfirmScreen(
-                        "Missing driver",
-                        f"This connection requires the {error.driver_name} driver.\n\nInstall it now?",
+                        "Missing ODBC driver",
+                        "SQL Server requires an ODBC driver.\n\nOpen driver setup now?",
                     ),
-                    lambda confirmed: self._handle_install_confirmation(confirmed, error),
+                    on_confirm,
                 )
             else:
                 self.push_screen(ErrorScreen("Connection Failed", str(error)))

@@ -92,6 +92,12 @@ class SQLServerAdapter(DatabaseAdapter):
                 raise e
             raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
 
+        installed = list(pyodbc.drivers())
+        if config.driver not in installed:
+            from ...db.exceptions import MissingODBCDriverError
+
+            raise MissingODBCDriverError(config.driver, installed)
+
         conn_str = self._build_connection_string(config)
         return pyodbc.connect(conn_str, timeout=10)
 

@@ -91,46 +91,63 @@ async def _run_flow(*, force_fail: bool, db_type: str) -> None:
         await pilot.pause(0.2)
         _maybe_screenshot(app, f"{db_type}-01-connection")
 
-        # Attempt to save should prompt to install missing driver
+        # Attempt to save should show missing package setup
         app.screen.action_save()
         await _wait_for(
             pilot,
-            lambda: app.screen.__class__.__name__ == "ConfirmScreen",
+            lambda: app.screen.__class__.__name__ == "PackageSetupScreen",
             timeout_s=5,
-            label="ConfirmScreen",
+            label="PackageSetupScreen",
         )
         # Give Textual a render tick so screenshots capture the modal contents
         await pilot.pause(0.2)
         _maybe_screenshot(app, f"{db_type}-02-confirm")
-        await pilot.press("enter")
+        await pilot.press("i")
 
-        if not force_fail:
+        # Installation may briefly show a LoadingScreen (even on forced failure).
+        try:
             await _wait_for(
                 pilot,
                 lambda: app.screen.__class__.__name__ == "LoadingScreen",
-                timeout_s=5,
+                timeout_s=2,
                 label="LoadingScreen",
             )
             await pilot.pause(0.2)
             _maybe_screenshot(app, f"{db_type}-03-loading")
+        except AssertionError:
+            pass
 
         await _wait_for(
             pilot,
-            lambda: app.screen.__class__.__name__ in ("MessageScreen", "ErrorScreen"),
+            lambda: app.screen.__class__.__name__ in ("MessageScreen", "PackageSetupScreen"),
             timeout_s=180,
-            label="MessageScreen or ErrorScreen",
+            label="MessageScreen or PackageSetupScreen",
         )
-        await pilot.pause(0.2)
-        _maybe_screenshot(app, f"{db_type}-04-result")
 
+        # If failure, we get a MessageScreen and then return to the setup screen.
         if force_fail:
-            assert app.screen.__class__.__name__ == "ErrorScreen"
-            err_text = getattr(app.screen, "message", "")
-            if expected_manual not in err_text:
-                raise AssertionError(f"Expected manual install hint in ErrorScreen, got:\n{err_text}")
+            assert app.screen.__class__.__name__ == "MessageScreen"
+            await pilot.pause(0.2)
+            _maybe_screenshot(app, f"{db_type}-04-result")
+            await pilot.press("enter")
+            await _wait_for(
+                pilot,
+                lambda: app.screen.__class__.__name__ == "PackageSetupScreen",
+                timeout_s=5,
+                label="PackageSetupScreen (after failure)",
+            )
+            await pilot.pause(0.2)
+            _maybe_screenshot(app, f"{db_type}-05-back-to-setup")
+
+            from textual.widgets import Static
+
+            text = str(app.screen.query_one("#package-script", Static).content)
+            if expected_manual not in text:
+                raise AssertionError(f"Expected manual install hint in setup screen, got:\n{text}")
         else:
             assert app.screen.__class__.__name__ == "MessageScreen"
-            # No need to dismiss; success is established by reaching this screen.
+            await pilot.pause(0.2)
+            _maybe_screenshot(app, f"{db_type}-04-result")
 
     os.environ.pop("SQLIT_INSTALL_FORCE_FAIL", None)
 

@@ -10,6 +10,7 @@ from textual.containers import Container, Horizontal
 from textual.events import ScreenResume, ScreenSuspend
 from textual.screen import ModalScreen
 from textual.widgets import (
+    Button,
     Input,
     OptionList,
     Select,
@@ -50,6 +51,7 @@ class ConnectionScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
         Binding("ctrl+s", "save", "Save", priority=True),
         Binding("ctrl+t", "test_connection", "Test", priority=True),
+        Binding("ctrl+i", "install_driver", "Install driver", show=False, priority=True),
         Binding("tab", "next_field", "Next field", priority=True),
         Binding("shift+tab", "prev_field", "Previous field", priority=True),
         Binding("down", "focus_tab_content", "Focus content", show=False),
@@ -84,6 +86,14 @@ class ConnectionScreen(ModalScreen):
 
     #connection-dialog Input, #connection-dialog Select {
         margin-bottom: 0;
+    }
+
+    #btn-odbc-setup {
+        width: auto;
+        border: solid $primary;
+        background: transparent;
+        color: $primary;
+        margin-top: 1;
     }
 
     .field-container {
@@ -243,6 +253,7 @@ class ConnectionScreen(ModalScreen):
         self._focused_container_id: str | None = None
         self.validation_state: ValidationState = ValidationState()
         self._saved_dialog_subtitle: str | None = None
+        self._missing_driver_error: Any = None  # Stores MissingDriverError if driver is missing
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         # Prevent underlying screens from receiving actions when another modal is on top.
@@ -464,11 +475,49 @@ class ConnectionScreen(ModalScreen):
             except Exception:
                 pass
 
+    def _check_driver_availability(self, db_type: DatabaseType) -> None:
+        """Check if the driver for the database type is available and update UI."""
+        from ...db.exceptions import MissingDriverError
+
+        self._missing_driver_error = None
+        try:
+            adapter = get_adapter(db_type.value)
+            adapter.ensure_driver_available()
+        except MissingDriverError as e:
+            self._missing_driver_error = e
+
+        self._update_driver_status_ui()
+
+    def _update_driver_status_ui(self) -> None:
+        """Update UI based on driver availability."""
+        try:
+            test_status = self.query_one("#test-status", Static)
+            dialog = self.query_one("#connection-dialog", Dialog)
+        except Exception:
+            return
+
+        if self._missing_driver_error:
+            # Show warning about missing driver
+            error = self._missing_driver_error
+            test_status.update(
+                f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
+                f'[dim]Install with:[/] pip install "sqlit-tui[{error.extra_name}]"'
+            )
+            # Update footer to show Install driver instead of Test/Save
+            dialog.border_subtitle = "[bold]Install ^i[/]  Cancel <esc>"
+        else:
+            # Clear warning and restore normal footer
+            if not self._last_test_ok and self._last_test_ok is not None:
+                pass  # Keep existing error message
+            else:
+                test_status.update("")
+            dialog.border_subtitle = "[bold]Test ^t[/]  Save ^s  Cancel <esc>"
+
     def compose(self) -> ComposeResult:
         title = "Edit Connection" if self.editing else "New Connection"
         db_type = self._get_initial_db_type()
 
-        shortcuts = [("Test", "^T"), ("Save", "^S"), ("Cancel", "<esc>")]
+        shortcuts = [("Test", "^t"), ("Save", "^s"), ("Cancel", "<esc>")]
 
         with Dialog(id="connection-dialog", title=title, shortcuts=shortcuts):
             with TabbedContent(id="connection-tabs"):
@@ -507,6 +556,8 @@ class ConnectionScreen(ModalScreen):
                         _general_groups, advanced_groups = self._split_groups_by_advanced(field_groups)
                         for group in advanced_groups:
                             yield from self._create_field_group(group)
+                    with Container(id="mssql-driver-setup", classes="hidden"):
+                        yield Button("ODBC driver setup…", id="btn-odbc-setup")
 
                 with TabPane("SSH", id="tab-ssh"):
                     with Container(id="dynamic-fields-ssh"):
@@ -528,6 +579,8 @@ class ConnectionScreen(ModalScreen):
         _general, advanced = self._split_groups_by_advanced(field_groups)
         self._set_advanced_tab_enabled(bool(advanced))
         self._update_ssh_tab_enabled(self._current_db_type)
+        self._update_mssql_driver_setup_visibility(self._current_db_type)
+        self._check_driver_availability(self._current_db_type)
 
     def on_descendant_focus(self, event: Any) -> None:
         focused = self.focused
@@ -702,6 +755,8 @@ class ConnectionScreen(ModalScreen):
                 self._update_field_visibility()
                 self._focus_first_required()
                 self._update_ssh_tab_enabled(db_type)
+                self._update_mssql_driver_setup_visibility(db_type)
+                self._check_driver_availability(db_type)
             return
 
         if event.select.id and str(event.select.id).startswith("field-"):
@@ -795,8 +850,98 @@ class ConnectionScreen(ModalScreen):
                             fields.append(widget)
                     except Exception:
                         pass
+            try:
+                container = self.query_one("#mssql-driver-setup", Container)
+                if "hidden" not in container.classes:
+                    fields.append(self.query_one("#btn-odbc-setup", Button))
+            except Exception:
+                pass
 
         return fields
+
+    def _update_mssql_driver_setup_visibility(self, db_type: DatabaseType) -> None:
+        try:
+            container = self.query_one("#mssql-driver-setup", Container)
+        except Exception:
+            return
+        if db_type.value == "mssql":
+            container.remove_class("hidden")
+        else:
+            container.add_class("hidden")
+
+    def _set_select_field_value(self, field_name: str, value: str) -> None:
+        widget = self._field_widgets.get(field_name)
+        field_def = self._field_definitions.get(field_name)
+        if not isinstance(widget, OptionList) or not field_def or not field_def.options:
+            return
+        for i, opt in enumerate(field_def.options):
+            if opt.value == value:
+                widget.highlighted = i
+                return
+
+    def _open_odbc_driver_setup(self, installed_drivers: list[str] | None = None) -> None:
+        from ...db.exceptions import MissingDriverError
+        from ...drivers import get_installed_drivers
+        from ...terminal import run_in_terminal
+        from ..screens import DriverSetupScreen, MessageScreen
+
+        try:
+            get_adapter("mssql").ensure_driver_available()
+        except MissingDriverError as e:
+            self._prompt_install_missing_driver(e)
+            return
+
+        installed = installed_drivers if installed_drivers is not None else get_installed_drivers()
+
+        def on_result(result: Any) -> None:
+            if not result:
+                return
+            action = result[0]
+            if action == "select":
+                driver = result[1]
+                self._set_select_field_value("driver", driver)
+                return
+            if action == "install":
+                commands = result[1]
+                res = run_in_terminal(commands)
+                if res.success:
+                    self.app.push_screen(
+                        MessageScreen(
+                            "Driver install",
+                            "Installation started in a new terminal.\n\nPlease restart to apply.",
+                        )
+                    )
+                else:
+
+                    def reopen(_: Any = None) -> None:
+                        self._open_odbc_driver_setup(installed_drivers=installed)
+
+                    self.app.push_screen(
+                        MessageScreen(
+                            "Couldn't install automatically",
+                            "Couldn't install automatically, please install manually.",
+                        ),
+                        reopen,
+                    )
+
+        self.app.push_screen(DriverSetupScreen(installed), on_result)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-odbc-setup":
+            self._open_odbc_driver_setup()
+
+    def action_open_odbc_setup(self) -> None:
+        if self._current_db_type.value != "mssql":
+            return
+        self._open_odbc_driver_setup()
+
+    def action_install_driver(self) -> None:
+        """Install the missing driver for the current database type."""
+        if self._missing_driver_error:
+            self._prompt_install_missing_driver(self._missing_driver_error)
+        elif self._current_db_type.value == "mssql":
+            # For MSSQL, open ODBC setup
+            self._open_odbc_driver_setup()
 
     def _clear_field_error(self, name: str) -> None:
         try:
@@ -1104,35 +1249,26 @@ class ConnectionScreen(ModalScreen):
             return None
 
     def _prompt_install_missing_driver(self, error: Exception) -> None:
-        from ...db.adapters.base import _create_driver_import_error_hint
         from ...db.exceptions import MissingDriverError
         from ...services.installer import Installer
-        from ..screens import ConfirmScreen, ErrorScreen
+        from ..screens import PackageSetupScreen
 
         if not isinstance(error, MissingDriverError):
             return
 
-        def on_confirm(confirmed: bool | None) -> None:
-            if confirmed is True:
-                Installer(self.app).install(error)
-            elif confirmed is False:
-                hint = _create_driver_import_error_hint(error.driver_name, error.extra_name, error.package_name)
-                self.app.push_screen(ErrorScreen("Manual Installation Required", hint))
-            else:
-                return
-
         self.app.push_screen(
-            ConfirmScreen(
-                "Missing driver",
-                f"This connection requires the {error.driver_name} driver.\n\nInstall it now?",
-            ),
-            on_confirm,
+            PackageSetupScreen(error, on_install=lambda err: Installer(self.app).install(err)),
         )
 
     def action_test_connection(self) -> None:
         from dataclasses import replace
 
-        from ...db.exceptions import MissingDriverError
+        from ...db.exceptions import MissingDriverError, MissingODBCDriverError
+
+        # If driver is missing, show install dialog instead
+        if self._missing_driver_error:
+            self._prompt_install_missing_driver(self._missing_driver_error)
+            return
 
         config = self._get_config()
         if not config:
@@ -1178,6 +1314,10 @@ class ConnectionScreen(ModalScreen):
             self._prompt_install_missing_driver(e)
             self._last_test_ok = False
             self.query_one("#test-status", Static).update("Last test: failed (missing driver)")
+        except MissingODBCDriverError as e:
+            self._open_odbc_driver_setup(e.installed_drivers)
+            self._last_test_ok = False
+            self.query_one("#test-status", Static).update("Last test: failed (missing ODBC driver)")
         except (ModuleNotFoundError, ImportError) as e:
             hint = self._get_package_install_hint(config.db_type)
             if hint:

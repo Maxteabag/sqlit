@@ -1,0 +1,10 @@
+services:
+  ui-test:
+    build:
+      context: ../../..
+      dockerfile: tests/integration/drivers/dockerfiles/ui.Dockerfile
+    container_name: sqlit-test-odbc-driver-ui
+    environment:
+      SQLIT_TEST_SCREENSHOTS_DIR: /artifacts
+    volumes:
+      - ./artifacts:/artifacts

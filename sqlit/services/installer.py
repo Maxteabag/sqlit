@@ -129,8 +129,6 @@ class Installer:
         """
         from textual.css.stylesheet import StylesheetParseError
 
-        from ..db.adapters.base import _create_driver_import_error_hint
-        from ..ui.screens.error import ErrorScreen
         from ..ui.screens.message import MessageScreen
 
         success, output, error = result
@@ -148,28 +146,13 @@ class Installer:
                     )
                 )
             else:
-                if "cancelled by user" in output.lower():
-                    manual_hint = _create_driver_import_error_hint(
-                        error.driver_name, error.extra_name, error.package_name
+                # Keep the manual instructions in the underlying setup screen.
+                self.app.push_screen(
+                    MessageScreen(
+                        "Couldn't install automatically",
+                        "Couldn't install automatically, please install manually.",
                     )
-                    self.app.push_screen(
-                        MessageScreen(
-                            "Installation Cancelled",
-                            "Automatic installation was cancelled.\n\nYou can install the driver manually:\n"
-                            + manual_hint,
-                        )
-                    )
-                    return
-                manual_hint = _create_driver_import_error_hint(error.driver_name, error.extra_name, error.package_name)
-                output_clean = (output or "").strip()
-                error_details = (
-                    "Automatic installation failed.\n\n"
-                    "[bold]Reason:[/bold]\n"
-                    f"{output_clean}\n\n"
-                    "Please try the manual installation steps below.\n\n"
-                    f"{manual_hint.strip()}\n"
                 )
-                self.app.push_screen(ErrorScreen("Installation Failed", error_details))
         except StylesheetParseError as e:
             # Fallback: avoid crashing the app if the stylesheet can’t be reparsed after install.
             try:

@@ -14,7 +14,6 @@ from textual.timer import Timer
 from textual.widgets import DataTable, Static, TextArea, Tree
 from textual.worker import Worker
 
-from .compat import PYODBC_AVAILABLE
 from .config import (
     ConnectionConfig,
     load_connections,
@@ -262,6 +261,7 @@ class SSMSTUI(
         self._table_metadata: dict = {}
         self._columns_loading: set[str] = set()
         self._state_machine = UIStateMachine()
+        self._session_factory: Any | None = None
 
         if mock_profile:
             self._session_factory = self._create_mock_session_factory(mock_profile)
@@ -415,12 +415,6 @@ class SSMSTUI(
     def on_mount(self) -> None:
         """Initialize the app."""
         self._restart_argv = self._compute_restart_argv()
-        if not PYODBC_AVAILABLE and not self._mock_profile:
-            self.notify(
-                "pyodbc not installed. Run: pip install pyodbc",
-                severity="warning",
-                timeout=10,
-            )
 
         settings = load_settings()
         if "theme" in settings:
@@ -447,58 +441,6 @@ class SSMSTUI(
         if self.object_tree.root.children:
             self.object_tree.cursor_line = 0
         self._update_section_labels()
-
-        if not self._mock_profile:
-            self._check_drivers()
-
-    def _check_drivers(self) -> None:
-        """Check if ODBC drivers are installed and show setup if needed."""
-        has_mssql = any(c.db_type == "mssql" for c in self.connections)
-        if not has_mssql:
-            return
-
-        if not PYODBC_AVAILABLE:
-            return
-
-        from .drivers import get_installed_drivers
-
-        installed = get_installed_drivers()
-        if not installed:
-            self.call_later(self._show_driver_setup)
-
-    def _show_driver_setup(self) -> None:
-        """Show the driver setup screen."""
-        from .drivers import get_installed_drivers
-        from .ui.screens import DriverSetupScreen
-
-        installed = get_installed_drivers()
-        self.push_screen(DriverSetupScreen(installed), self._handle_driver_result)
-
-    def _handle_driver_result(self, result: Any) -> None:
-        """Handle result from driver setup screen."""
-        if not result:
-            return
-
-        action = result[0]
-        if action == "select":
-            driver = result[1]
-            self.notify(f"Selected driver: {driver}")
-        elif action == "install":
-            commands = result[1]
-            self._run_driver_install(commands)
-
-    def _run_driver_install(self, commands: list[str]) -> None:
-        """Run driver installation commands in a terminal."""
-        from .terminal import run_in_terminal
-
-        self.notify("Running installation commands...", timeout=3)
-        result = run_in_terminal(commands)
-
-        if result.success:
-            self.notify("Installation started in new terminal. Restart sqlit when done.", timeout=10)
-        else:
-            cmd_str = " && ".join(commands)
-            self.notify(f"No terminal found. Run manually:\n{cmd_str}", severity="warning", timeout=15)
 
     def watch_theme(self, old_theme: str, new_theme: str) -> None:
         """Save theme whenever it changes."""

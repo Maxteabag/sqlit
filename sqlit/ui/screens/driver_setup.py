@@ -5,7 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import ModalScreen
-from textual.widgets import OptionList, Static
+from textual.widgets import OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 
 from ...widgets import Dialog
@@ -18,6 +18,7 @@ class DriverSetupScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
         Binding("enter", "select", "Select"),
         Binding("i", "install_driver", "Install"),
+        Binding("y", "yank", "Yank"),
     ]
 
     CSS = """
@@ -52,12 +53,17 @@ class DriverSetupScreen(ModalScreen):
         margin-top: 1;
         overflow-y: auto;
     }
+
+    #install-commands.flash {
+        background: $primary 30%;
+    }
     """
 
     def __init__(self, installed_drivers: list[str] | None = None):
         super().__init__()
         self.installed_drivers = installed_drivers or []
         self._install_commands: list[str] = []
+        self._install_script: str = ""
 
     def compose(self) -> ComposeResult:
         from ...drivers import SUPPORTED_DRIVERS, get_install_commands, get_os_info
@@ -67,10 +73,10 @@ class DriverSetupScreen(ModalScreen):
 
         if has_drivers:
             title = "Select ODBC Driver"
-            shortcuts = [("Select", "<enter>"), ("Cancel", "<esc>")]
+            shortcuts = [("Select", "<enter>"), ("Yank", "y"), ("Cancel", "<esc>")]
         else:
             title = "No ODBC Driver Found"
-            shortcuts = [("Select", "<enter>"), ("Install", "I"), ("Cancel", "<esc>")]
+            shortcuts = [("Select", "<enter>"), ("Install", "I"), ("Yank", "y"), ("Cancel", "<esc>")]
 
         with Dialog(id="driver-dialog", title=title, shortcuts=shortcuts):
             if has_drivers:
@@ -101,10 +107,12 @@ class DriverSetupScreen(ModalScreen):
                 install_info = get_install_commands()
                 if install_info:
                     self._install_commands = install_info.commands
-                    commands_text = "\n".join(install_info.commands)
-                    yield Static(
-                        f"[bold]{install_info.description}:[/]\n\n{commands_text}",
+                    self._install_script = "\n".join(install_info.commands).strip()
+                    yield TextArea(
+                        f"{install_info.description}:\n\n{self._install_script}\n",
                         id="install-commands",
+                        read_only=True,
+                        language="bash",
                     )
 
     def on_mount(self) -> None:
@@ -139,6 +147,15 @@ class DriverSetupScreen(ModalScreen):
 
         self.notify("Installing driver... This may ask for your password.", timeout=5)
         self.dismiss(("install", self._install_commands))
+
+    def action_yank(self) -> None:
+        script = self._install_script.strip()
+        if not script:
+            return
+        self.app.copy_to_clipboard(script)
+        box = self.query_one("#install-commands", TextArea)
+        box.add_class("flash")
+        self.set_timer(0.15, lambda: box.remove_class("flash"))
 
     def action_cancel(self) -> None:
         self.dismiss(None)
