@@ -50,6 +50,7 @@ async def _wait_for(pilot, predicate, timeout_s: float, label: str) -> None:
 async def _run_flow(*, force_fail: bool, db_type: str) -> None:
     os.environ.setdefault("SQLIT_CONFIG_DIR", tempfile.mkdtemp(prefix="sqlit-test-config-"))
     os.environ["SQLIT_INSTALL_PROJECT_ROOT"] = str(_repo_root())
+    os.environ["SQLIT_DISABLE_RESTART"] = "1"
 
     if force_fail:
         os.environ["SQLIT_INSTALL_FORCE_FAIL"] = "1"
@@ -91,40 +92,35 @@ async def _run_flow(*, force_fail: bool, db_type: str) -> None:
         await pilot.pause(0.2)
         _maybe_screenshot(app, f"{db_type}-01-connection")
 
-        # Attempt to save should show missing package setup
+        # Attempt to save should show a confirmation dialog
         app.screen.action_save()
         await _wait_for(
             pilot,
-            lambda: app.screen.__class__.__name__ == "PackageSetupScreen",
+            lambda: app.screen.__class__.__name__ == "ConfirmScreen",
             timeout_s=5,
-            label="PackageSetupScreen",
+            label="ConfirmScreen",
         )
         # Give Textual a render tick so screenshots capture the modal contents
         await pilot.pause(0.2)
         _maybe_screenshot(app, f"{db_type}-02-confirm")
-        await pilot.press("i")
+        await pilot.press("y")
 
-        # Installation may briefly show a LoadingScreen (even on forced failure).
-        try:
-            await _wait_for(
-                pilot,
-                lambda: app.screen.__class__.__name__ == "LoadingScreen",
-                timeout_s=2,
-                label="LoadingScreen",
-            )
-            await pilot.pause(0.2)
-            _maybe_screenshot(app, f"{db_type}-03-loading")
-        except AssertionError:
-            pass
+        # Return to the ConnectionScreen and show an in-dialog loading indicator.
+        await _wait_for(
+            pilot,
+            lambda: app.screen.__class__.__name__ == "ConnectionScreen",
+            timeout_s=5,
+            label="ConnectionScreen (after confirm)",
+        )
 
         await _wait_for(
             pilot,
-            lambda: app.screen.__class__.__name__ in ("MessageScreen", "PackageSetupScreen"),
+            lambda: app.screen.__class__.__name__ in ("MessageScreen", "ConnectionScreen"),
             timeout_s=180,
-            label="MessageScreen or PackageSetupScreen",
+            label="MessageScreen or ConnectionScreen",
         )
 
-        # If failure, we get a MessageScreen and then return to the setup screen.
+        # If failure, we get a MessageScreen and then return to the connection screen.
         if force_fail:
             assert app.screen.__class__.__name__ == "MessageScreen"
             await pilot.pause(0.2)
@@ -132,24 +128,25 @@ async def _run_flow(*, force_fail: bool, db_type: str) -> None:
             await pilot.press("enter")
             await _wait_for(
                 pilot,
-                lambda: app.screen.__class__.__name__ == "PackageSetupScreen",
+                lambda: app.screen.__class__.__name__ == "ConnectionScreen",
                 timeout_s=5,
-                label="PackageSetupScreen (after failure)",
+                label="ConnectionScreen (after failure)",
             )
             await pilot.pause(0.2)
             _maybe_screenshot(app, f"{db_type}-05-back-to-setup")
 
             from textual.widgets import Static
 
-            text = str(app.screen.query_one("#package-script", Static).content)
+            text = str(app.screen.query_one("#test-status", Static).content)
             if expected_manual not in text:
-                raise AssertionError(f"Expected manual install hint in setup screen, got:\n{text}")
+                raise AssertionError(f"Expected manual install hint in connection screen, got:\n{text}")
         else:
-            assert app.screen.__class__.__name__ == "MessageScreen"
+            assert app.screen.__class__.__name__ == "ConnectionScreen"
             await pilot.pause(0.2)
             _maybe_screenshot(app, f"{db_type}-04-result")
 
     os.environ.pop("SQLIT_INSTALL_FORCE_FAIL", None)
+    os.environ.pop("SQLIT_DISABLE_RESTART", None)
 
 
 async def main() -> None:

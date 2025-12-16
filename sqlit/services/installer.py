@@ -46,6 +46,22 @@ class Installer:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def install_in_background(
+        self,
+        error: MissingDriverError,
+        *,
+        on_complete: Callable[[bool, str, MissingDriverError], None],
+    ) -> None:
+        """Run installation in a background thread and report completion on the main thread."""
+
+        def worker() -> None:
+            # Reuse the same implementation, but without the modal LoadingScreen.
+            result = self._do_install(error, threading.Event())
+            success, output, err = result
+            self.app.call_from_thread(on_complete, success, output, err)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _do_install(
         self, error: MissingDriverError, cancel_event: threading.Event
     ) -> tuple[bool, str, MissingDriverError]:

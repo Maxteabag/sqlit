@@ -32,6 +32,57 @@ SETTINGS_PATH = CONFIG_DIR / "settings.json"
 HISTORY_PATH = CONFIG_DIR / "query_history.json"
 
 
+# Module-level convenience functions for backward compatibility.
+# These are wrappers to avoid import cycles with the store modules.
+def load_connections() -> list[ConnectionConfig]:
+    """Load saved connections from config file."""
+    from .stores.connections import load_connections as _load_connections
+
+    return _load_connections()
+
+
+def save_connections(connections: list[ConnectionConfig]) -> None:
+    """Save connections to config file."""
+    from .stores.connections import save_connections as _save_connections
+
+    _save_connections(connections)
+
+
+def load_settings() -> dict:
+    """Load app settings from config file."""
+    from .stores.settings import load_settings as _load_settings
+
+    return _load_settings()
+
+
+def save_settings(settings: dict) -> None:
+    """Save app settings to config file."""
+    from .stores.settings import save_settings as _save_settings
+
+    _save_settings(settings)
+
+
+def load_query_history(connection_name: str) -> list:
+    """Load query history for a specific connection, sorted by most recent first."""
+    from .stores.history import load_query_history as _load_query_history
+
+    return _load_query_history(connection_name)
+
+
+def save_query_to_history(connection_name: str, query: str) -> None:
+    """Save a query to history for a connection."""
+    from .stores.history import save_query_to_history as _save_query_to_history
+
+    _save_query_to_history(connection_name, query)
+
+
+def delete_query_from_history(connection_name: str, timestamp: str) -> bool:
+    """Delete a specific query from history by connection name and timestamp."""
+    from .stores.history import delete_query_from_history as _delete_query_from_history
+
+    return _delete_query_from_history(connection_name, timestamp)
+
+
 if TYPE_CHECKING:
 
     class DatabaseType(str, Enum):

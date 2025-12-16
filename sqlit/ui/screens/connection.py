@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
+from pathlib import Path
 from typing import Any
 
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
 from textual.events import ScreenResume, ScreenSuspend
 from textual.screen import ModalScreen
+from textual.timer import Timer
 from textual.widgets import (
     Button,
     Input,
@@ -46,6 +52,8 @@ from ...widgets import Dialog
 
 class ConnectionScreen(ModalScreen):
     """Modal screen for adding/editing a connection."""
+
+    _INSTALL_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
@@ -229,6 +237,10 @@ class ConnectionScreen(ModalScreen):
         margin-top: 0;
     }
 
+    #test-status.success {
+        color: $success;
+    }
+
     #test-error {
         height: 6;
         border: solid $primary-darken-2;
@@ -241,10 +253,19 @@ class ConnectionScreen(ModalScreen):
     }
     """
 
-    def __init__(self, config: ConnectionConfig | None = None, editing: bool = False):
+    def __init__(
+        self,
+        config: ConnectionConfig | None = None,
+        editing: bool = False,
+        *,
+        prefill_values: dict[str, Any] | None = None,
+        post_install_message: str | None = None,
+    ):
         super().__init__()
         self.config = config
         self.editing = editing
+        self._prefill_values = prefill_values or {}
+        self._post_install_message = post_install_message
         self._field_widgets: dict[str, Input | OptionList | Select[str]] = {}
         self._field_definitions: dict[str, FieldDefinition] = {}
         self._current_db_type: DatabaseType = self._get_initial_db_type()
@@ -254,6 +275,9 @@ class ConnectionScreen(ModalScreen):
         self.validation_state: ValidationState = ValidationState()
         self._saved_dialog_subtitle: str | None = None
         self._missing_driver_error: Any = None  # Stores MissingDriverError if driver is missing
+        self._install_in_progress: bool = False
+        self._install_spinner_timer: Timer | None = None
+        self._install_spinner_index: int = 0
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         # Prevent underlying screens from receiving actions when another modal is on top.
@@ -280,6 +304,12 @@ class ConnectionScreen(ModalScreen):
 
     def _get_initial_db_type(self) -> DatabaseType:
         """Get the initial database type from config."""
+        prefill_db_type = self._prefill_values.get("db_type")
+        if isinstance(prefill_db_type, str) and prefill_db_type:
+            try:
+                return DatabaseType(prefill_db_type)
+            except Exception:
+                pass
         if self.config:
             return self.config.get_db_type()
         return DatabaseType.MSSQL  # type: ignore[attr-defined, no-any-return]
@@ -496,22 +526,150 @@ class ConnectionScreen(ModalScreen):
         except Exception:
             return
 
+        try:
+            test_status.remove_class("success")
+        except Exception:
+            pass
+
+        if self._install_in_progress and self._missing_driver_error:
+            error = self._missing_driver_error
+            spinner = self._INSTALL_SPINNER_FRAMES[self._install_spinner_index % len(self._INSTALL_SPINNER_FRAMES)]
+            test_status.update(
+                f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
+                f"[dim]{spinner} Installing…[/]"
+            )
+            dialog.border_subtitle = "[bold]Installing…[/]  Cancel <esc>"
+            return
+
         if self._missing_driver_error:
             # Show warning about missing driver
             error = self._missing_driver_error
+            install_cmd = f'pip install "sqlit-tui[{error.extra_name}]"'
             test_status.update(
                 f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
-                f'[dim]Install with:[/] pip install "sqlit-tui[{error.extra_name}]"'
+                f"[dim]Install with:[/] {escape(install_cmd)}"
             )
             # Update footer to show Install driver instead of Test/Save
             dialog.border_subtitle = "[bold]Install ^i[/]  Cancel <esc>"
         else:
             # Clear warning and restore normal footer
-            if not self._last_test_ok and self._last_test_ok is not None:
-                pass  # Keep existing error message
+            if self._post_install_message and (self._last_test_ok is None or self._last_test_ok):
+                test_status.update(f"✓ {self._post_install_message}")
+                try:
+                    test_status.add_class("success")
+                except Exception:
+                    pass
             else:
-                test_status.update("")
+                if not self._last_test_ok and self._last_test_ok is not None:
+                    pass  # Keep existing error message
+                else:
+                    test_status.update("")
             dialog.border_subtitle = "[bold]Test ^t[/]  Save ^s  Cancel <esc>"
+
+    def _tick_install_spinner(self) -> None:
+        self._install_spinner_index += 1
+        self._update_driver_status_ui()
+
+    def _get_restart_cache_path(self) -> Path:
+        return Path(tempfile.gettempdir()) / "sqlit-driver-install-restore.json"
+
+    def _write_restart_cache(self, *, post_install_message: str | None = None) -> None:
+        try:
+            values = self._get_current_form_values()
+            values["name"] = self.query_one("#conn-name", Input).value
+            db_type = self.query_one("#dbtype-select", Select).value
+            values["db_type"] = str(db_type) if db_type is not None else ""
+            try:
+                tabs = self.query_one("#connection-tabs", TabbedContent)
+                active_tab = tabs.active
+            except Exception:
+                active_tab = "tab-general"
+
+            payload = {
+                "version": 1,
+                "editing": bool(self.editing),
+                "original_name": getattr(self.config, "name", None) if self.editing and self.config else None,
+                "active_tab": active_tab,
+                "values": values,
+                "post_install_message": post_install_message,
+            }
+            self._get_restart_cache_path().write_text(json.dumps(payload), encoding="utf-8")
+        except Exception:
+            # Best-effort; don't block installation due to caching failure.
+            pass
+
+    def _clear_restart_cache(self) -> None:
+        try:
+            self._get_restart_cache_path().unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    def _start_missing_driver_install(self, error: Any) -> None:
+        from ...db.exceptions import MissingDriverError
+        from ...services.installer import Installer
+
+        if not isinstance(error, MissingDriverError):
+            return
+        if self._install_in_progress:
+            return
+
+        self._install_in_progress = True
+        self._install_spinner_index = 0
+        self._post_install_message = None
+        self._update_driver_status_ui()
+        if self._install_spinner_timer is None:
+            self._install_spinner_timer = self.set_interval(0.12, self._tick_install_spinner)
+
+        # Cache the form state so we can restore after restart.
+        self._write_restart_cache()
+
+        def on_complete(success: bool, output: str, err: MissingDriverError) -> None:
+            self._on_missing_driver_install_complete(success, output, err)
+
+        Installer(self.app).install_in_background(error, on_complete=on_complete)
+
+    def _stop_install_spinner(self) -> None:
+        if self._install_spinner_timer is not None:
+            try:
+                self._install_spinner_timer.stop()
+            except Exception:
+                pass
+            self._install_spinner_timer = None
+
+    def _on_missing_driver_install_complete(self, success: bool, output: str, error: Any) -> None:
+        from ..screens import MessageScreen
+
+        self._stop_install_spinner()
+        self._install_in_progress = False
+
+        if success:
+            # Refresh driver status (it should now import successfully).
+            self._check_driver_availability(self._current_db_type)
+            self._post_install_message = "Successfully installed driver"
+            self._update_driver_status_ui()
+
+            # Update cache with a post-restart message and most recent field values.
+            self._write_restart_cache(post_install_message=self._post_install_message)
+
+            if os.environ.get("SQLIT_DISABLE_RESTART") == "1":
+                # Test/dev mode: don't execv; keep the UI running.
+                self._clear_restart_cache()
+                return
+
+            restart = getattr(self.app, "restart", None)
+            if callable(restart):
+                restart()
+            return
+
+        # Failed installation: clear cache, restore the manual hint, and show a brief message.
+        self._clear_restart_cache()
+        self._update_driver_status_ui()
+        self.app.push_screen(
+            MessageScreen(
+                "Couldn't install automatically",
+                "Couldn't install automatically, please install manually.",
+            )
+        )
 
     def compose(self) -> ComposeResult:
         title = "Edit Connection" if self.editing else "New Connection"
@@ -573,6 +731,7 @@ class ConnectionScreen(ModalScreen):
 
         # Set initial values for select fields
         self._set_initial_select_values()
+        self._apply_prefill_values()
         self._update_field_visibility()
         self._validate_name_unique()
         field_groups = self._get_field_groups_for_type(self._current_db_type, tab="general")
@@ -581,6 +740,50 @@ class ConnectionScreen(ModalScreen):
         self._update_ssh_tab_enabled(self._current_db_type)
         self._update_mssql_driver_setup_visibility(self._current_db_type)
         self._check_driver_availability(self._current_db_type)
+
+        # If driver is available after a restart, show any post-install message.
+        if self._post_install_message and not self._missing_driver_error:
+            self._update_driver_status_ui()
+
+    def _apply_prefill_values(self) -> None:
+        if not self._prefill_values:
+            return
+
+        values = self._prefill_values.get("values") if "values" in self._prefill_values else self._prefill_values
+        if not isinstance(values, dict):
+            return
+
+        name_value = values.get("name")
+        if isinstance(name_value, str):
+            try:
+                self.query_one("#conn-name", Input).value = name_value
+            except Exception:
+                pass
+
+        for field_name, widget in self._field_widgets.items():
+            value = values.get(field_name)
+            if value is None:
+                continue
+            if isinstance(widget, Input):
+                widget.value = str(value)
+            elif isinstance(widget, Select):
+                widget.value = str(value)
+            elif isinstance(widget, OptionList):
+                try:
+                    for idx, opt in enumerate(widget.options):
+                        if getattr(opt, "id", None) == value:
+                            widget.highlighted = idx
+                            break
+                except Exception:
+                    pass
+
+        active_tab = self._prefill_values.get("active_tab")
+        if isinstance(active_tab, str) and active_tab:
+            try:
+                tabs = self.query_one("#connection-tabs", TabbedContent)
+                tabs.active = active_tab
+            except Exception:
+                pass
 
     def on_descendant_focus(self, event: Any) -> None:
         focused = self.focused
@@ -937,6 +1140,8 @@ class ConnectionScreen(ModalScreen):
 
     def action_install_driver(self) -> None:
         """Install the missing driver for the current database type."""
+        if self._install_in_progress:
+            return
         if self._missing_driver_error:
             self._prompt_install_missing_driver(self._missing_driver_error)
         elif self._current_db_type.value == "mssql":
@@ -1250,14 +1455,22 @@ class ConnectionScreen(ModalScreen):
 
     def _prompt_install_missing_driver(self, error: Exception) -> None:
         from ...db.exceptions import MissingDriverError
-        from ...services.installer import Installer
-        from ..screens import PackageSetupScreen
+        from ..screens import ConfirmScreen
 
         if not isinstance(error, MissingDriverError):
             return
 
+        if self._install_in_progress:
+            return
+
         self.app.push_screen(
-            PackageSetupScreen(error, on_install=lambda err: Installer(self.app).install(err)),
+            ConfirmScreen(
+                "Install missing driver?",
+                f"Missing package: {error.package_name}",
+                yes_label="Yes",
+                no_label="No",
+            ),
+            lambda confirmed: self._start_missing_driver_install(error) if confirmed else None,
         )
 
     def action_test_connection(self) -> None:
@@ -1370,6 +1583,8 @@ class ConnectionScreen(ModalScreen):
         self.dismiss(("save", config))
 
     def action_cancel(self) -> None:
+        if self._install_in_progress:
+            return
         self.dismiss(None)
 
     @property

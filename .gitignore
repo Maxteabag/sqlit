@@ -19,6 +19,10 @@ venv/
 *.swp
 *.swo
 
+# Local caches
+.cache/
+.ruff_cache/
+
 # OS
 .DS_Store
 

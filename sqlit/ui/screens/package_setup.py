@@ -6,6 +6,7 @@ import os
 import sys
 from collections.abc import Callable
 
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
@@ -88,7 +89,7 @@ class PackageSetupScreen(ModalScreen):
             )
 
             with VerticalScroll(id="package-scroll"):
-                yield Static(self._instructions_text.strip(), id="package-script")
+                yield Static(escape(self._instructions_text.strip()), id="package-script")
 
     def on_mount(self) -> None:
         self.query_one("#package-scroll", VerticalScroll).focus()

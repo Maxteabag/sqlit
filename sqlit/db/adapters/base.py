@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from rich.markup import escape
+
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
 
@@ -450,8 +452,9 @@ def _create_driver_import_error_hint(driver_name: str, extra_name: str, package_
             f"[bold]pipx inject sqlit-tui {package_name}[/bold]\n"
         )
     else:
+        cmd = f'pip install "sqlit-tui[{extra_name}]"'
         return (
             f"{driver_name} driver not found.\n\n"
             f"To connect to {driver_name}, run:\n\n"
-            f'[bold]pip install "sqlit-tui[{extra_name}]"[/bold]\n'
+            f"[bold]{escape(cmd)}[/bold]\n"
         )

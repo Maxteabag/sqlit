@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import tempfile
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 from textual.app import App, ComposeResult
@@ -441,6 +444,73 @@ class SSMSTUI(
         if self.object_tree.root.children:
             self.object_tree.cursor_line = 0
         self._update_section_labels()
+        self._maybe_restore_connection_screen()
+
+    def _get_restart_cache_path(self) -> Path:
+        return Path(tempfile.gettempdir()) / "sqlit-driver-install-restore.json"
+
+    def _maybe_restore_connection_screen(self) -> None:
+        """Restore an in-progress connection form after a driver-install restart."""
+        cache_path = self._get_restart_cache_path()
+        if not cache_path.exists():
+            return
+
+        try:
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            try:
+                cache_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return
+
+        try:
+            cache_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        if not isinstance(payload, dict) or payload.get("version") != 1:
+            return
+
+        values = payload.get("values")
+        if not isinstance(values, dict):
+            return
+
+        editing = bool(payload.get("editing"))
+        original_name = payload.get("original_name")
+        post_install_message = payload.get("post_install_message")
+        active_tab = payload.get("active_tab")
+
+        config = None
+        if editing and isinstance(original_name, str) and original_name:
+            config = next((c for c in self.connections if getattr(c, "name", None) == original_name), None)
+
+        if config is None:
+            from .config import ConnectionConfig
+
+            config = ConnectionConfig(
+                name=str(values.get("name", "")),
+                db_type=str(values.get("db_type", "mssql") or "mssql"),
+            )
+            editing = False
+
+        prefill_values = {
+            "values": values,
+            "active_tab": active_tab,
+        }
+
+        from .ui.screens import ConnectionScreen
+
+        self._set_connection_screen_footer()
+        self.push_screen(
+            ConnectionScreen(
+                config,
+                editing=editing,
+                prefill_values=prefill_values,
+                post_install_message=post_install_message if isinstance(post_install_message, str) else None,
+            ),
+            self._wrap_connection_result,
+        )
 
     def watch_theme(self, old_theme: str, new_theme: str) -> None:
         """Save theme whenever it changes."""
