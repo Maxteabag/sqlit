@@ -27,6 +27,7 @@ from .config import (
 )
 from .db import DatabaseAdapter
 from .mocks import MockProfile
+from .mock_settings import apply_mock_environment, build_mock_profile_from_settings
 from .state_machine import (
     UIStateMachine,
     get_leader_bindings,
@@ -211,15 +212,21 @@ class SSMSTUI(
         Binding("h", "show_history", "History", show=False),
         Binding("z", "collapse_tree", "Collapse", show=False),
         Binding("v", "view_cell", "View cell", show=False),
-        Binding("y", "copy_cell", "Copy cell", show=False),
+        Binding("y", "copy_context", "Copy", show=False),
         Binding("Y", "copy_row", "Copy row", show=False),
         Binding("a", "copy_results", "Copy results", show=False),
         Binding("ctrl+c", "cancel_operation", "Cancel", show=False),
     ]
 
-    def __init__(self, mock_profile: MockProfile | None = None):
+    def __init__(
+        self,
+        mock_profile: MockProfile | None = None,
+        startup_connection: ConnectionConfig | None = None,
+    ):
         super().__init__()
         self._mock_profile = mock_profile
+        self._startup_connection = startup_connection
+        self._startup_connect_config: ConnectionConfig | None = None
         self._debug_mode = os.environ.get("SQLIT_DEBUG") == "1"
         self._startup_profile = os.environ.get("SQLIT_PROFILE_STARTUP") == "1"
         self._startup_mark = self._parse_startup_mark(os.environ.get("SQLIT_STARTUP_MARK"))
@@ -445,11 +452,16 @@ class SSMSTUI(
         self._expanded_paths = set(settings.get("expanded_nodes", []))
         self._startup_stamp("settings_applied")
 
+        self._apply_mock_settings(settings)
+
         if self._mock_profile:
             self.connections = self._mock_profile.connections.copy()
         else:
             self.connections = load_connections(load_credentials=False)
         self._startup_stamp("connections_loaded")
+
+        if self._startup_connection:
+            self._insert_startup_connection(self._startup_connection)
 
         self.refresh_tree()
         self._startup_stamp("tree_refreshed")
@@ -467,7 +479,30 @@ class SSMSTUI(
         self.call_after_refresh(self._update_status_bar)
         self._update_footer_bindings()
         self._startup_stamp("footer_updated")
+        if self._startup_connect_config:
+            self.call_after_refresh(lambda: self.connect_to_server(self._startup_connect_config))  # type: ignore[arg-type]
         self._log_startup_timing()
+
+    def _apply_mock_settings(self, settings: dict) -> None:
+        apply_mock_environment(settings)
+        if self._mock_profile:
+            return
+        mock_profile = build_mock_profile_from_settings(settings)
+        if mock_profile:
+            self._mock_profile = mock_profile
+            self._session_factory = self._create_mock_session_factory(mock_profile)
+
+    def _insert_startup_connection(self, config: ConnectionConfig) -> None:
+        existing_names = {c.name for c in self.connections}
+        base_name = config.name or "Temp Connection"
+        name = base_name
+        counter = 2
+        while name in existing_names:
+            name = f"{base_name} ({counter})"
+            counter += 1
+        config.name = name
+        self.connections.insert(0, config)
+        self._startup_connect_config = config
 
     def _startup_stamp(self, name: str) -> None:
         if not self._startup_profile:

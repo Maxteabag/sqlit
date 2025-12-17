@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
 
 from .base import CONFIG_DIR, JSONFileStore
+
+
+def _resolve_settings_path() -> Path:
+    override = os.environ.get("SQLIT_SETTINGS_PATH", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return CONFIG_DIR / "settings.json"
 
 
 class SettingsStore(JSONFileStore):
@@ -15,15 +24,13 @@ class SettingsStore(JSONFileStore):
 
     _instance: SettingsStore | None = None
 
-    def __init__(self) -> None:
-        super().__init__(CONFIG_DIR / "settings.json")
+    def __init__(self, file_path: Path | None = None) -> None:
+        super().__init__(file_path or _resolve_settings_path())
 
     @classmethod
     def get_instance(cls) -> SettingsStore:
         """Get the singleton instance."""
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
+        return _get_store()
 
     def load_all(self) -> dict[str, Any]:
         """Load all settings.
@@ -83,14 +90,24 @@ class SettingsStore(JSONFileStore):
 
 
 # Module-level convenience functions for backward compatibility
-_store = SettingsStore()
+_store: SettingsStore | None = None
+_store_path: Path | None = None
+
+
+def _get_store() -> SettingsStore:
+    global _store, _store_path
+    path = _resolve_settings_path()
+    if _store is None or _store_path != path:
+        _store = SettingsStore(file_path=path)
+        _store_path = path
+    return _store
 
 
 def load_settings() -> dict:
     """Load app settings from config file."""
-    return _store.load_all()
+    return _get_store().load_all()
 
 
 def save_settings(settings: dict) -> None:
     """Save app settings to config file."""
-    _store.save_all(settings)
+    _get_store().save_all(settings)

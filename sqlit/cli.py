@@ -8,7 +8,9 @@ import os
 import sys
 import time
 
-from .config import AuthType, DatabaseType
+from .cli_helpers import add_schema_arguments, build_connection_config_from_args
+from .config import AuthType, ConnectionConfig, DatabaseType
+from .db.providers import get_connection_schema, get_supported_db_types
 
 
 def main() -> int:
@@ -22,6 +24,31 @@ def main() -> int:
         "--mock",
         metavar="PROFILE",
         help="Run with mock data (profiles: sqlite-demo, empty, multi-db)",
+    )
+    parser.add_argument(
+        "--db-type",
+        choices=[t.value for t in DatabaseType],
+        help="Temporary connection database type (auto-connects in UI)",
+    )
+    parser.add_argument("--name", help="Temporary connection name (default: Temp <DB>)")
+    parser.add_argument("--server", help="Temporary connection server/host")
+    parser.add_argument("--host", help="Alias for --server")
+    parser.add_argument("--port", help="Temporary connection port")
+    parser.add_argument("--database", help="Temporary connection database name")
+    parser.add_argument("--username", help="Temporary connection username")
+    parser.add_argument("--password", help="Temporary connection password")
+    parser.add_argument("--file-path", help="Temporary connection file path (SQLite/DuckDB)")
+    parser.add_argument(
+        "--auth-type",
+        choices=[t.value for t in AuthType],
+        help="Temporary connection auth type (SQL Server only)",
+    )
+    parser.add_argument("--supabase-region", help="Supabase region (temporary connection)")
+    parser.add_argument("--supabase-project-id", help="Supabase project id (temporary connection)")
+    parser.add_argument(
+        "--settings",
+        metavar="PATH",
+        help="Path to settings JSON file (overrides ~/.sqlit/settings.json)",
     )
     parser.add_argument(
         "--mock-missing-drivers",
@@ -53,41 +80,29 @@ def main() -> int:
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    conn_parser = subparsers.add_parser("connection", help="Manage connections")
+    conn_parser = subparsers.add_parser(
+        "connections",
+        help="Manage saved connections",
+        aliases=["connection"],
+    )
     conn_subparsers = conn_parser.add_subparsers(dest="conn_command", help="Connection commands")
 
     conn_subparsers.add_parser("list", help="List all saved connections")
 
-    create_parser = conn_subparsers.add_parser("create", help="Create a new connection")
-    create_parser.add_argument("--name", "-n", required=True, help="Connection name")
-    create_parser.add_argument(
-        "--db-type",
-        "-t",
-        default="mssql",
-        choices=[t.value for t in DatabaseType],
-        help="Database type (default: mssql)",
+    add_parser = conn_subparsers.add_parser(
+        "add",
+        help="Add a new connection",
+        aliases=["create"],
     )
-    create_parser.add_argument("--server", "-s", help="Server address")
-    create_parser.add_argument("--host", help="Alias for --server (e.g. Cloudflare D1 Account ID)")
-    create_parser.add_argument("--port", "-P", help="Port (default: provider default)")
-    create_parser.add_argument("--database", "-d", default="", help="Database name (empty = browse all)")
-    create_parser.add_argument("--username", "-u", help="Username")
-    create_parser.add_argument("--password", "-p", help="Password")
-    create_parser.add_argument(
-        "--auth-type",
-        "-a",
-        default="sql",
-        choices=[t.value for t in AuthType],
-        help="Authentication type (SQL Server only, default: sql)",
-    )
-    create_parser.add_argument("--file-path", help="Database file path (SQLite only)")
-    create_parser.add_argument("--ssh-enabled", action="store_true", help="Enable SSH tunnel")
-    create_parser.add_argument("--ssh-host", help="SSH server hostname")
-    create_parser.add_argument("--ssh-port", default="22", help="SSH server port (default: 22)")
-    create_parser.add_argument("--ssh-username", help="SSH username")
-    create_parser.add_argument("--ssh-auth-type", default="key", choices=["key", "password"], help="SSH auth type")
-    create_parser.add_argument("--ssh-key-path", help="SSH private key path")
-    create_parser.add_argument("--ssh-password", help="SSH password")
+    add_provider_parsers = add_parser.add_subparsers(dest="provider", metavar="PROVIDER")
+    for db_type in get_supported_db_types():
+        schema = get_connection_schema(db_type)
+        provider_parser = add_provider_parsers.add_parser(
+            db_type,
+            help=f"{schema.display_name} options",
+            description=f"{schema.display_name} connection options",
+        )
+        add_schema_arguments(provider_parser, schema, include_name=True, name_required=True)
 
     edit_parser = conn_subparsers.add_parser("edit", help="Edit an existing connection")
     edit_parser.add_argument("connection_name", help="Name of connection to edit")
@@ -108,6 +123,17 @@ def main() -> int:
 
     delete_parser = conn_subparsers.add_parser("delete", help="Delete a connection")
     delete_parser.add_argument("connection_name", help="Name of connection to delete")
+
+    connect_parser = subparsers.add_parser("connect", help="Temporary connection (not saved)")
+    connect_provider_parsers = connect_parser.add_subparsers(dest="provider", metavar="PROVIDER")
+    for db_type in get_supported_db_types():
+        schema = get_connection_schema(db_type)
+        provider_parser = connect_provider_parsers.add_parser(
+            db_type,
+            help=f"{schema.display_name} options",
+            description=f"{schema.display_name} connection options",
+        )
+        add_schema_arguments(provider_parser, schema, include_name=True, name_required=False)
 
     query_parser = subparsers.add_parser("query", help="Execute a SQL query")
     query_parser.add_argument("--connection", "-c", required=True, help="Connection name to use")
@@ -131,6 +157,8 @@ def main() -> int:
 
     startup_mark = time.perf_counter()
     args = parser.parse_args()
+    if args.settings:
+        os.environ["SQLIT_SETTINGS_PATH"] = str(args.settings)
     if args.mock_missing_drivers:
         os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = str(args.mock_missing_drivers)
     if args.mock_install and args.mock_install != "real":
@@ -166,7 +194,14 @@ def main() -> int:
                 print(f"Available profiles: {', '.join(list_mock_profiles())}")
                 return 1
 
-        app = SSMSTUI(mock_profile=mock_profile)
+        temp_config = None
+        try:
+            temp_config = _build_temp_connection(args)
+        except ValueError as exc:
+            print(f"Error: {exc}")
+            return 1
+
+        app = SSMSTUI(mock_profile=mock_profile, startup_connection=temp_config)
         app.run()
         return 0
 
@@ -178,10 +213,45 @@ def main() -> int:
         cmd_query,
     )
 
-    if args.command == "connection":
+    if args.command == "connect":
+        from .app import SSMSTUI
+
+        db_type = getattr(args, "provider", None)
+        if not db_type:
+            connect_parser.print_help()
+            return 1
+
+        mock_profile = None
+        if args.mock:
+            from .mocks import get_mock_profile, list_mock_profiles
+
+            mock_profile = get_mock_profile(args.mock)
+            if mock_profile is None:
+                print(f"Unknown mock profile: {args.mock}")
+                print(f"Available profiles: {', '.join(list_mock_profiles())}")
+                return 1
+
+        schema = get_connection_schema(db_type)
+        try:
+            temp_config = build_connection_config_from_args(
+                schema,
+                args,
+                name=getattr(args, "name", None),
+                default_name=f"Temp {schema.display_name}",
+                strict=True,
+            )
+        except ValueError as exc:
+            print(f"Error: {exc}")
+            return 1
+
+        app = SSMSTUI(mock_profile=mock_profile, startup_connection=temp_config)
+        app.run()
+        return 0
+
+    if args.command in {"connections", "connection"}:
         if args.conn_command == "list":
             return cmd_connection_list(args)
-        elif args.conn_command == "create":
+        elif args.conn_command in {"add", "create"}:
             return cmd_connection_create(args)
         elif args.conn_command == "edit":
             return cmd_connection_edit(args)
@@ -196,6 +266,33 @@ def main() -> int:
 
     parser.print_help()
     return 1
+
+
+def _build_temp_connection(args: argparse.Namespace) -> ConnectionConfig | None:
+    """Build a temporary connection config from CLI args, if provided."""
+    db_type = getattr(args, "db_type", None)
+    file_path = getattr(args, "file_path", None)
+    if not db_type and file_path:
+        db_type = "sqlite"
+        setattr(args, "db_type", db_type)
+    if not db_type:
+        if any(getattr(args, name, None) for name in ("file_path", "server", "host", "database")):
+            raise ValueError("--db-type is required for temporary connections")
+        return None
+
+    try:
+        DatabaseType(db_type)
+    except ValueError:
+        raise ValueError(f"Invalid database type '{db_type}'")
+
+    schema = get_connection_schema(db_type)
+    return build_connection_config_from_args(
+        schema,
+        args,
+        name=getattr(args, "name", None),
+        default_name=f"Temp {schema.display_name}",
+        strict=True,
+    )
 
 
 if __name__ == "__main__":

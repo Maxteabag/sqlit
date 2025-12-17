@@ -1,0 +1,314 @@
+{
+  "_note": "Copy to .sqlit/settings.json (gitignored) and run: sqlit --settings .sqlit/settings.json",
+  "theme": "tokyo-night",
+  "expanded_nodes": [],
+  "allow_plaintext_credentials": false,
+  "mock": {
+    "enabled": true,
+    "profile": "empty",
+    "use_default_adapters": true,
+    "connections": [],
+    "drivers": {
+      "missing": [],
+      "install_result": "real",
+      "pipx": "auto"
+    },
+    "adapters": {
+      "supabase": {
+        "name": "Supabase",
+        "default_schema": "public",
+        "connect": {
+          "_note": "Use required_fields/allowed/auth_error_message to control auth outcomes.",
+          "result": "success",
+          "error_message": "Supabase connection failed",
+          "auth_error_message": "Invalid Supabase credentials",
+          "required_fields": [
+            "supabase_region",
+            "supabase_project_id",
+            "password"
+          ],
+          "allowed": []
+        },
+        "schemas": {
+          "public": {
+            "tables": {
+              "profiles": {
+                "columns": [
+                  { "name": "id", "type": "uuid" },
+                  { "name": "username", "type": "text" },
+                  { "name": "full_name", "type": "text" },
+                  { "name": "avatar_url", "type": "text" },
+                  { "name": "created_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    "9a1b2c3d-1111-2222-3333-444455556666",
+                    "alice",
+                    "Alice Johnson",
+                    "https://cdn.example.com/avatars/alice.png",
+                    "2024-01-10T12:00:00Z"
+                  ],
+                  [
+                    "7f8e9d0c-aaaa-bbbb-cccc-ddddeeeeffff",
+                    "bob",
+                    "Bob Smith",
+                    "https://cdn.example.com/avatars/bob.png",
+                    "2024-01-12T08:30:00Z"
+                  ]
+                ]
+              },
+              "projects": {
+                "columns": [
+                  { "name": "id", "type": "uuid" },
+                  { "name": "name", "type": "text" },
+                  { "name": "owner_id", "type": "uuid" },
+                  { "name": "created_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    "0d9f1c2b-3333-4444-5555-666677778888",
+                    "Launch Checklist",
+                    "9a1b2c3d-1111-2222-3333-444455556666",
+                    "2024-02-01T09:00:00Z"
+                  ],
+                  [
+                    "3b2a1c0d-9999-8888-7777-666655554444",
+                    "Customer Portal",
+                    "7f8e9d0c-aaaa-bbbb-cccc-ddddeeeeffff",
+                    "2024-02-05T16:45:00Z"
+                  ]
+                ]
+              },
+              "todos": {
+                "columns": [
+                  { "name": "id", "type": "bigint" },
+                  { "name": "title", "type": "text" },
+                  { "name": "is_complete", "type": "boolean" },
+                  { "name": "user_id", "type": "uuid" },
+                  { "name": "inserted_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    1,
+                    "Set up Row Level Security",
+                    true,
+                    "9a1b2c3d-1111-2222-3333-444455556666",
+                    "2024-02-02T10:15:00Z"
+                  ],
+                  [
+                    2,
+                    "Draft onboarding email",
+                    false,
+                    "7f8e9d0c-aaaa-bbbb-cccc-ddddeeeeffff",
+                    "2024-02-03T13:20:00Z"
+                  ]
+                ]
+              }
+            },
+            "views": {
+              "active_todos": {
+                "columns": [
+                  { "name": "id", "type": "bigint" },
+                  { "name": "title", "type": "text" },
+                  { "name": "user_id", "type": "uuid" }
+                ],
+                "rows": [
+                  [
+                    2,
+                    "Draft onboarding email",
+                    "7f8e9d0c-aaaa-bbbb-cccc-ddddeeeeffff"
+                  ]
+                ]
+              }
+            }
+          },
+          "auth": {
+            "tables": {
+              "users": {
+                "columns": [
+                  { "name": "id", "type": "uuid" },
+                  { "name": "email", "type": "text" },
+                  { "name": "phone", "type": "text" },
+                  { "name": "created_at", "type": "timestamp with time zone" },
+                  { "name": "last_sign_in_at", "type": "timestamp with time zone" },
+                  { "name": "role", "type": "text" },
+                  { "name": "is_anonymous", "type": "boolean" }
+                ],
+                "rows": [
+                  [
+                    "9a1b2c3d-1111-2222-3333-444455556666",
+                    "alice@example.com",
+                    "+155555501",
+                    "2024-01-10T12:00:00Z",
+                    "2024-02-10T12:45:00Z",
+                    "authenticated",
+                    false
+                  ],
+                  [
+                    "7f8e9d0c-aaaa-bbbb-cccc-ddddeeeeffff",
+                    "bob@example.com",
+                    "+155555502",
+                    "2024-01-12T08:30:00Z",
+                    "2024-02-11T09:10:00Z",
+                    "authenticated",
+                    false
+                  ]
+                ]
+              },
+              "identities": {
+                "columns": [
+                  { "name": "id", "type": "uuid" },
+                  { "name": "user_id", "type": "uuid" },
+                  { "name": "provider", "type": "text" },
+                  { "name": "identity_data", "type": "jsonb" },
+                  { "name": "created_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    "2c3d4e5f-0000-1111-2222-333344445555",
+                    "9a1b2c3d-1111-2222-3333-444455556666",
+                    "email",
+                    { "email_verified": true },
+                    "2024-01-10T12:00:00Z"
+                  ]
+                ]
+              },
+              "sessions": {
+                "columns": [
+                  { "name": "id", "type": "uuid" },
+                  { "name": "user_id", "type": "uuid" },
+                  { "name": "created_at", "type": "timestamp with time zone" },
+                  { "name": "expires_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    "11112222-3333-4444-5555-666677778888",
+                    "9a1b2c3d-1111-2222-3333-444455556666",
+                    "2024-02-10T12:45:00Z",
+                    "2024-03-10T12:45:00Z"
+                  ]
+                ]
+              },
+              "refresh_tokens": {
+                "columns": [
+                  { "name": "id", "type": "bigint" },
+                  { "name": "user_id", "type": "uuid" },
+                  { "name": "token", "type": "text" },
+                  { "name": "created_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    1001,
+                    "9a1b2c3d-1111-2222-3333-444455556666",
+                    "rt_abc123",
+                    "2024-02-10T12:45:00Z"
+                  ]
+                ]
+              },
+              "schema_migrations": {
+                "columns": [
+                  { "name": "version", "type": "text" },
+                  { "name": "inserted_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    "20240208094500",
+                    "2024-02-08T09:45:00Z"
+                  ]
+                ]
+              }
+            }
+          },
+          "storage": {
+            "tables": {
+              "buckets": {
+                "columns": [
+                  { "name": "id", "type": "text" },
+                  { "name": "name", "type": "text" },
+                  { "name": "owner", "type": "uuid" },
+                  { "name": "public", "type": "boolean" },
+                  { "name": "created_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    "avatars",
+                    "avatars",
+                    "9a1b2c3d-1111-2222-3333-444455556666",
+                    true,
+                    "2024-01-11T15:20:00Z"
+                  ]
+                ]
+              },
+              "objects": {
+                "columns": [
+                  { "name": "id", "type": "uuid" },
+                  { "name": "bucket_id", "type": "text" },
+                  { "name": "name", "type": "text" },
+                  { "name": "owner", "type": "uuid" },
+                  { "name": "metadata", "type": "jsonb" },
+                  { "name": "created_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    "f1e2d3c4-5555-6666-7777-888899990000",
+                    "avatars",
+                    "public/alice.png",
+                    "9a1b2c3d-1111-2222-3333-444455556666",
+                    { "content_type": "image/png", "size": 24512 },
+                    "2024-01-11T15:20:10Z"
+                  ]
+                ]
+              }
+            }
+          },
+          "realtime": {
+            "tables": {
+              "subscription": {
+                "columns": [
+                  { "name": "id", "type": "bigint" },
+                  { "name": "created_at", "type": "timestamp with time zone" },
+                  { "name": "topic", "type": "text" },
+                  { "name": "claims", "type": "jsonb" }
+                ],
+                "rows": [
+                  [
+                    5001,
+                    "2024-02-12T10:00:00Z",
+                    "realtime:public:todos",
+                    { "role": "authenticated" }
+                  ]
+                ]
+              },
+              "schema_migrations": {
+                "columns": [
+                  { "name": "version", "type": "integer" },
+                  { "name": "inserted_at", "type": "timestamp with time zone" }
+                ],
+                "rows": [
+                  [
+                    1,
+                    "2024-02-01T00:00:00Z"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        "query_results": {
+          "select now()": {
+            "columns": [ "now" ],
+            "rows": [
+              [ "2024-02-15T12:00:00Z" ]
+            ]
+          }
+        },
+        "default_query_result": {
+          "columns": [ "result" ],
+          "rows": [
+            [ "Query executed successfully (mock)" ]
+          ]
+        }
+      }
+    }
+  }
+}

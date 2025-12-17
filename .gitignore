@@ -22,6 +22,7 @@ venv/
 # Local caches
 .cache/
 .ruff_cache/
+.sqlit/
 
 # OS
 .DS_Store

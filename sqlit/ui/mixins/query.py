@@ -40,6 +40,25 @@ class QueryMixin:
         """Execute query in INSERT mode without leaving it."""
         self._execute_query_common(keep_insert_mode=True)
 
+    def action_copy_query(self: AppProtocol) -> None:
+        """Copy the current query to clipboard."""
+        query = self.query_input.text.strip()
+        if not query:
+            self.notify("Query is empty", severity="warning")
+            return
+        self._copy_text(query)
+        self.notify("Query copied")
+
+    def action_copy_context(self: AppProtocol) -> None:
+        """Copy based on current focus (query or results)."""
+        if self.query_input.has_focus:
+            self.action_copy_query()
+            return
+        if self.results_table.has_focus:
+            self.action_copy_cell()
+            return
+        self.notify("Nothing to copy", severity="warning")
+
     def _execute_query_common(self: AppProtocol, keep_insert_mode: bool) -> None:
         """Common query execution logic."""
         if not self.current_connection or not self.current_adapter:

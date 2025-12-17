@@ -122,9 +122,10 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("d", "clear_query", "query_normal"),
             ActionKeyDef("n", "new_query", "query_normal"),
             ActionKeyDef("h", "show_history", "query_normal"),
+            ActionKeyDef("y", "copy_context", "query_normal"),
             # Results
             ActionKeyDef("v", "view_cell", "results"),
-            ActionKeyDef("y", "copy_cell", "results"),
+            ActionKeyDef("y", "copy_context", "results"),
             ActionKeyDef("Y", "copy_row", "results"),
             ActionKeyDef("a", "copy_results", "results"),
             # Cancel

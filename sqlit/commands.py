@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from .cli_helpers import build_connection_config_from_args
 from .config import (
     AUTH_TYPE_LABELS,
     AuthType,
@@ -19,7 +20,7 @@ from .config import (
     load_connections,
     save_connections,
 )
-from .db.providers import get_default_port, has_advanced_auth, is_file_based
+from .db.providers import get_connection_schema, has_advanced_auth, is_file_based
 from .services import ConnectionSession, QueryResult, QueryService
 from .services.credentials import (
     ALLOW_PLAINTEXT_CREDENTIALS_SETTING,
@@ -116,11 +117,15 @@ def cmd_connection_create(args: Any) -> int:
     """Create a new connection."""
     connections = load_connections()
 
+    if not getattr(args, "provider", None):
+        print("Error: provider is required (e.g. 'sqlit connection create supabase').")
+        return 1
+
     if any(c.name == args.name for c in connections):
         print(f"Error: Connection '{args.name}' already exists. Use 'edit' to modify it.")
         return 1
 
-    db_type = getattr(args, "db_type", "mssql") or "mssql"
+    db_type = getattr(args, "provider", None)
     try:
         DatabaseType(db_type)
     except ValueError:
@@ -128,73 +133,18 @@ def cmd_connection_create(args: Any) -> int:
         print(f"Error: Invalid database type '{db_type}'. Valid types: {valid_types}")
         return 1
 
-    if is_file_based(db_type):
-        file_path = getattr(args, "file_path", None)
-        if not file_path:
-            print(f"Error: --file-path is required for {db_type.upper()} connections.")
-            return 1
-
-        config = ConnectionConfig(
+    schema = get_connection_schema(db_type)
+    try:
+        config = build_connection_config_from_args(
+            schema,
+            args,
             name=args.name,
-            db_type=db_type,
-            file_path=file_path,
+            default_name=None,
+            strict=True,
         )
-    elif has_advanced_auth(db_type):
-        # SQL Server connection (has Windows/Azure AD auth)
-        server = getattr(args, "server", None) or getattr(args, "host", None)
-        if not server:
-            print("Error: --server is required for SQL Server connections.")
-            return 1
-
-        auth_type_str = getattr(args, "auth_type", "sql") or "sql"
-        try:
-            auth_type = AuthType(auth_type_str)
-        except ValueError:
-            valid_types = ", ".join(t.value for t in AuthType)
-            print(f"Error: Invalid auth type '{auth_type_str}'. Valid types: {valid_types}")
-            return 1
-
-        config = ConnectionConfig(
-            name=args.name,
-            db_type=db_type,
-            server=server,
-            port=args.port or get_default_port(db_type),
-            database=args.database or "",
-            username=args.username or "",
-            password=args.password or "",
-            auth_type=auth_type.value,
-            trusted_connection=(auth_type == AuthType.WINDOWS),
-            ssh_enabled=getattr(args, "ssh_enabled", False) or False,
-            ssh_host=getattr(args, "ssh_host", "") or "",
-            ssh_port=getattr(args, "ssh_port", "22") or "22",
-            ssh_username=getattr(args, "ssh_username", "") or "",
-            ssh_auth_type=getattr(args, "ssh_auth_type", "key") or "key",
-            ssh_key_path=getattr(args, "ssh_key_path", "") or "",
-            ssh_password=getattr(args, "ssh_password", "") or "",
-        )
-    else:
-        server = getattr(args, "server", None) or getattr(args, "host", None)
-        if not server:
-            db_label = get_database_type_labels().get(DatabaseType(db_type), db_type.upper())
-            print(f"Error: --server is required for {db_label} connections.")
-            return 1
-
-        config = ConnectionConfig(
-            name=args.name,
-            db_type=db_type,
-            server=server,
-            port=args.port or get_default_port(db_type),
-            database=args.database or "",
-            username=args.username or "",
-            password=args.password or "",
-            ssh_enabled=getattr(args, "ssh_enabled", False) or False,
-            ssh_host=getattr(args, "ssh_host", "") or "",
-            ssh_port=getattr(args, "ssh_port", "22") or "22",
-            ssh_username=getattr(args, "ssh_username", "") or "",
-            ssh_auth_type=getattr(args, "ssh_auth_type", "key") or "key",
-            ssh_key_path=getattr(args, "ssh_key_path", "") or "",
-            ssh_password=getattr(args, "ssh_password", "") or "",
-        )
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        return 1
 
     connections.append(config)
     if (config.password or config.ssh_password) and not is_keyring_usable():

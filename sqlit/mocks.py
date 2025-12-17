@@ -64,6 +64,11 @@ class MockDatabaseAdapter(DatabaseAdapter):
         query_results: dict[str, tuple[list[str], list[tuple]]] | None = None,
         default_schema: str = "",
         default_query_result: tuple[list[str], list[tuple]] | None = None,
+        connect_result: str = "success",
+        connect_error: str = "Connection failed",
+        required_fields: list[str] | None = None,
+        allowed_connections: list[dict[str, Any]] | None = None,
+        auth_error: str = "Authentication failed",
     ):
         self._name = name
         self._tables = tables or []
@@ -75,6 +80,11 @@ class MockDatabaseAdapter(DatabaseAdapter):
             ["id", "name"],
             [(1, "Sample Row 1"), (2, "Sample Row 2")],
         )
+        self._connect_result = (connect_result or "success").strip().lower()
+        self._connect_error = connect_error or "Connection failed"
+        self._required_fields = required_fields or []
+        self._allowed_connections = allowed_connections or []
+        self._auth_error = auth_error or "Authentication failed"
 
     @property
     def name(self) -> str:
@@ -93,6 +103,18 @@ class MockDatabaseAdapter(DatabaseAdapter):
         return False
 
     def connect(self, config: ConnectionConfig) -> Any:
+        if self._connect_result not in {"success", "ok", "pass"}:
+            raise Exception(self._connect_error)
+
+        if self._required_fields:
+            missing = [field for field in self._required_fields if not getattr(config, field, None)]
+            if missing:
+                message = self._connect_error or f"Missing required fields: {', '.join(missing)}"
+                raise Exception(message)
+
+        if self._allowed_connections:
+            if not any(_matches_connection_rule(config, rule) for rule in self._allowed_connections):
+                raise Exception(self._auth_error)
         return MockConnection()
 
     def get_databases(self, conn: Any) -> list[str]:
@@ -107,6 +129,8 @@ class MockDatabaseAdapter(DatabaseAdapter):
     def get_columns(
         self, conn: Any, table: str, database: str | None = None, schema: str | None = None
     ) -> list[ColumnInfo]:
+        if schema:
+            return self._columns.get(f"{schema}.{table}", self._columns.get(table, []))
         return self._columns.get(table, [])
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
@@ -276,6 +300,13 @@ def get_default_mock_adapter(db_type: str) -> MockDatabaseAdapter:
         return factory()
     # Fallback for unknown types
     return MockDatabaseAdapter(name=f"Mock{db_type.title()}")
+
+
+def _matches_connection_rule(config: ConnectionConfig, rule: dict[str, Any]) -> bool:
+    for key, value in rule.items():
+        if getattr(config, key, None) != value:
+            return False
+    return True
 
 
 # =============================================================================

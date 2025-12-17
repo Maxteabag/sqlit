@@ -382,6 +382,7 @@ TURSO_SCHEMA = ConnectionSchema(
             label="Auth Token",
             field_type=FieldType.PASSWORD,
             required=False,
+            placeholder="auth token (optional)",
             description="Database authentication token, optional for local servers",
         ),
     ),
@@ -404,6 +405,7 @@ D1_SCHEMA = ConnectionSchema(
             label="API Token",
             field_type=FieldType.PASSWORD,
             required=True,
+            placeholder="cloudflare api token",
             description="Cloudflare API Token with D1 permissions",
         ),
         SchemaField(
@@ -463,6 +465,7 @@ SUPABASE_SCHEMA = ConnectionSchema(
             label="Password",
             field_type=FieldType.PASSWORD,
             required=True,
+            placeholder="database password",
         ),
     ),
     supports_ssh=False,

@@ -123,20 +123,29 @@ sqlit query -c "MyConnection" -q "SELECT * FROM Users" --format csv
 sqlit query -c "MyConnection" -f "script.sql" --format json
 
 # Create connections for different databases
-sqlit connection create --name "MySqlServer" --db-type mssql --server "localhost" --auth-type sql
-sqlit connection create --name "MyPostgres" --db-type postgresql --server "localhost" --username "user" --password "pass"
-sqlit connection create --name "MyMySQL" --db-type mysql --server "localhost" --username "user" --password "pass"
-sqlit connection create --name "MyCockroach" --db-type cockroachdb --server "localhost" --port "26257" --database "defaultdb" --username "root"
-sqlit connection create --name "MyLocalDB" --db-type sqlite --file-path "/path/to/database.db"
-sqlit connection create --name "MyTurso" --db-type turso --server "libsql://your-db.turso.io" --password "your-auth-token"
+sqlit connections add mssql --name "MySqlServer" --server "localhost" --auth-type sql
+sqlit connections add postgresql --name "MyPostgres" --server "localhost" --username "user" --password "pass"
+sqlit connections add mysql --name "MyMySQL" --server "localhost" --username "user" --password "pass"
+sqlit connections add cockroachdb --name "MyCockroach" --server "localhost" --port "26257" --database "defaultdb" --username "root"
+sqlit connections add sqlite --name "MyLocalDB" --file-path "/path/to/database.db"
+sqlit connections add turso --name "MyTurso" --server "libsql://your-db.turso.io" --password "your-auth-token"
 
 # Connect via SSH tunnel
-sqlit connection create --name "RemoteDB" --db-type postgresql --server "db-host" --username "dbuser" --password "dbpass" \
+sqlit connections add postgresql --name "RemoteDB" --server "db-host" --username "dbuser" --password "dbpass" \
   --ssh-enabled --ssh-host "ssh.example.com" --ssh-username "sshuser" --ssh-auth-type password --ssh-password "sshpass"
 
+# Temporary (not saved) connection
+sqlit connect sqlite --file-path "/path/to/database.db"
+
+# Provider-specific CLI help
+sqlit connect -h
+sqlit connect supabase -h
+sqlit connections add -h
+sqlit connections add supabase -h
+
 # Manage connections
-sqlit connection list
-sqlit connection delete "MyConnection"
+sqlit connections list
+sqlit connections delete "MyConnection"
 ```
 
 ## Keybindings
@@ -150,6 +159,7 @@ sqlit connection delete "MyConnection"
 | `h` | Query history |
 | `d` | Clear query |
 | `n` | New query (clear all) |
+| `y` | Copy query (when query editor is focused) |
 | `v` / `y` / `Y` / `a` | View cell / Copy cell / Copy row / Copy all |
 | `Ctrl+Q` | Quit |
 | `?` | Help |

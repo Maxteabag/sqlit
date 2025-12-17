@@ -935,7 +935,7 @@ class ConnectionScreen(ModalScreen):
                 self._rebuild_dynamic_fields(db_type)
                 self._set_initial_select_values()
                 self._update_field_visibility()
-                self._focus_first_required()
+                self._focus_first_visible_field()
                 self._update_ssh_tab_enabled(db_type)
                 self._update_mssql_driver_setup_visibility(db_type)
                 self._check_driver_availability(db_type)
@@ -1005,7 +1005,10 @@ class ConnectionScreen(ModalScreen):
                     self.query_one("#dbtype-select", Select),
                 ]
             )
-            for name, widget in self._field_widgets.items():
+            for name in self._field_definitions:
+                widget = self._field_widgets.get(name)
+                if widget is None:
+                    continue
                 if name.startswith("ssh_"):
                     continue
                 field_def = self._field_definitions.get(name)
@@ -1019,7 +1022,10 @@ class ConnectionScreen(ModalScreen):
                     pass
 
         elif active_tab == "tab-advanced":
-            for name, widget in self._field_widgets.items():
+            for name in self._field_definitions:
+                widget = self._field_widgets.get(name)
+                if widget is None:
+                    continue
                 field_def = self._field_definitions.get(name)
                 if field_def and field_def.advanced:
                     try:
@@ -1236,27 +1242,64 @@ class ConnectionScreen(ModalScreen):
 
     def _focus_first_required(self) -> None:
         values = self._get_current_form_values()
-        for field_name, field_def in self._field_definitions.items():
-            if not field_def.required:
-                continue
-            is_visible = True
-            if field_def.visible_when:
-                is_visible = bool(field_def.visible_when(values))
+        ordered_fields = list(self._field_definitions.keys())
+
+        def is_visible(field_def: FieldDefinition) -> bool:
+            if field_def.visible_when and not bool(field_def.visible_when(values)):
+                return False
             if field_def.advanced and not self._show_advanced:
-                is_visible = False
-            if not is_visible:
+                return False
+            return True
+
+        def is_missing(widget: Any) -> bool:
+            if isinstance(widget, Input):
+                return not widget.value.strip()
+            if isinstance(widget, OptionList):
+                return widget.highlighted is None
+            if isinstance(widget, Select):
+                return widget.value in (None, "")
+            return False
+
+        for field_name in ordered_fields:
+            field_def = self._field_definitions.get(field_name)
+            if not field_def or not field_def.required:
+                continue
+            if not is_visible(field_def):
                 continue
             widget = self._field_widgets.get(field_name)
             if widget is None:
                 continue
-            if isinstance(widget, Input):
-                if not widget.value.strip():
-                    widget.focus()
-                    return
-            if isinstance(widget, OptionList):
-                if widget.highlighted is None:
-                    widget.focus()
-                    return
+            if is_missing(widget):
+                widget.focus()
+                return
+
+        for field_name in ordered_fields:
+            field_def = self._field_definitions.get(field_name)
+            if not field_def or not is_visible(field_def):
+                continue
+            widget = self._field_widgets.get(field_name)
+            if widget is None:
+                continue
+            widget.focus()
+            return
+
+    def _focus_first_visible_field(self) -> None:
+        values = self._get_current_form_values()
+        ordered_fields = list(self._field_definitions.keys())
+
+        for field_name in ordered_fields:
+            field_def = self._field_definitions.get(field_name)
+            if not field_def:
+                continue
+            if field_def.visible_when and not bool(field_def.visible_when(values)):
+                continue
+            if field_def.advanced and not self._show_advanced:
+                continue
+            widget = self._field_widgets.get(field_name)
+            if widget is None:
+                continue
+            widget.focus()
+            return
 
     def action_next_field(self) -> None:
         from textual.widgets import Tabs
@@ -1561,6 +1604,10 @@ class ConnectionScreen(ModalScreen):
             return
 
         from ...db.exceptions import MissingDriverError
+
+        if getattr(self.app, "_mock_profile", None):
+            self.dismiss(("save", config))
+            return
 
         try:
             get_adapter(config.db_type).ensure_driver_available()
