@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from ..db.exceptions import MissingDriverError
+from ..install_strategy import detect_strategy
 
 
 class InstallerApp(Protocol):
@@ -78,18 +79,13 @@ class Installer:
         if os.environ.get("SQLIT_INSTALL_FORCE_FAIL") == "1":
             return False, "Forced failure (SQLIT_INSTALL_FORCE_FAIL=1)", error
 
-        pipx_override = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
-        is_pipx = "pipx" in sys.executable
-        if pipx_override in {"1", "true", "yes", "pipx"}:
-            is_pipx = True
-        elif pipx_override in {"0", "false", "no", "pip"}:
-            is_pipx = False
-        if is_pipx:
-            command = ["pipx", "inject", "sqlit-tui", error.package_name]
-            cwd: str | None = None
-        else:
-            command = [sys.executable, "-m", "pip", "install", f"sqlit-tui[{error.extra_name}]"]
-            cwd = None
+        strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
+        if not strategy.can_auto_install or not strategy.auto_install_command:
+            reason = strategy.reason_unavailable or "Automatic installation is not available."
+            return False, f"{reason}\n\n{strategy.manual_instructions}".strip(), error
+
+        command = strategy.auto_install_command
+        cwd: str | None = None
 
         if cancel_event.is_set():
             return False, "Installation cancelled by user.", error

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from collections.abc import Callable
 
 from rich.markup import escape
@@ -14,6 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from ...db.exceptions import MissingDriverError
+from ...install_strategy import detect_strategy
 from ...widgets import Dialog
 
 
@@ -62,25 +61,16 @@ class PackageSetupScreen(ModalScreen):
         self.error = error
         self._on_install = on_install
         self._instructions_text = ""
-
-    def _detect_installer(self) -> str:
-        pipx_override = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
-        is_pipx = "pipx" in sys.executable
-        if pipx_override in {"1", "true", "yes", "pipx"}:
-            is_pipx = True
-        elif pipx_override in {"0", "false", "no", "pip"}:
-            is_pipx = False
-
-        return "pipx" if is_pipx else "pip"
+        self._can_auto_install = True
 
     def compose(self) -> ComposeResult:
-        installer = self._detect_installer()
-        if installer == "pipx":
-            self._instructions_text = f"pipx inject sqlit-tui {self.error.package_name}\n"
-        else:
-            self._instructions_text = f'pip install "sqlit-tui[{self.error.extra_name}]"\n'
+        strategy = detect_strategy(extra_name=self.error.extra_name, package_name=self.error.package_name)
+        self._can_auto_install = strategy.can_auto_install
+        self._instructions_text = strategy.manual_instructions.strip() + "\n"
 
-        shortcuts = [("Install", "i"), ("Yank", "y"), ("Cancel", "<esc>")]
+        shortcuts = [("Yank", "y"), ("Cancel", "<esc>")]
+        if self._can_auto_install:
+            shortcuts.insert(0, ("Install", "i"))
         with Dialog(id="package-dialog", title="Missing package", shortcuts=shortcuts):
             yield Static(
                 f"This connection requires the [bold]{self.error.driver_name}[/] driver.\n"
@@ -95,6 +85,16 @@ class PackageSetupScreen(ModalScreen):
         self.query_one("#package-scroll", VerticalScroll).focus()
 
     def action_install(self) -> None:
+        if not self._can_auto_install:
+            try:
+                self.app.notify(
+                    "Automatic installation isn't available for this Python environment.",
+                    severity="warning",
+                    timeout=6,
+                )
+            except Exception:
+                pass
+            return
         self._on_install(self.error)
 
     def action_yank(self) -> None:
@@ -108,5 +108,7 @@ class PackageSetupScreen(ModalScreen):
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         if self.app.screen is not self:
+            return False
+        if action == "install" and not self._can_auto_install:
             return False
         return super().check_action(action, parameters)

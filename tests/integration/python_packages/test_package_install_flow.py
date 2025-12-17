@@ -12,6 +12,17 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _clean_screenshots_dir(outdir: Path) -> None:
+    resolved = outdir.resolve()
+    if resolved == Path("/"):
+        raise AssertionError("Refusing to clean screenshots in '/'")
+    if not outdir.exists():
+        return
+    for path in outdir.rglob("*"):
+        if path.is_file() and path.suffix.lower() in (".svg", ".png"):
+            path.unlink(missing_ok=True)
+
+
 def _maybe_screenshot(app, name: str) -> None:
     outdir = os.environ.get("SQLIT_TEST_SCREENSHOTS_DIR")
     if not outdir:
@@ -150,6 +161,10 @@ async def _run_flow(*, force_fail: bool, db_type: str) -> None:
 
 
 async def main() -> None:
+    outdir = os.environ.get("SQLIT_TEST_SCREENSHOTS_DIR")
+    if outdir:
+        _clean_screenshots_dir(Path(outdir))
+
     # Success path: install missing psycopg2
     _assert_missing("psycopg2")
     await _run_flow(force_fail=False, db_type="postgresql")

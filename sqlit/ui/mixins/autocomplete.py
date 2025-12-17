@@ -10,7 +10,6 @@ from textual.worker import Worker
 
 from ..protocols import AppProtocol
 
-# Spinner frames for loading animation
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
@@ -64,7 +63,6 @@ class AutocompleteMixin:
             suggestions = self._schema_cache["procedures"]
         elif context.startswith("column:"):
             table_name = context.split(":", 1)[1].lower()
-            # Lazy load columns if not cached
             if table_name not in self._schema_cache["columns"]:
                 self._load_columns_for_table(table_name)
             suggestions = self._schema_cache["columns"].get(table_name, [])
@@ -85,15 +83,12 @@ class AutocompleteMixin:
         if not self.current_connection or not self.current_adapter:
             return
 
-        # Initialize _columns_loading if not present
         if not hasattr(self, "_columns_loading") or self._columns_loading is None:
             self._columns_loading = set()
 
-        # Skip if already loading this table
         if table_name in self._columns_loading:
             return
 
-        # Check if we have metadata for this table
         metadata = self._table_metadata.get(table_name)
         if not metadata:
             return
@@ -102,7 +97,6 @@ class AutocompleteMixin:
         self._columns_loading.add(table_name)
 
         def work() -> None:
-            """Run in worker thread."""
             adapter = self.current_adapter
             connection = self.current_connection
             if not adapter or not connection:
@@ -114,7 +108,6 @@ class AutocompleteMixin:
                 except Exception:
                     column_names = []
 
-            # Update cache on main thread
             self.call_from_thread(
                 self._on_autocomplete_columns_loaded,
                 table_name,
@@ -130,7 +123,6 @@ class AutocompleteMixin:
         """Handle column load completion for autocomplete on main thread."""
         self._columns_loading.discard(table_name)
         self._schema_cache["columns"][table_name] = column_names
-        # Also cache by actual table name
         self._schema_cache["columns"][actual_table_name.lower()] = column_names
 
     def _show_autocomplete(self: AppProtocol, suggestions: list[str], filter_text: str) -> None:

@@ -13,6 +13,7 @@ depends=(
     'python-pyperclip'
     'python-sshtunnel'
     'python-paramiko'
+    'python-keyring'
 )
 optdepends=(
     'python-psycopg2: PostgreSQL and CockroachDB support'

@@ -13,7 +13,6 @@ from ..protocols import AppProtocol
 if TYPE_CHECKING:
     from ...services import QueryService
 
-# Spinner frames for loading animation
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
@@ -26,7 +25,6 @@ class QueryMixin:
             Defaults to a new QueryService() when None.
     """
 
-    # DI seam for testing - set to override query service
     _query_service: QueryService | None = None
 
     _query_worker: Worker[Any] | None = None
@@ -54,7 +52,6 @@ class QueryMixin:
             self.notify("No query to execute", severity="warning")
             return
 
-        # Cancel any existing query worker
         if hasattr(self, "_query_worker") and self._query_worker is not None:
             self._query_worker.cancel()
 
@@ -62,10 +59,8 @@ class QueryMixin:
         self.results_table.add_column("Status")
         self.results_table.add_row("Executing query...")
 
-        # Start spinner animation
         self._start_query_spinner()
 
-        # Run query in background thread
         self._query_worker = self.run_worker(
             self._run_query_async(query, keep_insert_mode),
             name="query_execution",
@@ -80,7 +75,6 @@ class QueryMixin:
         self._query_start_time = time.perf_counter()
         self._spinner_index = 0
         self._update_status_bar()
-        # Start timer to animate spinner
         if hasattr(self, "_spinner_timer") and self._spinner_timer is not None:
             self._spinner_timer.stop()
         self._spinner_timer = self.set_interval(0.1, self._animate_spinner)
@@ -115,7 +109,7 @@ class QueryMixin:
             self._stop_query_spinner()
             return
 
-        # Create cancellable query with dedicated connection
+        # Dedicated connection enables cancellation by closing it.
         cancellable = CancellableQuery(
             sql=query,
             config=config,
@@ -123,11 +117,9 @@ class QueryMixin:
         )
         self._cancellable_query = cancellable
 
-        # Use injected service or default (for history saving)
         service = self._query_service or QueryService()
 
         try:
-            # Execute on dedicated connection (cancellable via connection close)
             max_fetch_rows = 10000
 
             start_time = time.perf_counter()
@@ -137,10 +129,8 @@ class QueryMixin:
             )
             elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-            # Save to history after successful execution
             service._save_to_history(config.name, query)
 
-            # Update UI (we're back on main thread after await)
             if isinstance(result, QueryResult):
                 self._display_query_results(result.columns, result.rows, result.row_count, result.truncated, elapsed_ms)
             else:
@@ -150,18 +140,15 @@ class QueryMixin:
                 self._restore_insert_mode()
 
         except RuntimeError as e:
-            # Query was cancelled
             if "cancelled" in str(e).lower():
                 pass  # Already handled by action_cancel_query
             else:
                 self._display_query_error(str(e))
         except Exception as e:
-            # Don't show error if query was cancelled
             if not cancellable.is_cancelled:
                 self._display_query_error(str(e))
         finally:
             self._cancellable_query = None
-            # Always stop the spinner when done
             self._stop_query_spinner()
 
     def _display_query_results(
@@ -224,18 +211,15 @@ class QueryMixin:
             self.notify("No query running")
             return
 
-        # Cancel the cancellable query (closes dedicated connection)
         if hasattr(self, "_cancellable_query") and self._cancellable_query is not None:
             self._cancellable_query.cancel()
 
-        # Also cancel the worker
         if hasattr(self, "_query_worker") and self._query_worker is not None:
             self._query_worker.cancel()
             self._query_worker = None
 
         self._stop_query_spinner()
 
-        # Update results table to show cancelled state
         self.results_table.clear(columns=True)
         self.results_table.add_column("Status")
         self.results_table.add_row("Query cancelled")

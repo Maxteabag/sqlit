@@ -65,11 +65,9 @@ def validate_connection_form(
     """
     state = ValidationState()
 
-    # Validate name uniqueness
     if name in existing_names and name != editing_name:
         state.add_error("name", "Name already exists.")
 
-    # Validate required fields
     for field_name, field_def in field_definitions.items():
         if not field_def.required:
             continue
@@ -81,7 +79,6 @@ def validate_connection_form(
         if is_visible and not values.get(field_name):
             state.add_error(field_name, "Required.")
 
-    # File path validation for file-based databases
     if is_file_based(db_type):
         fp = values.get("file_path", "").strip()
         if not fp:
@@ -89,7 +86,6 @@ def validate_connection_form(
         elif not Path(fp).exists():
             state.add_error("file_path", "File not found.")
 
-    # SSH validation
     ssh_enabled = values.get("ssh_enabled") == "enabled"
     if ssh_enabled:
         if not values.get("ssh_host"):

@@ -19,7 +19,6 @@ class TestMSSQLIntegration:
         connection_name = "test_create_mssql"
 
         try:
-            # Create connection
             result = cli_runner(
                 "connection",
                 "create",
@@ -41,13 +40,11 @@ class TestMSSQLIntegration:
             assert result.returncode == 0
             assert "created successfully" in result.stdout
 
-            # Verify it appears in list
             result = cli_runner("connection", "list")
             assert connection_name in result.stdout
             assert "SQL Server" in result.stdout
 
         finally:
-            # Cleanup
             cli_runner("connection", "delete", connection_name, check=False)
 
     def test_list_connections_shows_mssql(self, mssql_connection, cli_runner):
@@ -188,7 +185,6 @@ class TestMSSQLIntegration:
 
         connection_name = "test_delete_mssql"
 
-        # Create connection first
         cli_runner(
             "connection",
             "create",
@@ -208,11 +204,9 @@ class TestMSSQLIntegration:
             MSSQL_PASSWORD,
         )
 
-        # Delete it
         result = cli_runner("connection", "delete", connection_name)
         assert result.returncode == 0
         assert "deleted successfully" in result.stdout
 
-        # Verify it's gone
         result = cli_runner("connection", "list")
         assert connection_name not in result.stdout

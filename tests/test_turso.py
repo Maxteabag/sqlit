@@ -27,7 +27,6 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
         connection_name = "test_create_turso"
 
         try:
-            # Create connection
             result = cli_runner(
                 "connection",
                 "create",
@@ -43,13 +42,11 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
             assert result.returncode == 0
             assert "created successfully" in result.stdout
 
-            # Verify it appears in list
             result = cli_runner("connection", "list")
             assert connection_name in result.stdout
             assert "Turso" in result.stdout
 
         finally:
-            # Cleanup
             cli_runner("connection", "delete", connection_name, check=False)
 
     def test_query_turso_join(self, turso_connection, cli_runner):
@@ -81,7 +78,6 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
         )
         assert result.returncode == 0
 
-        # Verify the update
         result = cli_runner(
             "query",
             "-c",
@@ -95,7 +91,6 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
         """Test deleting a Turso connection."""
         connection_name = "test_delete_turso"
 
-        # Create connection first
         cli_runner(
             "connection",
             "create",
@@ -109,12 +104,10 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
             "",
         )
 
-        # Delete it
         result = cli_runner("connection", "delete", connection_name)
         assert result.returncode == 0
         assert "deleted successfully" in result.stdout
 
-        # Verify it's gone
         result = cli_runner("connection", "list")
         assert connection_name not in result.stdout
 

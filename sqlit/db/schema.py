@@ -101,6 +101,7 @@ def _password_field() -> SchemaField:
         name="password",
         label="Password",
         field_type=FieldType.PASSWORD,
+        placeholder="(empty = ask every connect)",
         group="credentials",
     )
 
@@ -189,6 +190,7 @@ def _get_ssh_fields() -> tuple[SchemaField, ...]:
             name="ssh_password",
             label="Password",
             field_type=FieldType.PASSWORD,
+            placeholder="(empty = ask every connect)",
             visible_when=_ssh_auth_is_password,
             tab="ssh",
         ),
@@ -198,16 +200,11 @@ def _get_ssh_fields() -> tuple[SchemaField, ...]:
 SSH_FIELDS = _get_ssh_fields()
 
 
-# Schema definitions for each database type
-
-
 def _get_mssql_driver_options() -> tuple[SelectOption, ...]:
-    """Get available ODBC driver options for SQL Server."""
     return tuple(SelectOption(d, d) for d in SUPPORTED_DRIVERS)
 
 
 def _get_mssql_auth_options() -> tuple[SelectOption, ...]:
-    """Get authentication type options for SQL Server."""
     return (
         SelectOption("sql", "SQL Server Authentication"),
         SelectOption("windows", "Windows Authentication"),
@@ -262,6 +259,7 @@ MSSQL_SCHEMA = ConnectionSchema(
             name="password",
             label="Password",
             field_type=FieldType.PASSWORD,
+            placeholder="(empty = ask every connect)",
             group="credentials",
             visible_when=lambda v: v.get("auth_type") in _MSSQL_AUTH_NEEDS_PASSWORD,
         ),

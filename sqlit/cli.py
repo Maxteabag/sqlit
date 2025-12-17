@@ -17,7 +17,6 @@ def main() -> int:
         description="A terminal UI for SQL databases",
     )
 
-    # Global options for TUI mode
     parser.add_argument(
         "--mock",
         metavar="PROFILE",
@@ -43,14 +42,11 @@ def main() -> int:
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # Connection commands
     conn_parser = subparsers.add_parser("connection", help="Manage connections")
     conn_subparsers = conn_parser.add_subparsers(dest="conn_command", help="Connection commands")
 
-    # connection list
     conn_subparsers.add_parser("list", help="List all saved connections")
 
-    # connection create
     create_parser = conn_subparsers.add_parser("create", help="Create a new connection")
     create_parser.add_argument("--name", "-n", required=True, help="Connection name")
     create_parser.add_argument(
@@ -60,14 +56,12 @@ def main() -> int:
         choices=[t.value for t in DatabaseType],
         help="Database type (default: mssql)",
     )
-    # Server-based database options (SQL Server, PostgreSQL, MySQL)
     create_parser.add_argument("--server", "-s", help="Server address")
     create_parser.add_argument("--host", help="Alias for --server (e.g. Cloudflare D1 Account ID)")
     create_parser.add_argument("--port", "-P", help="Port (default: provider default)")
     create_parser.add_argument("--database", "-d", default="", help="Database name (empty = browse all)")
     create_parser.add_argument("--username", "-u", help="Username")
     create_parser.add_argument("--password", "-p", help="Password")
-    # SQL Server specific options
     create_parser.add_argument(
         "--auth-type",
         "-a",
@@ -75,9 +69,7 @@ def main() -> int:
         choices=[t.value for t in AuthType],
         help="Authentication type (SQL Server only, default: sql)",
     )
-    # SQLite options
     create_parser.add_argument("--file-path", help="Database file path (SQLite only)")
-    # SSH tunnel options
     create_parser.add_argument("--ssh-enabled", action="store_true", help="Enable SSH tunnel")
     create_parser.add_argument("--ssh-host", help="SSH server hostname")
     create_parser.add_argument("--ssh-port", default="22", help="SSH server port (default: 22)")
@@ -86,32 +78,26 @@ def main() -> int:
     create_parser.add_argument("--ssh-key-path", help="SSH private key path")
     create_parser.add_argument("--ssh-password", help="SSH password")
 
-    # connection edit
     edit_parser = conn_subparsers.add_parser("edit", help="Edit an existing connection")
     edit_parser.add_argument("connection_name", help="Name of connection to edit")
     edit_parser.add_argument("--name", "-n", help="New connection name")
-    # Server-based database options (SQL Server, PostgreSQL, MySQL)
     edit_parser.add_argument("--server", "-s", help="Server address")
     edit_parser.add_argument("--host", help="Alias for --server (e.g. Cloudflare D1 Account ID)")
     edit_parser.add_argument("--port", "-P", help="Port")
     edit_parser.add_argument("--database", "-d", help="Database name")
     edit_parser.add_argument("--username", "-u", help="Username")
     edit_parser.add_argument("--password", "-p", help="Password")
-    # SQL Server specific options
     edit_parser.add_argument(
         "--auth-type",
         "-a",
         choices=[t.value for t in AuthType],
         help="Authentication type (SQL Server only)",
     )
-    # SQLite options
     edit_parser.add_argument("--file-path", help="Database file path (SQLite only)")
 
-    # connection delete
     delete_parser = conn_subparsers.add_parser("delete", help="Delete a connection")
     delete_parser.add_argument("connection_name", help="Name of connection to delete")
 
-    # query command
     query_parser = subparsers.add_parser("query", help="Execute a SQL query")
     query_parser.add_argument("--connection", "-c", required=True, help="Connection name to use")
     query_parser.add_argument("--database", "-d", help="Database to query (overrides connection default)")
@@ -144,7 +130,6 @@ def main() -> int:
     else:
         os.environ.pop("SQLIT_MOCK_PIPX", None)
 
-    # No command = launch TUI
     if args.command is None:
         from .app import SSMSTUI
 
@@ -162,7 +147,6 @@ def main() -> int:
         app.run()
         return 0
 
-    # Import commands lazily to speed up --help
     from .commands import (
         cmd_connection_create,
         cmd_connection_delete,
@@ -171,7 +155,6 @@ def main() -> int:
         cmd_query,
     )
 
-    # Handle connection commands
     if args.command == "connection":
         if args.conn_command == "list":
             return cmd_connection_list(args)
@@ -185,7 +168,6 @@ def main() -> int:
             conn_parser.print_help()
             return 1
 
-    # Handle query command
     if args.command == "query":
         return cmd_query(args)
 

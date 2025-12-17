@@ -47,7 +47,7 @@ sqlit is a lightweight database TUI that is easy to use and beautiful to look at
 
 ### Method 1: `pipx` (Recommended)
 
-This is the recommended method. It installs `sqlit-tui` and its dependencies in an isolated environment, preventing any conflicts with your other Python projects.
+This is the recommended method. It installs `sqlit-tui` in an isolated environment, so optional drivers are easy to add later.
 
 1.  **Install pipx:** If you don't have pipx, you can install it with:
     ```bash
@@ -61,20 +61,29 @@ This is the recommended method. It installs `sqlit-tui` and its dependencies in 
     pipx install sqlit-tui
     ```
 
-3.  **Install Drivers:** To add database drivers, use `pipx inject`. The application will guide you if a driver is missing, but you can also pre-install them. For example:
+3.  **Optional drivers (only if you need them):** `sqlit` will tell you what to install when a driver is missing, but you can also pre-install them. For example:
     ```bash
-    # To add PostgreSQL support
+    # PostgreSQL / Supabase / CockroachDB
     pipx inject sqlit-tui psycopg2-binary
 
-    # To add MySQL support
+    # MySQL
     pipx inject sqlit-tui mysql-connector-python
     ```
 
-### Method 2: `pip` (Alternative)
+### Method 2: `uv` (Alternative)
+
+`uv` is a fast, modern installer. This also keeps things isolated and makes optional drivers easy.
+
+```bash
+uv tool install sqlit-tui
+```
+
+### Method 3: `pip` (Alternative)
 
 *(Note: To avoid dependency conflicts, installing in a virtual environment is recommended.)*
 
 You can install `sqlit-tui` and drivers directly with `pip` using "extras". The application will guide you if a driver is missing.
+If you installed Python via a system package manager (Homebrew, apt, pacman, etc.), `pip install` may be restricted; in that case, use `pipx`, `uv`, or a virtual environment.
 
 ```bash
 # To install with PostgreSQL and MySQL support
@@ -170,7 +179,9 @@ Connections and settings are stored in `~/.sqlit/`.
 
 ### How are sensitive credentials stored?
 
-Credentials are stored in plain text in a protected directory (`~/.sqlit/`) with restricted file permissions (700/600).
+Connection details are stored in `~/.sqlit/connections.json`, but passwords are stored in your OS keyring when available (macOS Keychain, Windows Credential Locker, Linux Secret Service).
+
+If a keyring backend isn't available, `sqlit` will ask whether to store passwords as plaintext in `~/.sqlit/` (protected permissions). If you decline, you’ll be prompted when needed.
 
 ### How does sqlit compare to Harlequin, Lazysql, etc.?
 
@@ -193,21 +204,19 @@ See `CONTRIBUTING.md` for development setup, testing, CI, and CockroachDB quicks
 
 ### Driver Reference
 
-While the application will guide you to install missing drivers, you can also pre-install them.
+Most of the time you can just run `sqlit` and connect. If a Python driver is missing, `sqlit` will show (and often run) the right install command for your environment.
 
-| Database | `pip install` Command | `pipx inject` Command |
-| :--- | :--- | :--- |
-| SQLite | *(built-in)* | *(built-in)* |
-| PostgreSQL | `pip install "sqlit-tui[postgres]"` | `pipx inject sqlit-tui psycopg2-binary` |
-| CockroachDB | `pip install "sqlit-tui[cockroachdb]"` | `pipx inject sqlit-tui psycopg2-binary` |
-| Supabase | `pip install "sqlit-tui[postgres]"` | `pipx inject sqlit-tui psycopg2-binary` |
-| SQL Server | `pip install "sqlit-tui[mssql]"` | `pipx inject sqlit-tui pyodbc` |
-| MySQL | `pip install "sqlit-tui[mysql]"` | `pipx inject sqlit-tui mysql-connector-python` |
-| MariaDB | `pip install "sqlit-tui[mariadb]"` | `pipx inject sqlit-tui mariadb` |
-| Oracle | `pip install "sqlit-tui[oracle]"` | `pipx inject sqlit-tui oracledb` |
-| DuckDB | `pip install "sqlit-tui[duckdb]"` | `pipx inject sqlit-tui duckdb` |
-| Turso | `pip install "sqlit-tui[turso]"` | `pipx inject sqlit-tui libsql-client`|
-| Cloudflare D1 | `pip install "sqlit-tui[d1]"` | `pipx inject sqlit-tui requests` |
+| Database | Driver package | `pipx` | `pip` / venv |
+| :--- | :--- | :--- | :--- |
+| SQLite | *(built-in)* | *(built-in)* | *(built-in)* |
+| PostgreSQL / CockroachDB / Supabase | `psycopg2-binary` | `pipx inject sqlit-tui psycopg2-binary` | `python -m pip install psycopg2-binary` |
+| SQL Server | `pyodbc` | `pipx inject sqlit-tui pyodbc` | `python -m pip install pyodbc` |
+| MySQL | `mysql-connector-python` | `pipx inject sqlit-tui mysql-connector-python` | `python -m pip install mysql-connector-python` |
+| MariaDB | `mariadb` | `pipx inject sqlit-tui mariadb` | `python -m pip install mariadb` |
+| Oracle | `oracledb` | `pipx inject sqlit-tui oracledb` | `python -m pip install oracledb` |
+| DuckDB | `duckdb` | `pipx inject sqlit-tui duckdb` | `python -m pip install duckdb` |
+| Turso | `libsql-client` | `pipx inject sqlit-tui libsql-client` | `python -m pip install libsql-client` |
+| Cloudflare D1 | `requests` | `pipx inject sqlit-tui requests` | `python -m pip install requests` |
 
 **Note:** SQL Server also requires the platform-specific ODBC driver. On your first connection attempt, `sqlit` can help you install it if it's missing.
 

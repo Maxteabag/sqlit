@@ -9,6 +9,7 @@ from .help import HelpScreen
 from .leader_menu import LeaderMenuScreen
 from .message import MessageScreen
 from .package_setup import PackageSetupScreen
+from .password_input import PasswordInputScreen
 from .query_history import QueryHistoryScreen
 from .theme import ThemeScreen
 from .value_view import ValueViewScreen
@@ -23,6 +24,7 @@ __all__ = [
     "LeaderMenuScreen",
     "MessageScreen",
     "PackageSetupScreen",
+    "PasswordInputScreen",
     "QueryHistoryScreen",
     "ThemeScreen",
     "ValueViewScreen",

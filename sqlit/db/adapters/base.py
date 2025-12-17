@@ -436,25 +436,12 @@ class PostgresBaseAdapter(CursorBasedAdapter):
 
 def _create_driver_import_error_hint(driver_name: str, extra_name: str, package_name: str) -> str:
     """Generate a context-aware hint for missing driver installation."""
-    import sys
+    from ...install_strategy import detect_strategy
 
-    pipx_override = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
-    is_pipx = "pipx" in sys.executable
-    if pipx_override in {"1", "true", "yes", "pipx"}:
-        is_pipx = True
-    elif pipx_override in {"0", "false", "no", "pip"}:
-        is_pipx = False
-
-    if is_pipx:
-        return (
-            f"{driver_name} driver not found.\n\n"
-            f"To connect to {driver_name}, run:\n\n"
-            f"[bold]pipx inject sqlit-tui {package_name}[/bold]\n"
-        )
-    else:
-        cmd = f'pip install "sqlit-tui[{extra_name}]"'
-        return (
-            f"{driver_name} driver not found.\n\n"
-            f"To connect to {driver_name}, run:\n\n"
-            f"[bold]{escape(cmd)}[/bold]\n"
-        )
+    strategy = detect_strategy(extra_name=extra_name, package_name=package_name)
+    instructions = escape(strategy.manual_instructions)
+    return (
+        f"{driver_name} driver not found.\n\n"
+        f"To connect to {driver_name}, run:\n\n"
+        f"[bold]{instructions}[/bold]\n"
+    )

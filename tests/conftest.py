@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-# Ensure tests never read/write real user config under ~/.sqlit.
 _TEST_CONFIG_DIR = Path(tempfile.mkdtemp(prefix="sqlit-test-config-"))
 os.environ.setdefault("SQLIT_CONFIG_DIR", str(_TEST_CONFIG_DIR))
 
@@ -45,7 +44,6 @@ def run_cli(*args: str, check: bool = True) -> subprocess.CompletedProcess:
         text=True,
     )
     if check and result.returncode != 0:
-        # Ignore RuntimeWarning about module import order
         stderr_clean = "\n".join(
             line
             for line in result.stderr.split("\n")
@@ -64,11 +62,6 @@ def cleanup_connection(name: str) -> None:
         pass
 
 
-# =============================================================================
-# SQLite Fixtures
-# =============================================================================
-
-
 @pytest.fixture(scope="function")
 def sqlite_db_path(tmp_path: Path) -> Path:
     """Create a temporary SQLite database file path."""
@@ -81,7 +74,6 @@ def sqlite_db(sqlite_db_path: Path) -> Path:
     conn = sqlite3.connect(sqlite_db_path)
     cursor = conn.cursor()
 
-    # Create test tables
     cursor.execute("""
         CREATE TABLE test_users (
             id INTEGER PRIMARY KEY,
@@ -99,13 +91,11 @@ def sqlite_db(sqlite_db_path: Path) -> Path:
         )
     """)
 
-    # Create test view
     cursor.execute("""
         CREATE VIEW test_user_emails AS
         SELECT id, name, email FROM test_users WHERE email IS NOT NULL
     """)
 
-    # Insert test data
     cursor.executemany(
         "INSERT INTO test_users (id, name, email) VALUES (?, ?, ?)",
         [
@@ -135,10 +125,8 @@ def sqlite_connection(sqlite_db: Path) -> str:
     """Create a sqlit CLI connection for SQLite and clean up after test."""
     connection_name = f"test_sqlite_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection
     run_cli(
         "connection",
         "create",
@@ -152,15 +140,9 @@ def sqlite_connection(sqlite_db: Path) -> str:
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 
-# =============================================================================
-# SQL Server Fixtures
-# =============================================================================
-
-# SQL Server connection settings for Docker
 MSSQL_HOST = os.environ.get("MSSQL_HOST", "localhost")
 MSSQL_PORT = int(os.environ.get("MSSQL_PORT", "1433"))
 MSSQL_USER = os.environ.get("MSSQL_USER", "sa")
@@ -179,7 +161,6 @@ def mssql_server_ready() -> bool:
     if not mssql_available():
         return False
 
-    # Wait a bit for SQL Server to be fully ready
     time.sleep(2)
     return True
 
@@ -202,7 +183,6 @@ def mssql_db(mssql_server_ready: bool) -> str:
 
     driver = drivers[0]
 
-    # Connect to master to create test database
     conn_str = (
         f"DRIVER={{{driver}}};"
         f"SERVER={MSSQL_HOST},{MSSQL_PORT};"
@@ -217,18 +197,15 @@ def mssql_db(mssql_server_ready: bool) -> str:
         conn.autocommit = True
         cursor = conn.cursor()
 
-        # Drop test database if it exists (separate statements to avoid "connection busy" errors)
         cursor.execute(f"SELECT name FROM sys.databases WHERE name = '{MSSQL_DATABASE}'")
         if cursor.fetchone():
             cursor.execute(f"ALTER DATABASE [{MSSQL_DATABASE}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE")
             cursor.execute(f"DROP DATABASE [{MSSQL_DATABASE}]")
 
-        # Create test database
         cursor.execute(f"CREATE DATABASE [{MSSQL_DATABASE}]")
         cursor.close()
         conn.close()
 
-        # Connect to test database and create schema
         conn_str = (
             f"DRIVER={{{driver}}};"
             f"SERVER={MSSQL_HOST},{MSSQL_PORT};"
@@ -240,7 +217,6 @@ def mssql_db(mssql_server_ready: bool) -> str:
         conn = pyodbc.connect(conn_str, timeout=10)
         cursor = conn.cursor()
 
-        # Create test tables
         cursor.execute("""
             CREATE TABLE test_users (
                 id INT PRIMARY KEY,
@@ -258,13 +234,11 @@ def mssql_db(mssql_server_ready: bool) -> str:
             )
         """)
 
-        # Create test view
         cursor.execute("""
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
-        # Create test stored procedure
         cursor.execute("""
             CREATE PROCEDURE sp_test_get_users
             AS
@@ -273,7 +247,6 @@ def mssql_db(mssql_server_ready: bool) -> str:
             END
         """)
 
-        # Insert test data
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -297,7 +270,6 @@ def mssql_db(mssql_server_ready: bool) -> str:
 
     yield MSSQL_DATABASE
 
-    # Cleanup: drop test database
     try:
         conn = pyodbc.connect(
             f"DRIVER={{{driver}}};"
@@ -310,7 +282,6 @@ def mssql_db(mssql_server_ready: bool) -> str:
         )
         conn.autocommit = True
         cursor = conn.cursor()
-        # Execute each statement separately to avoid "connection busy" errors
         cursor.execute(f"SELECT name FROM sys.databases WHERE name = '{MSSQL_DATABASE}'")
         if cursor.fetchone():
             cursor.execute(f"ALTER DATABASE [{MSSQL_DATABASE}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE")
@@ -326,10 +297,8 @@ def mssql_connection(mssql_db: str) -> str:
     """Create a sqlit CLI connection for SQL Server and clean up after test."""
     connection_name = f"test_mssql_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection
     run_cli(
         "connection",
         "create",
@@ -351,15 +320,9 @@ def mssql_connection(mssql_db: str) -> str:
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 
-# =============================================================================
-# PostgreSQL Fixtures
-# =============================================================================
-
-# PostgreSQL connection settings for Docker
 POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")
 POSTGRES_PORT = int(os.environ.get("POSTGRES_PORT", "5432"))
 POSTGRES_USER = os.environ.get("POSTGRES_USER", "testuser")
@@ -378,7 +341,6 @@ def postgres_server_ready() -> bool:
     if not postgres_available():
         return False
 
-    # Wait a bit for PostgreSQL to be fully ready
     time.sleep(1)
     return True
 
@@ -406,12 +368,10 @@ def postgres_db(postgres_server_ready: bool) -> str:
         conn.autocommit = True
         cursor = conn.cursor()
 
-        # Drop tables if they exist and recreate
         cursor.execute("DROP TABLE IF EXISTS test_users CASCADE")
         cursor.execute("DROP TABLE IF EXISTS test_products CASCADE")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")
 
-        # Create test tables
         cursor.execute("""
             CREATE TABLE test_users (
                 id INTEGER PRIMARY KEY,
@@ -429,13 +389,11 @@ def postgres_db(postgres_server_ready: bool) -> str:
             )
         """)
 
-        # Create test view
         cursor.execute("""
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
-        # Insert test data
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -457,7 +415,6 @@ def postgres_db(postgres_server_ready: bool) -> str:
 
     yield POSTGRES_DATABASE
 
-    # Cleanup: drop test tables
     try:
         conn = psycopg2.connect(
             host=POSTGRES_HOST,
@@ -482,10 +439,8 @@ def postgres_connection(postgres_db: str) -> str:
     """Create a sqlit CLI connection for PostgreSQL and clean up after test."""
     connection_name = f"test_postgres_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection
     run_cli(
         "connection",
         "create",
@@ -507,15 +462,9 @@ def postgres_connection(postgres_db: str) -> str:
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 
-# =============================================================================
-# MySQL Fixtures
-# =============================================================================
-
-# MySQL connection settings for Docker
 # Note: We use root user because MySQL's testuser only has localhost access inside the container
 MYSQL_HOST = os.environ.get("MYSQL_HOST", "localhost")
 MYSQL_PORT = int(os.environ.get("MYSQL_PORT", "3306"))
@@ -535,7 +484,6 @@ def mysql_server_ready() -> bool:
     if not mysql_available():
         return False
 
-    # Wait a bit for MySQL to be fully ready
     time.sleep(1)
     return True
 
@@ -562,12 +510,10 @@ def mysql_db(mysql_server_ready: bool) -> str:
         )
         cursor = conn.cursor()
 
-        # Drop tables if they exist and recreate
         cursor.execute("DROP TABLE IF EXISTS test_users")
         cursor.execute("DROP TABLE IF EXISTS test_products")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")
 
-        # Create test tables
         cursor.execute("""
             CREATE TABLE test_users (
                 id INT PRIMARY KEY,
@@ -585,13 +531,11 @@ def mysql_db(mysql_server_ready: bool) -> str:
             )
         """)
 
-        # Create test view
         cursor.execute("""
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
-        # Insert test data
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -614,7 +558,6 @@ def mysql_db(mysql_server_ready: bool) -> str:
 
     yield MYSQL_DATABASE
 
-    # Cleanup: drop test tables
     try:
         conn = mysql.connector.connect(
             host=MYSQL_HOST,
@@ -639,10 +582,8 @@ def mysql_connection(mysql_db: str) -> str:
     """Create a sqlit CLI connection for MySQL and clean up after test."""
     connection_name = f"test_mysql_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection
     run_cli(
         "connection",
         "create",
@@ -664,7 +605,6 @@ def mysql_connection(mysql_db: str) -> str:
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 
@@ -691,7 +631,6 @@ def oracle_server_ready() -> bool:
     if not oracle_available():
         return False
 
-    # Wait a bit for Oracle to be fully ready
     time.sleep(2)
     return True
 
@@ -716,20 +655,18 @@ def oracle_db(oracle_server_ready: bool) -> str:
         )
         cursor = conn.cursor()
 
-        # Drop tables if they exist (Oracle doesn't have IF EXISTS, use exception handling)
+        # Oracle lacks `DROP TABLE IF EXISTS`; ignore "does not exist" errors.
         for table in ["test_users", "test_products"]:
             try:
                 cursor.execute(f"DROP TABLE {table} CASCADE CONSTRAINTS")
             except oracledb.DatabaseError:
                 pass  # Table doesn't exist
 
-        # Drop view if exists
         try:
             cursor.execute("DROP VIEW test_user_emails")
         except oracledb.DatabaseError:
             pass
 
-        # Create test tables
         cursor.execute("""
             CREATE TABLE test_users (
                 id NUMBER PRIMARY KEY,
@@ -747,13 +684,11 @@ def oracle_db(oracle_server_ready: bool) -> str:
             )
         """)
 
-        # Create test view
         cursor.execute("""
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
-        # Insert test data
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES (1, 'Alice', 'alice@example.com')
         """)
@@ -782,7 +717,6 @@ def oracle_db(oracle_server_ready: bool) -> str:
 
     yield ORACLE_SERVICE
 
-    # Cleanup: drop test tables
     try:
         conn = oracledb.connect(
             user=ORACLE_USER,
@@ -810,10 +744,8 @@ def oracle_connection(oracle_db: str) -> str:
     """Create a sqlit CLI connection for Oracle and clean up after test."""
     connection_name = f"test_oracle_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection
     run_cli(
         "connection",
         "create",
@@ -835,7 +767,6 @@ def oracle_connection(oracle_db: str) -> str:
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 
@@ -843,7 +774,6 @@ def oracle_connection(oracle_db: str) -> str:
 # MariaDB Fixtures
 # =============================================================================
 
-# MariaDB connection settings for Docker
 # Note: Using 127.0.0.1 instead of localhost to force TCP connection (localhost uses Unix socket)
 MARIADB_HOST = os.environ.get("MARIADB_HOST", "127.0.0.1")
 MARIADB_PORT = int(os.environ.get("MARIADB_PORT", "3307"))
@@ -863,7 +793,6 @@ def mariadb_server_ready() -> bool:
     if not mariadb_available():
         return False
 
-    # Wait a bit for MariaDB to be fully ready
     time.sleep(1)
     return True
 
@@ -890,12 +819,10 @@ def mariadb_db(mariadb_server_ready: bool) -> str:
         )
         cursor = conn.cursor()
 
-        # Drop tables if they exist and recreate
         cursor.execute("DROP TABLE IF EXISTS test_users")
         cursor.execute("DROP TABLE IF EXISTS test_products")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")
 
-        # Create test tables
         cursor.execute("""
             CREATE TABLE test_users (
                 id INT PRIMARY KEY,
@@ -913,13 +840,11 @@ def mariadb_db(mariadb_server_ready: bool) -> str:
             )
         """)
 
-        # Create test view
         cursor.execute("""
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
-        # Insert test data
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -942,7 +867,6 @@ def mariadb_db(mariadb_server_ready: bool) -> str:
 
     yield MARIADB_DATABASE
 
-    # Cleanup: drop test tables
     try:
         conn = mariadb.connect(
             host=MARIADB_HOST,
@@ -967,10 +891,8 @@ def mariadb_connection(mariadb_db: str) -> str:
     """Create a sqlit CLI connection for MariaDB and clean up after test."""
     connection_name = f"test_mariadb_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection
     run_cli(
         "connection",
         "create",
@@ -992,7 +914,6 @@ def mariadb_connection(mariadb_db: str) -> str:
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 
@@ -1017,7 +938,6 @@ def duckdb_db(duckdb_db_path: Path) -> Path:
 
     conn = duckdb.connect(str(duckdb_db_path))
 
-    # Create test tables
     conn.execute("""
         CREATE TABLE test_users (
             id INTEGER PRIMARY KEY,
@@ -1035,13 +955,11 @@ def duckdb_db(duckdb_db_path: Path) -> Path:
         )
     """)
 
-    # Create test view
     conn.execute("""
         CREATE VIEW test_user_emails AS
         SELECT id, name, email FROM test_users WHERE email IS NOT NULL
     """)
 
-    # Insert test data
     conn.execute("""
         INSERT INTO test_users (id, name, email) VALUES
         (1, 'Alice', 'alice@example.com'),
@@ -1066,10 +984,8 @@ def duckdb_connection(duckdb_db: Path) -> str:
     """Create a sqlit CLI connection for DuckDB and clean up after test."""
     connection_name = f"test_duckdb_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection
     run_cli(
         "connection",
         "create",
@@ -1083,7 +999,6 @@ def duckdb_connection(duckdb_db: Path) -> str:
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 
@@ -1110,7 +1025,6 @@ def cockroachdb_server_ready() -> bool:
     if not cockroachdb_available():
         return False
 
-    # Wait a bit for CockroachDB to be fully ready
     time.sleep(2)
     return True
 
@@ -1127,7 +1041,6 @@ def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
         pytest.skip("psycopg2 is not installed")
 
     try:
-        # Connect to default database first
         conn = psycopg2.connect(
             host=COCKROACHDB_HOST,
             port=COCKROACHDB_PORT,
@@ -1139,12 +1052,11 @@ def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
         conn.autocommit = True
         cursor = conn.cursor()
 
-        # Create test database if it doesn't exist
+        # Database creation requires a connection to an existing DB (e.g. `defaultdb`).
         cursor.execute(f"DROP DATABASE IF EXISTS {COCKROACHDB_DATABASE}")
         cursor.execute(f"CREATE DATABASE {COCKROACHDB_DATABASE}")
         conn.close()
 
-        # Connect to test database
         conn = psycopg2.connect(
             host=COCKROACHDB_HOST,
             port=COCKROACHDB_PORT,
@@ -1156,7 +1068,6 @@ def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
         conn.autocommit = True
         cursor = conn.cursor()
 
-        # Create test tables
         cursor.execute("""
             CREATE TABLE test_users (
                 id INT PRIMARY KEY,
@@ -1174,13 +1085,11 @@ def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
             )
         """)
 
-        # Create test view
         cursor.execute("""
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
-        # Insert test data
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -1202,7 +1111,6 @@ def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
 
     yield COCKROACHDB_DATABASE
 
-    # Cleanup: drop test database
     try:
         conn = psycopg2.connect(
             host=COCKROACHDB_HOST,
@@ -1225,10 +1133,8 @@ def cockroachdb_connection(cockroachdb_db: str) -> str:
     """Create a sqlit CLI connection for CockroachDB and clean up after test."""
     connection_name = f"test_cockroachdb_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection
     args = [
         "connection",
         "create",
@@ -1245,7 +1151,6 @@ def cockroachdb_connection(cockroachdb_db: str) -> str:
         "--username",
         COCKROACHDB_USER,
     ]
-    # Only add password if it's set
     if COCKROACHDB_PASSWORD:
         args.extend(["--password", COCKROACHDB_PASSWORD])
     else:
@@ -1255,7 +1160,6 @@ def cockroachdb_connection(cockroachdb_db: str) -> str:
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 
@@ -1279,7 +1183,6 @@ def turso_server_ready() -> bool:
     if not turso_available():
         return False
 
-    # Wait a bit for libsql-server to be fully ready
     time.sleep(1)
     return True
 
@@ -1300,12 +1203,10 @@ def turso_db(turso_server_ready: bool) -> str:
     try:
         client = create_client_sync(turso_url)
 
-        # Drop tables if they exist and recreate
         client.execute("DROP TABLE IF EXISTS test_users")
         client.execute("DROP TABLE IF EXISTS test_products")
         client.execute("DROP VIEW IF EXISTS test_user_emails")
 
-        # Create test tables
         client.execute("""
             CREATE TABLE test_users (
                 id INTEGER PRIMARY KEY,
@@ -1323,13 +1224,11 @@ def turso_db(turso_server_ready: bool) -> str:
             )
         """)
 
-        # Create test view
         client.execute("""
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
-        # Insert test data
         client.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -1351,7 +1250,6 @@ def turso_db(turso_server_ready: bool) -> str:
 
     yield turso_url
 
-    # Cleanup: drop test tables
     try:
         client = create_client_sync(turso_url)
         client.execute("DROP TABLE IF EXISTS test_users")
@@ -1367,10 +1265,8 @@ def turso_connection(turso_db: str) -> str:
     """Create a sqlit CLI connection for Turso and clean up after test."""
     connection_name = f"test_turso_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection (no auth token needed for local libsql-server)
     run_cli(
         "connection",
         "create",
@@ -1381,12 +1277,11 @@ def turso_connection(turso_db: str) -> str:
         "--server",
         turso_db,
         "--password",
-        "",  # No auth token for local server
+        "",  # No auth token for local server.
     )
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 
@@ -1439,12 +1334,10 @@ def d1_db(d1_server_ready: bool) -> str:
     try:
         conn = adapter.connect(conn_config)
 
-        # Drop tables if they exist and recreate
         adapter.execute_non_query(conn, "DROP TABLE IF EXISTS test_users")
         adapter.execute_non_query(conn, "DROP TABLE IF EXISTS test_products")
         adapter.execute_non_query(conn, "DROP VIEW IF EXISTS test_user_emails")
 
-        # Create test tables
         adapter.execute_non_query(
             conn,
             """
@@ -1466,7 +1359,6 @@ def d1_db(d1_server_ready: bool) -> str:
             )
         """,
         )
-        # Create test view
         adapter.execute_non_query(
             conn,
             """
@@ -1474,7 +1366,6 @@ def d1_db(d1_server_ready: bool) -> str:
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """,
         )
-        # Insert test data
         adapter.execute_non_query(
             conn,
             "INSERT INTO test_users (id, name, email) VALUES (1, 'Alice', 'alice@example.com')",
@@ -1569,7 +1460,6 @@ def ssh_postgres_db(ssh_server_ready: bool) -> str:
     except ImportError:
         pytest.skip("psycopg2 is not installed")
 
-    # Connect directly to PostgreSQL to set up test data
     # postgres-ssh container is accessible on port 5433
     pg_host = os.environ.get("SSH_DIRECT_PG_HOST", "localhost")
     pg_port = int(os.environ.get("SSH_DIRECT_PG_PORT", "5433"))
@@ -1586,12 +1476,10 @@ def ssh_postgres_db(ssh_server_ready: bool) -> str:
         conn.autocommit = True
         cursor = conn.cursor()
 
-        # Drop tables if they exist and recreate
         cursor.execute("DROP TABLE IF EXISTS test_users CASCADE")
         cursor.execute("DROP TABLE IF EXISTS test_products CASCADE")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")
 
-        # Create test tables
         cursor.execute("""
             CREATE TABLE test_users (
                 id INTEGER PRIMARY KEY,
@@ -1609,13 +1497,11 @@ def ssh_postgres_db(ssh_server_ready: bool) -> str:
             )
         """)
 
-        # Create test view
         cursor.execute("""
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
-        # Insert test data
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -1637,7 +1523,6 @@ def ssh_postgres_db(ssh_server_ready: bool) -> str:
 
     yield POSTGRES_DATABASE
 
-    # Cleanup: drop test tables
     try:
         conn = psycopg2.connect(
             host=pg_host,
@@ -1662,10 +1547,8 @@ def ssh_connection(ssh_postgres_db: str) -> str:
     """Create a sqlit CLI connection for PostgreSQL via SSH tunnel."""
     connection_name = f"test_ssh_{os.getpid()}"
 
-    # Clean up any existing connection with this name
     cleanup_connection(connection_name)
 
-    # Create the connection with SSH tunnel enabled
     run_cli(
         "connection",
         "create",
@@ -1698,7 +1581,6 @@ def ssh_connection(ssh_postgres_db: str) -> str:
 
     yield connection_name
 
-    # Cleanup
     cleanup_connection(connection_name)
 
 

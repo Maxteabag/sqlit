@@ -12,6 +12,35 @@ if TYPE_CHECKING:
     from ...db import DatabaseAdapter
 
 
+def _needs_db_password(config: ConnectionConfig) -> bool:
+    """Check if the connection needs a database password prompt.
+
+    Returns True if password is empty and the database type uses passwords.
+    """
+    from ...db.providers import is_file_based
+
+    # File-based databases (SQLite, DuckDB) don't need passwords
+    if is_file_based(config.db_type):
+        return False
+
+    # Check if password is empty
+    return not config.password
+
+
+def _needs_ssh_password(config: ConnectionConfig) -> bool:
+    """Check if the connection needs an SSH password prompt.
+
+    Returns True if SSH is enabled with password auth and password is empty.
+    """
+    if not config.ssh_enabled:
+        return False
+
+    if config.ssh_auth_type != "password":
+        return False
+
+    return not config.ssh_password
+
+
 class ConnectionMixin:
     """Mixin providing connection management functionality."""
 
@@ -19,10 +48,56 @@ class ConnectionMixin:
     current_adapter: DatabaseAdapter | None = None
 
     def connect_to_server(self: AppProtocol, config: ConnectionConfig) -> None:
-        """Connect to a database (async, non-blocking)."""
+        """Connect to a database (async, non-blocking).
+
+        If the connection requires a password that is not stored (empty),
+        the user will be prompted to enter the password before connecting.
+        """
+        from dataclasses import replace
+
+        from ..screens import PasswordInputScreen
+
+        if _needs_ssh_password(config):
+
+            def on_ssh_password(password: str | None) -> None:
+                if password is None:
+                    return
+                temp_config = replace(config, ssh_password=password)
+                self._connect_with_db_password_check(temp_config)
+
+            self.push_screen(
+                PasswordInputScreen(config.name, password_type="ssh"),
+                on_ssh_password,
+            )
+            return
+
+        self._connect_with_db_password_check(config)
+
+    def _connect_with_db_password_check(self: AppProtocol, config: ConnectionConfig) -> None:
+        """Check for database password and prompt if needed, then connect."""
+        from dataclasses import replace
+
+        from ..screens import PasswordInputScreen
+
+        if _needs_db_password(config):
+
+            def on_db_password(password: str | None) -> None:
+                if password is None:
+                    return
+                temp_config = replace(config, password=password)
+                self._do_connect(temp_config)
+
+            self.push_screen(
+                PasswordInputScreen(config.name, password_type="database"),
+                on_db_password,
+            )
+            return
+
+        self._do_connect(config)
+
+    def _do_connect(self: AppProtocol, config: ConnectionConfig) -> None:
         from ...services import ConnectionSession
 
-        # Close any existing session first
         if hasattr(self, "_session") and self._session:
             self._session.close()
             self._session = None
@@ -32,18 +107,14 @@ class ConnectionMixin:
             self.current_ssh_tunnel = None
             self.refresh_tree()
 
-        # Reset connection failed state
         self._connection_failed = False
 
-        # Use injected factory or default
         create_session = self._session_factory or ConnectionSession.create
 
         def work() -> ConnectionSession:
-            """Create connection in worker thread."""
             return create_session(config)
 
         def on_success(session: ConnectionSession) -> None:
-            """Handle successful connection on main thread."""
             self._connection_failed = False
             self._session = session
             self.current_connection = session.connection
@@ -56,7 +127,6 @@ class ConnectionMixin:
             self._update_status_bar()
 
         def on_error(error: Exception) -> None:
-            """Handle connection failure on main thread."""
             from ...config import save_connections
             from ...db.exceptions import MissingDriverError, MissingODBCDriverError
             from ...terminal import run_in_terminal
@@ -135,7 +205,6 @@ class ConnectionMixin:
                 self.push_screen(ErrorScreen("Connection Failed", str(error)))
 
         def do_work() -> None:
-            """Worker function with error handling."""
             try:
                 session = work()
                 self.call_from_thread(on_success, session)
@@ -145,13 +214,10 @@ class ConnectionMixin:
         self.run_worker(do_work, name=f"connect-{config.name}", thread=True, exclusive=True)
 
     def _disconnect_silent(self: AppProtocol) -> None:
-        """Disconnect from current database without notification."""
-        # Use session's close method for proper cleanup
         if hasattr(self, "_session") and self._session:
             self._session.close()
             self._session = None
 
-        # Clear instance variables
         self.current_connection = None
         self.current_config = None
         self.current_adapter = None
@@ -168,14 +234,12 @@ class ConnectionMixin:
             self.notify("Disconnected")
 
     def action_new_connection(self: AppProtocol) -> None:
-        """Show new connection dialog."""
         from ..screens import ConnectionScreen
 
         self._set_connection_screen_footer()
         self.push_screen(ConnectionScreen(), self._wrap_connection_result)
 
     def action_edit_connection(self: AppProtocol) -> None:
-        """Edit the selected connection."""
         from ..screens import ConnectionScreen
 
         node = self.object_tree.cursor_node
@@ -191,7 +255,6 @@ class ConnectionMixin:
         self.push_screen(ConnectionScreen(data.config, editing=True), self._wrap_connection_result)
 
     def _set_connection_screen_footer(self: AppProtocol) -> None:
-        """Set footer bindings for connection screen."""
         from ...widgets import ContextFooter
 
         try:
@@ -201,13 +264,17 @@ class ConnectionMixin:
         footer.set_bindings([], [])
 
     def _wrap_connection_result(self: AppProtocol, result: tuple | None) -> None:
-        """Wrapper to restore footer after connection dialog."""
         self._update_footer_bindings()
         self.handle_connection_result(result)
 
     def handle_connection_result(self: AppProtocol, result: tuple | None) -> None:
-        """Handle result from connection dialog."""
-        from ...config import save_connections
+        from ...config import load_settings, save_connections, save_settings
+        from ...services.credentials import (
+            ALLOW_PLAINTEXT_CREDENTIALS_SETTING,
+            is_keyring_usable,
+            reset_credentials_service,
+        )
+        from ..screens import ConfirmScreen
 
         if not result:
             return
@@ -215,17 +282,64 @@ class ConnectionMixin:
         action, config = result
 
         if action == "save":
-            self.connections = [c for c in self.connections if c.name != config.name]
-            self.connections.append(config)
-            if getattr(self, "_mock_profile", None):
-                self.notify("Mock mode: connection changes are not persisted")
-            else:
-                save_connections(self.connections)
-            self.refresh_tree()
-            self.notify(f"Connection '{config.name}' saved")
+            def do_save(with_config) -> None:  # noqa: ANN001
+                self.connections = [c for c in self.connections if c.name != with_config.name]
+                self.connections.append(with_config)
+                if getattr(self, "_mock_profile", None):
+                    self.notify("Mock mode: connection changes are not persisted")
+                else:
+                    save_connections(self.connections)
+                self.refresh_tree()
+                self.notify(f"Connection '{with_config.name}' saved")
+
+            needs_password_persist = bool(getattr(config, "password", "") or getattr(config, "ssh_password", ""))
+            if not getattr(self, "_mock_profile", None) and needs_password_persist and not is_keyring_usable():
+                settings = load_settings()
+                allow_plaintext = settings.get(ALLOW_PLAINTEXT_CREDENTIALS_SETTING)
+
+                if allow_plaintext is True:
+                    reset_credentials_service()
+                    do_save(config)
+                    return
+
+                if allow_plaintext is False:
+                    config.password = ""
+                    config.ssh_password = ""
+                    do_save(config)
+                    self.notify("Keyring unavailable: passwords will be prompted when needed", severity="warning")
+                    return
+
+                def on_confirm(confirmed: bool | None) -> None:
+                    settings2 = load_settings()
+                    if confirmed is True:
+                        settings2[ALLOW_PLAINTEXT_CREDENTIALS_SETTING] = True
+                        save_settings(settings2)
+                        reset_credentials_service()
+                        do_save(config)
+                        self.notify("Saved passwords as plaintext in ~/.sqlit/ (0600)", severity="warning")
+                        return
+
+                    settings2[ALLOW_PLAINTEXT_CREDENTIALS_SETTING] = False
+                    save_settings(settings2)
+                    config.password = ""
+                    config.ssh_password = ""
+                    do_save(config)
+                    self.notify("Passwords were not saved (keyring unavailable)", severity="warning")
+
+                self.push_screen(
+                    ConfirmScreen(
+                        "Keyring isn't available",
+                        "Save passwords as plaintext in ~/.sqlit/ (protected directory)?",
+                        yes_label="Yes",
+                        no_label="No",
+                    ),
+                    on_confirm,
+                )
+                return
+
+            do_save(config)
 
     def action_duplicate_connection(self: AppProtocol) -> None:
-        """Duplicate the selected connection."""
         from dataclasses import replace
 
         from ..screens import ConnectionScreen
@@ -255,7 +369,6 @@ class ConnectionMixin:
         self.push_screen(ConnectionScreen(duplicated, editing=False), self._wrap_connection_result)
 
     def action_delete_connection(self: AppProtocol) -> None:
-        """Delete the selected connection."""
         from ..screens import ConfirmScreen
 
         node = self.object_tree.cursor_node
@@ -279,7 +392,6 @@ class ConnectionMixin:
         )
 
     def _do_delete_connection(self: AppProtocol, config: ConnectionConfig) -> None:
-        """Actually delete the connection after confirmation."""
         from ...config import save_connections
 
         self.connections = [c for c in self.connections if c.name != config.name]
@@ -291,7 +403,6 @@ class ConnectionMixin:
         self.notify(f"Connection '{config.name}' deleted")
 
     def _handle_install_confirmation(self: AppProtocol, confirmed: bool | None, error: Any) -> None:
-        """Handle the result of the driver install confirmation."""
         from ...db.adapters.base import _create_driver_import_error_hint
         from ...services.installer import Installer
         from ..screens import ErrorScreen
@@ -303,11 +414,9 @@ class ConnectionMixin:
             hint = _create_driver_import_error_hint(error.driver_name, error.extra_name, error.package_name)
             self.push_screen(ErrorScreen("Manual Installation Required", hint))
         else:
-            # Cancelled.
             return
 
     def action_connect_selected(self: AppProtocol) -> None:
-        """Connect to the selected connection."""
         node = self.object_tree.cursor_node
 
         if not node or not node.data:
@@ -323,7 +432,6 @@ class ConnectionMixin:
             self.connect_to_server(config)
 
     def action_show_connection_picker(self: AppProtocol) -> None:
-        """Show connection picker dialog."""
         from ..screens import ConnectionPickerScreen
 
         self.push_screen(
@@ -332,13 +440,11 @@ class ConnectionMixin:
         )
 
     def _handle_connection_picker_result(self: AppProtocol, result: str | None) -> None:
-        """Handle connection picker selection."""
         if result is None:
             return
 
         config = next((c for c in self.connections if c.name == result), None)
         if config:
-            # Select the connection node in the tree
             for node in self.object_tree.root.children:
                 if isinstance(node.data, ConnectionNode) and node.data.config.name == result:
                     self.object_tree.select_node(node)

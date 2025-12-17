@@ -7,6 +7,17 @@ import time
 from pathlib import Path
 
 
+def _clean_screenshots_dir(outdir: Path) -> None:
+    resolved = outdir.resolve()
+    if resolved == Path("/"):
+        raise AssertionError("Refusing to clean screenshots in '/'")
+    if not outdir.exists():
+        return
+    for path in outdir.rglob("*"):
+        if path.is_file() and path.suffix.lower() in (".svg", ".png"):
+            path.unlink(missing_ok=True)
+
+
 def _maybe_screenshot(app, name: str) -> None:
     outdir = os.environ.get("SQLIT_TEST_SCREENSHOTS_DIR")
     if not outdir:
@@ -29,6 +40,9 @@ async def _wait_for(pilot, predicate, timeout_s: float, label: str) -> None:
 
 async def main() -> None:
     os.environ.setdefault("SQLIT_CONFIG_DIR", tempfile.mkdtemp(prefix="sqlit-test-config-"))
+    outdir = os.environ.get("SQLIT_TEST_SCREENSHOTS_DIR")
+    if outdir:
+        _clean_screenshots_dir(Path(outdir))
 
     import sqlit.terminal as terminal_module
     import sqlit.ui.screens.connection as connection_screen_module

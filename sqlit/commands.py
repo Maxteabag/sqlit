@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import csv
+import getpass
 import json
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from .config import (
@@ -19,9 +21,67 @@ from .config import (
 )
 from .db.providers import get_default_port, has_advanced_auth, is_file_based
 from .services import ConnectionSession, QueryResult, QueryService
+from .services.credentials import (
+    ALLOW_PLAINTEXT_CREDENTIALS_SETTING,
+    is_keyring_usable,
+    reset_credentials_service,
+)
 
 if TYPE_CHECKING:
     pass
+
+
+def _maybe_prompt_plaintext_credentials() -> bool:
+    """Ensure plaintext credential storage preference is set when keyring isn't usable.
+
+    Returns True if plaintext storage is allowed; False otherwise.
+    """
+    from .config import load_settings, save_settings
+
+    if is_keyring_usable():
+        return False
+
+    settings = load_settings()
+    existing = settings.get(ALLOW_PLAINTEXT_CREDENTIALS_SETTING)
+    if isinstance(existing, bool):
+        if existing:
+            reset_credentials_service()
+        return bool(existing)
+
+    if not sys.stdin.isatty():
+        return False
+
+    answer = input("Keyring isn't available. Save passwords as plaintext in ~/.sqlit/? [y/N]: ").strip().lower()
+    allow = answer in {"y", "yes"}
+    settings[ALLOW_PLAINTEXT_CREDENTIALS_SETTING] = allow
+    save_settings(settings)
+    if allow:
+        reset_credentials_service()
+    return allow
+
+
+def _clear_passwords_if_not_persisted(config: ConnectionConfig) -> None:
+    config.password = ""
+    config.ssh_password = ""
+
+
+def _prompt_for_password(config: ConnectionConfig) -> ConnectionConfig:
+    """Prompt for passwords if they are empty.
+
+    Uses getpass for secure input that doesn't appear in bash history.
+    Returns a new config with passwords filled in (original is not modified).
+    """
+    new_config = config
+
+    if config.ssh_enabled and config.ssh_auth_type == "password" and not config.ssh_password:
+        ssh_password = getpass.getpass(f"SSH password for '{config.name}': ")
+        new_config = replace(new_config, ssh_password=ssh_password)
+
+    if not is_file_based(config.db_type) and not config.password:
+        db_password = getpass.getpass(f"Password for '{config.name}': ")
+        new_config = replace(new_config, password=db_password)
+
+    return new_config
 
 
 def cmd_connection_list(args: Any) -> int:
@@ -60,7 +120,6 @@ def cmd_connection_create(args: Any) -> int:
         print(f"Error: Connection '{args.name}' already exists. Use 'edit' to modify it.")
         return 1
 
-    # Determine database type
     db_type = getattr(args, "db_type", "mssql") or "mssql"
     try:
         DatabaseType(db_type)
@@ -114,7 +173,6 @@ def cmd_connection_create(args: Any) -> int:
             ssh_password=getattr(args, "ssh_password", "") or "",
         )
     else:
-        # Server-based databases with simple auth
         server = getattr(args, "server", None) or getattr(args, "host", None)
         if not server:
             db_label = get_database_type_labels().get(DatabaseType(db_type), db_type.upper())
@@ -139,6 +197,9 @@ def cmd_connection_create(args: Any) -> int:
         )
 
     connections.append(config)
+    if (config.password or config.ssh_password) and not is_keyring_usable():
+        if not _maybe_prompt_plaintext_credentials():
+            _clear_passwords_if_not_persisted(config)
     save_connections(connections)
     print(f"Connection '{args.name}' created successfully.")
     return 0
@@ -166,7 +227,6 @@ def cmd_connection_edit(args: Any) -> int:
             return 1
         conn.name = args.name
 
-    # SQL Server fields
     server = getattr(args, "server", None) or getattr(args, "host", None)
     if server:
         conn.server = server
@@ -188,10 +248,13 @@ def cmd_connection_edit(args: Any) -> int:
     if args.password is not None:
         conn.password = args.password
 
-    # SQLite fields
     file_path = getattr(args, "file_path", None)
     if file_path is not None:
         conn.file_path = file_path
+
+    if (conn.password or conn.ssh_password) and not is_keyring_usable():
+        if not _maybe_prompt_plaintext_credentials():
+            _clear_passwords_if_not_persisted(conn)
 
     save_connections(connections)
     print(f"Connection '{conn.name}' updated successfully.")
@@ -257,16 +320,15 @@ def _stream_json_output(cursor: Any, columns: list[str]) -> int:
 
 def _output_table(columns: list[str], rows: list[tuple], truncated: bool) -> None:
     """Output query results in table format with optimized width calculation."""
-    MAX_COL_WIDTH = 50  # Cap column width to avoid excessive line length
+    MAX_COL_WIDTH = 50
 
-    # Calculate column widths (only scan first 100 rows for performance)
+    # Only scan first 100 rows for performance
     col_widths = [min(len(col), MAX_COL_WIDTH) for col in columns]
     for row in rows[:100]:
         for i, val in enumerate(row):
             val_str = str(val) if val is not None else "NULL"
             col_widths[i] = min(MAX_COL_WIDTH, max(col_widths[i], len(val_str)))
 
-    # Print header
     header_parts = []
     for i, col in enumerate(columns):
         col_display = col[: col_widths[i]] if len(col) > col_widths[i] else col
@@ -275,7 +337,6 @@ def _output_table(columns: list[str], rows: list[tuple], truncated: bool) -> Non
     print(header)
     print("-" * len(header))
 
-    # Print rows
     for row in rows:
         row_parts = []
         for i, val in enumerate(row):
@@ -285,7 +346,6 @@ def _output_table(columns: list[str], rows: list[tuple], truncated: bool) -> Non
             row_parts.append(val_str.ljust(col_widths[i]))
         print(" | ".join(row_parts))
 
-    # Print count with truncation notice
     if truncated:
         print(f"\n({len(rows)} rows shown, results truncated)")
     else:
@@ -322,9 +382,10 @@ def cmd_query(
         print(f"Error: Connection '{args.connection}' not found.")
         return 1
 
-    # Override database if specified (only for SQL Server)
     if args.database and config.db_type == "mssql":
-        config.database = args.database
+        config = replace(config, database=args.database)
+
+    config = _prompt_for_password(config)
 
     if args.query:
         query = args.query
@@ -342,24 +403,18 @@ def cmd_query(
         print("Error: Either --query or --file must be provided.")
         return 1
 
-    # Determine row limit (0 means unlimited)
     max_rows = args.limit if args.limit > 0 else None
 
-    # Use injected or default factories
     create_session = session_factory or ConnectionSession.create
     service = query_service or QueryService()
 
     try:
-        # Use ConnectionSession for automatic resource cleanup
         with create_session(config) as session:
-            # For unlimited streaming output (CSV/JSON only), use direct cursor access
             from .services.query import is_select_query
 
-            # Check if connection supports cursors (some adapters like Turso don't)
             has_cursor = hasattr(session.connection, "cursor") and callable(getattr(session.connection, "cursor", None))
 
             if max_rows is None and args.format in ("csv", "json") and is_select_query(query) and has_cursor:
-                # Stream directly from cursor for unlimited CSV/JSON
                 cursor = session.connection.cursor()
                 cursor.execute(query)
 
@@ -374,12 +429,10 @@ def cmd_query(
                 else:
                     row_count = _stream_json_output(cursor, columns)
 
-                # Save to history
                 service._save_to_history(config.name, query)
                 print(f"\n({row_count} row(s) returned)", file=sys.stderr)
                 return 0
 
-            # Standard execution with QueryService (with row limit)
             result = service.execute(
                 connection=session.connection,
                 adapter=session.adapter,
@@ -414,7 +467,6 @@ def cmd_query(
                 else:
                     _output_table(columns, rows, result.truncated)
             else:
-                # NonQueryResult
                 print(f"Query executed successfully. Rows affected: {result.rows_affected}")
 
             return 0

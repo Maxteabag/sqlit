@@ -7,6 +7,7 @@ Services:
 - QueryService: Unified query execution with history tracking
 - ConnectionSession: Connection lifecycle management with cleanup guarantees
 - DatabaseExecutor: Serialized database operation execution
+- CredentialsService: Secure credential storage using OS keyring
 
 Protocols:
 - AdapterProtocol: Interface for database adapters
@@ -16,6 +17,14 @@ Protocols:
 """
 
 from .cancellable import CancellableQuery
+from .credentials import (
+    CredentialsService,
+    KeyringCredentialsService,
+    PlaintextCredentialsService,
+    get_credentials_service,
+    reset_credentials_service,
+    set_credentials_service,
+)
 from .executor import DatabaseExecutor
 from .protocols import (
     AdapterFactoryProtocol,
@@ -40,6 +49,13 @@ __all__ = [
     "DatabaseExecutor",
     # Cancellable query
     "CancellableQuery",
+    # Credentials service
+    "CredentialsService",
+    "KeyringCredentialsService",
+    "PlaintextCredentialsService",
+    "get_credentials_service",
+    "set_credentials_service",
+    "reset_credentials_service",
     # Protocols
     "AdapterProtocol",
     "AdapterFactoryProtocol",
