@@ -66,18 +66,40 @@ class TestPlaintextCredentialsService:
         service.delete_ssh_password("test_conn")
         assert service.get_ssh_password("test_conn") is None
 
-    def test_set_empty_password_deletes(self) -> None:
-        """Test that setting an empty password deletes it."""
+    def test_set_empty_password_stores_empty(self) -> None:
+        """Test that setting an empty password stores it (not deletes).
+
+        Empty string means "explicitly set to empty" which is valid for
+        databases that support passwordless auth (e.g., CockroachDB insecure mode).
+        """
         service = PlaintextCredentialsService()
         service.set_password("test_conn", "password")
         service.set_password("test_conn", "")
-        assert service.get_password("test_conn") is None
+        assert service.get_password("test_conn") == ""
 
-    def test_set_empty_ssh_password_deletes(self) -> None:
-        """Test that setting an empty SSH password deletes it."""
+    def test_set_empty_ssh_password_stores_empty(self) -> None:
+        """Test that setting an empty SSH password stores it (not deletes).
+
+        Empty string means "explicitly set to empty" which is valid for
+        some SSH configurations.
+        """
         service = PlaintextCredentialsService()
         service.set_ssh_password("test_conn", "password")
         service.set_ssh_password("test_conn", "")
+        assert service.get_ssh_password("test_conn") == ""
+
+    def test_set_none_password_deletes(self) -> None:
+        """Test that setting None deletes the password."""
+        service = PlaintextCredentialsService()
+        service.set_password("test_conn", "password")
+        service.set_password("test_conn", None)
+        assert service.get_password("test_conn") is None
+
+    def test_set_none_ssh_password_deletes(self) -> None:
+        """Test that setting None deletes the SSH password."""
+        service = PlaintextCredentialsService()
+        service.set_ssh_password("test_conn", "password")
+        service.set_ssh_password("test_conn", None)
         assert service.get_ssh_password("test_conn") is None
 
     def test_rename_connection(self) -> None:
@@ -206,11 +228,21 @@ class TestKeyringCredentialsService:
             KEYRING_SERVICE_NAME, "test_conn:ssh"
         )
 
-    def test_set_empty_password_deletes(self) -> None:
-        """Test that setting empty password calls delete."""
+    def test_set_empty_password_stores_empty(self) -> None:
+        """Test that setting empty password stores it (not deletes)."""
         service, mock_keyring = self._create_service_with_mock_keyring()
 
         service.set_password("test_conn", "")
+
+        mock_keyring.set_password.assert_called_once_with(
+            KEYRING_SERVICE_NAME, "test_conn:db", ""
+        )
+
+    def test_set_none_password_deletes(self) -> None:
+        """Test that setting None password calls delete."""
+        service, mock_keyring = self._create_service_with_mock_keyring()
+
+        service.set_password("test_conn", None)
 
         mock_keyring.delete_password.assert_called_once_with(
             KEYRING_SERVICE_NAME, "test_conn:db"
@@ -346,9 +378,9 @@ class TestConnectionStoreWithCredentials:
         with open(json_path) as f:
             saved_data = json.load(f)
 
-        # Passwords should be empty in JSON
-        assert saved_data[0]["password"] == ""
-        assert saved_data[0]["ssh_password"] == ""
+        # Passwords should be null in JSON (indicating "load from credentials service")
+        assert saved_data[0]["password"] is None
+        assert saved_data[0]["ssh_password"] is None
 
         # But should be in the credentials service
         assert self.creds_service.get_password("test_db") == "secret_password"
@@ -360,7 +392,7 @@ class TestConnectionStoreWithCredentials:
         self.creds_service.set_password("test_db", "secret_password")
         self.creds_service.set_ssh_password("test_db", "ssh_secret")
 
-        # Write a config file without passwords
+        # Write a config file with null passwords (indicates "load from credentials service")
         json_path = Path(self.tmpdir) / "connections.json"
         with open(json_path, "w") as f:
             json.dump(
@@ -370,8 +402,8 @@ class TestConnectionStoreWithCredentials:
                         "db_type": "postgresql",
                         "server": "localhost",
                         "username": "user",
-                        "password": "",
-                        "ssh_password": "",
+                        "password": None,  # null = load from credentials service
+                        "ssh_password": None,  # null = load from credentials service
                         "port": "5432",
                         "database": "",
                         "auth_type": "sql",
@@ -423,17 +455,22 @@ class TestConnectionStoreWithCredentials:
         assert self.creds_service.get_password("test_db") is None
         assert self.creds_service.get_ssh_password("test_db") is None
 
-    def test_empty_password_means_prompt_on_connect(self) -> None:
-        """Test that empty password is preserved (means prompt on connect)."""
+    def test_empty_password_is_stored(self) -> None:
+        """Test that empty password is stored (explicitly set to empty).
+
+        Empty string means the user explicitly set an empty password,
+        which is valid for databases supporting passwordless auth.
+        None means "not set" which would trigger a prompt.
+        """
         store = self._create_store()
 
-        # Create config with empty password (user wants to be prompted)
+        # Create config with empty password (explicitly empty, e.g., CockroachDB insecure)
         config = ConnectionConfig(
             name="test_db",
             db_type="postgresql",
             server="localhost",
             username="user",
-            password="",  # Empty = prompt on connect
+            password="",  # Empty = explicitly empty, no prompt
         )
 
         store.save_all([config])
@@ -441,6 +478,28 @@ class TestConnectionStoreWithCredentials:
         # Load and verify password is still empty
         loaded = store.load_all()
         assert loaded[0].password == ""
+
+        # Credentials service should have empty string stored
+        assert self.creds_service.get_password("test_db") == ""
+
+    def test_none_password_means_prompt_on_connect(self) -> None:
+        """Test that None password means prompt on connect."""
+        store = self._create_store()
+
+        # Create config with None password (user wants to be prompted)
+        config = ConnectionConfig(
+            name="test_db",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password=None,  # None = prompt on connect
+        )
+
+        store.save_all([config])
+
+        # Load and verify password is still None
+        loaded = store.load_all()
+        assert loaded[0].password is None
 
         # Credentials service should not have a password
         assert self.creds_service.get_password("test_db") is None
@@ -492,8 +551,8 @@ class TestConnectionStoreWithCredentials:
         assert self.creds_service.get_password("legacy_db") == "legacy_password"
         assert self.creds_service.get_ssh_password("legacy_db") == "legacy_ssh"
 
-        # And JSON should be clean
+        # And JSON should be clean (null indicates load from credentials service)
         with open(json_path) as f:
             saved_data = json.load(f)
-        assert saved_data[0]["password"] == ""
-        assert saved_data[0]["ssh_password"] == ""
+        assert saved_data[0]["password"] is None
+        assert saved_data[0]["ssh_password"] is None

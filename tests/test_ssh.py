@@ -24,8 +24,9 @@ class TestSSHTunnelIntegration:
         Note: SSH tests may fail when run together rapidly due to SSH server
         connection limits. Run individually with: pytest tests/test_ssh.py -k <test_name>
         """
-        time.sleep(1)  # Wait before each test
+        time.sleep(2)  # Wait before each test
         yield
+        time.sleep(1)  # Wait after each test for connections to fully close
 
     def test_create_ssh_connection(self, ssh_postgres_db, cli_runner):
         """Test creating a PostgreSQL connection with SSH tunnel via CLI."""

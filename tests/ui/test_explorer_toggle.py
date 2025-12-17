@@ -89,6 +89,9 @@ class TestFullscreen:
         app = SSMSTUI()
 
         async with app.run_test(size=(100, 35)) as pilot:
+            # Wait for Lazy widget to render the results table
+            await pilot.pause()
+
             app.action_focus_results()
             await pilot.pause()
 

@@ -37,10 +37,11 @@ class TestGetDisplayName:
 
 class TestCatalogConsistency:
     def test_provider_schema_ids_match_keys(self):
-        from sqlit.db.providers import PROVIDERS
+        from sqlit.db.providers import PROVIDERS, get_connection_schema
 
         for db_type, spec in PROVIDERS.items():
-            assert spec.schema.db_type == db_type
+            schema = get_connection_schema(db_type)
+            assert schema.db_type == db_type
 
     def test_database_type_enum_matches_schema(self):
         from sqlit.config import DatabaseType
@@ -52,8 +53,9 @@ class TestCatalogConsistency:
 
         assert set(get_supported_adapter_db_types()) == set(get_supported_db_types())
 
-    def test_display_names_match_config_labels(self):
-        from sqlit.config import DATABASE_TYPE_LABELS, DatabaseType
+    def test_display_names_match_schema(self):
+        from sqlit.db.providers import get_connection_schema
 
-        for db_type in DatabaseType:
-            assert DATABASE_TYPE_LABELS[db_type] == get_display_name(db_type.value)
+        for db_type in get_supported_db_types():
+            schema = get_connection_schema(db_type)
+            assert schema.display_name == get_display_name(db_type)

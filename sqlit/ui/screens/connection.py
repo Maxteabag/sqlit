@@ -1490,7 +1490,7 @@ class ConnectionScreen(ModalScreen):
         if not config:
             return
 
-        if config.ssh_enabled and config.ssh_auth_type == "password" and not config.ssh_password:
+        if config.ssh_enabled and config.ssh_auth_type == "password" and config.ssh_password is None:
 
             def on_ssh_password(password: str | None) -> None:
                 if password is None:
@@ -1504,7 +1504,7 @@ class ConnectionScreen(ModalScreen):
             )
             return
 
-        if not is_file_based(config.db_type) and not config.password:
+        if not is_file_based(config.db_type) and config.password is None:
 
             def on_db_password(password: str | None) -> None:
                 if password is None:

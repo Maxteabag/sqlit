@@ -67,18 +67,21 @@ def _clear_passwords_if_not_persisted(config: ConnectionConfig) -> None:
 
 
 def _prompt_for_password(config: ConnectionConfig) -> ConnectionConfig:
-    """Prompt for passwords if they are empty.
+    """Prompt for passwords if they are not set (None).
 
     Uses getpass for secure input that doesn't appear in bash history.
     Returns a new config with passwords filled in (original is not modified).
+
+    Note: Empty string "" means explicitly set to empty (no prompt).
+          None means not set (prompt for input).
     """
     new_config = config
 
-    if config.ssh_enabled and config.ssh_auth_type == "password" and not config.ssh_password:
+    if config.ssh_enabled and config.ssh_auth_type == "password" and config.ssh_password is None:
         ssh_password = getpass.getpass(f"SSH password for '{config.name}': ")
         new_config = replace(new_config, ssh_password=ssh_password)
 
-    if not is_file_based(config.db_type) and not config.password:
+    if not is_file_based(config.db_type) and config.password is None:
         db_password = getpass.getpass(f"Password for '{config.name}': ")
         new_config = replace(new_config, password=db_password)
 

@@ -20,7 +20,7 @@ class MockConnectionStore:
         self.save_called = False
         self.last_saved: list[ConnectionConfig] = []
 
-    def load_all(self) -> list[ConnectionConfig]:
+    def load_all(self, load_credentials: bool = True) -> list[ConnectionConfig]:
         return self.connections.copy()
 
     def save_all(self, connections: list[ConnectionConfig]) -> None:

@@ -159,9 +159,12 @@ class TestDialogKeybindings:
 
     @pytest.mark.asyncio
     async def test_confirm_dialog_escape_cancels(self):
-        """Confirm dialog escape key should cancel and close."""
+        """Confirm dialog escape key should cancel and close.
+
+        Note: Escape returns None (cancelled) vs False (explicit No).
+        """
         app = SSMSTUI()
-        result_holder = {"result": None}
+        result_holder = {"result": "not_called"}
 
         def capture_result(result):
             result_holder["result"] = result
@@ -175,7 +178,7 @@ class TestDialogKeybindings:
             await pilot.pause()
 
             assert not any(isinstance(screen, ConfirmScreen) for screen in app.screen_stack)
-            assert result_holder["result"] is False
+            assert result_holder["result"] is None  # Escape returns None (cancelled)
 
     @pytest.mark.asyncio
     async def test_help_dialog_blocks_normal_actions(self):

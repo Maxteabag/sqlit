@@ -15,7 +15,8 @@ if TYPE_CHECKING:
 def _needs_db_password(config: ConnectionConfig) -> bool:
     """Check if the connection needs a database password prompt.
 
-    Returns True if password is empty and the database type uses passwords.
+    Returns True if password is None (not set) and the database type uses passwords.
+    Note: Empty string "" means explicitly set to empty (no prompt needed).
     """
     from ...db.providers import is_file_based
 
@@ -23,14 +24,15 @@ def _needs_db_password(config: ConnectionConfig) -> bool:
     if is_file_based(config.db_type):
         return False
 
-    # Check if password is empty
-    return not config.password
+    # Check if password is not set (None means prompt needed)
+    return config.password is None
 
 
 def _needs_ssh_password(config: ConnectionConfig) -> bool:
     """Check if the connection needs an SSH password prompt.
 
-    Returns True if SSH is enabled with password auth and password is empty.
+    Returns True if SSH is enabled with password auth and password is None (not set).
+    Note: Empty string "" means explicitly set to empty (no prompt needed).
     """
     if not config.ssh_enabled:
         return False
@@ -38,7 +40,7 @@ def _needs_ssh_password(config: ConnectionConfig) -> bool:
     if config.ssh_auth_type != "password":
         return False
 
-    return not config.ssh_password
+    return config.ssh_password is None
 
 
 class ConnectionMixin:
@@ -49,18 +51,18 @@ class ConnectionMixin:
 
     def _populate_credentials_if_missing(self: AppProtocol, config: ConnectionConfig) -> None:
         """Populate missing credentials from the credentials service."""
-        if config.password and config.ssh_password:
+        if config.password is not None and config.ssh_password is not None:
             return
         from ...services.credentials import get_credentials_service
 
         service = get_credentials_service()
-        if not config.password:
+        if config.password is None:
             password = service.get_password(config.name)
-            if password:
+            if password is not None:
                 config.password = password
-        if not config.ssh_password:
+        if config.ssh_password is None:
             ssh_password = service.get_ssh_password(config.name)
-            if ssh_password:
+            if ssh_password is not None:
                 config.ssh_password = ssh_password
 
     def connect_to_server(self: AppProtocol, config: ConnectionConfig) -> None:

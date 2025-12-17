@@ -33,14 +33,14 @@ class TestNeedsDbPassword:
         )
         assert not _needs_db_password(duckdb_config)
 
-    def test_server_database_with_empty_password_needs_prompt(self) -> None:
-        """PostgreSQL/MySQL with empty password needs prompt."""
+    def test_server_database_with_none_password_needs_prompt(self) -> None:
+        """PostgreSQL/MySQL with None password (not set) needs prompt."""
         postgres_config = ConnectionConfig(
             name="test",
             db_type="postgresql",
             server="localhost",
             username="user",
-            password="",
+            password=None,
         )
         assert _needs_db_password(postgres_config)
 
@@ -49,9 +49,29 @@ class TestNeedsDbPassword:
             db_type="mysql",
             server="localhost",
             username="user",
-            password="",
+            password=None,
         )
         assert _needs_db_password(mysql_config)
+
+    def test_server_database_with_empty_password_no_prompt(self) -> None:
+        """PostgreSQL/MySQL with empty string password (explicitly empty) doesn't need prompt."""
+        postgres_config = ConnectionConfig(
+            name="test",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password="",  # Explicitly empty, valid for some DBs
+        )
+        assert not _needs_db_password(postgres_config)
+
+        mysql_config = ConnectionConfig(
+            name="test",
+            db_type="mysql",
+            server="localhost",
+            username="user",
+            password="",
+        )
+        assert not _needs_db_password(mysql_config)
 
     def test_server_database_with_stored_password_does_not_need_prompt(self) -> None:
         """Database with stored password doesn't need prompt."""
@@ -64,31 +84,45 @@ class TestNeedsDbPassword:
         )
         assert not _needs_db_password(config)
 
-    def test_mssql_with_empty_password_needs_prompt(self) -> None:
-        """SQL Server with SQL auth and empty password needs prompt."""
+    def test_mssql_with_none_password_needs_prompt(self) -> None:
+        """SQL Server with SQL auth and None password needs prompt."""
         config = ConnectionConfig(
             name="test",
             db_type="mssql",
             server="localhost",
             username="sa",
-            password="",
+            password=None,
             auth_type="sql",
         )
         assert _needs_db_password(config)
 
-    def test_mssql_windows_auth_does_not_need_password(self) -> None:
-        """SQL Server with Windows auth doesn't need password."""
+    def test_mssql_windows_auth_with_none_password(self) -> None:
+        """SQL Server with Windows auth and None password still technically needs prompt.
+
+        Note: In practice Windows auth doesn't use the password field,
+        but the function returns True because password is None.
+        """
         config = ConnectionConfig(
             name="test",
             db_type="mssql",
             server="localhost",
-            password="",
+            password=None,
             auth_type="windows",
             trusted_connection=True,
         )
-        # Still returns True because password is empty, but in practice
-        # Windows auth doesn't use the password field
         assert _needs_db_password(config)
+
+    def test_mssql_windows_auth_with_empty_password_no_prompt(self) -> None:
+        """SQL Server with Windows auth and empty string password doesn't need prompt."""
+        config = ConnectionConfig(
+            name="test",
+            db_type="mssql",
+            server="localhost",
+            password="",  # Explicitly empty
+            auth_type="windows",
+            trusted_connection=True,
+        )
+        assert not _needs_db_password(config)
 
 
 class TestNeedsSshPassword:
@@ -117,8 +151,8 @@ class TestNeedsSshPassword:
         )
         assert not _needs_ssh_password(config)
 
-    def test_ssh_password_auth_with_empty_password_needs_prompt(self) -> None:
-        """SSH with password auth and empty password needs prompt."""
+    def test_ssh_password_auth_with_none_password_needs_prompt(self) -> None:
+        """SSH with password auth and None password (not set) needs prompt."""
         config = ConnectionConfig(
             name="test",
             db_type="postgresql",
@@ -127,9 +161,23 @@ class TestNeedsSshPassword:
             ssh_auth_type="password",
             ssh_host="bastion.example.com",
             ssh_username="user",
-            ssh_password="",
+            ssh_password=None,
         )
         assert _needs_ssh_password(config)
+
+    def test_ssh_password_auth_with_empty_password_no_prompt(self) -> None:
+        """SSH with password auth and empty string password (explicitly empty) no prompt."""
+        config = ConnectionConfig(
+            name="test",
+            db_type="postgresql",
+            server="localhost",
+            ssh_enabled=True,
+            ssh_auth_type="password",
+            ssh_host="bastion.example.com",
+            ssh_username="user",
+            ssh_password="",  # Explicitly empty
+        )
+        assert not _needs_ssh_password(config)
 
     def test_ssh_password_auth_with_stored_password_does_not_need_prompt(self) -> None:
         """SSH with stored password doesn't need prompt."""
@@ -164,13 +212,13 @@ class TestCliPromptForPassword:
 
     @patch("sqlit.commands.getpass.getpass", return_value="test_password")
     def test_database_password_prompt(self, mock_getpass: MagicMock) -> None:
-        """Empty database password triggers getpass prompt."""
+        """None database password triggers getpass prompt."""
         config = ConnectionConfig(
             name="mydb",
             db_type="postgresql",
             server="localhost",
             username="user",
-            password="",
+            password=None,
         )
 
         result = _prompt_for_password(config)
@@ -179,6 +227,23 @@ class TestCliPromptForPassword:
         assert result.password == "test_password"
         assert result.name == "mydb"
         assert result.server == "localhost"
+
+    @patch("sqlit.commands.getpass.getpass")
+    def test_empty_password_no_prompt(self, mock_getpass: MagicMock) -> None:
+        """Empty string password (explicitly set) does not trigger prompt."""
+        config = ConnectionConfig(
+            name="mydb",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password="",  # Explicitly empty
+        )
+
+        result = _prompt_for_password(config)
+
+        mock_getpass.assert_not_called()
+        assert result == config
+        assert result.password == ""
 
     @patch("sqlit.commands.getpass.getpass")
     def test_stored_password_no_prompt(self, mock_getpass: MagicMock) -> None:
@@ -199,7 +264,7 @@ class TestCliPromptForPassword:
 
     @patch("sqlit.commands.getpass.getpass")
     def test_ssh_password_prompt(self, mock_getpass: MagicMock) -> None:
-        """Empty SSH password triggers getpass prompt."""
+        """None SSH password triggers getpass prompt."""
         mock_getpass.side_effect = ["ssh_pass", "db_pass"]
 
         config = ConnectionConfig(
@@ -207,12 +272,12 @@ class TestCliPromptForPassword:
             db_type="postgresql",
             server="localhost",
             username="user",
-            password="",
+            password=None,
             ssh_enabled=True,
             ssh_auth_type="password",
             ssh_host="bastion.example.com",
             ssh_username="sshuser",
-            ssh_password="",
+            ssh_password=None,
         )
 
         result = _prompt_for_password(config)
@@ -236,7 +301,7 @@ class TestCliPromptForPassword:
             ssh_auth_type="password",
             ssh_host="bastion.example.com",
             ssh_username="sshuser",
-            ssh_password="",
+            ssh_password=None,
         )
 
         result = _prompt_for_password(config)
@@ -246,14 +311,14 @@ class TestCliPromptForPassword:
         assert result.password == "stored_db_password"
 
     @patch("sqlit.commands.getpass.getpass", return_value="")
-    def test_empty_password_entered(self, mock_getpass: MagicMock) -> None:
-        """User can enter empty password (just press Enter)."""
+    def test_user_enters_empty_password(self, mock_getpass: MagicMock) -> None:
+        """User can enter empty password (just press Enter) when prompted."""
         config = ConnectionConfig(
             name="mydb",
             db_type="postgresql",
             server="localhost",
             username="user",
-            password="",
+            password=None,  # None triggers prompt
         )
 
         result = _prompt_for_password(config)
@@ -268,14 +333,14 @@ class TestCliPromptForPassword:
             db_type="postgresql",
             server="localhost",
             username="user",
-            password="",
+            password=None,
         )
 
         with patch("sqlit.commands.getpass.getpass", return_value="new_password"):
             result = _prompt_for_password(original)
 
-        # Original should still have empty password
-        assert original.password == ""
+        # Original should still have None password
+        assert original.password is None
         # Result should have the new password
         assert result.password == "new_password"
         # They should be different objects
@@ -286,12 +351,12 @@ class TestPasswordPromptIntegration:
     """Integration tests for the full password prompt flow."""
 
     @patch("sqlit.commands.getpass.getpass", return_value="test123")
-    def test_cli_query_with_empty_password(self, mock_getpass: MagicMock) -> None:
-        """CLI query command prompts for password when config has empty password."""
+    def test_cli_query_with_none_password(self, mock_getpass: MagicMock) -> None:
+        """CLI query command prompts for password when config has None password."""
         from sqlit.commands import cmd_query
         from sqlit.config import save_connections
 
-        # Create a test connection with empty password
+        # Create a test connection with None password (not set)
         config = ConnectionConfig(
             name="test_connection",
             db_type="postgresql",
@@ -299,7 +364,7 @@ class TestPasswordPromptIntegration:
             port="5432",
             database="testdb",
             username="testuser",
-            password="",  # Empty password
+            password=None,  # None = not set, will prompt
         )
 
         # Save it
@@ -327,19 +392,19 @@ class TestPasswordPromptIntegration:
         # Verify getpass was called
         mock_getpass.assert_called_once_with("Password for 'test_connection': ")
 
-    def test_config_with_both_passwords_empty(self) -> None:
-        """Config with both DB and SSH passwords empty needs both prompts."""
+    def test_config_with_both_passwords_none(self) -> None:
+        """Config with both DB and SSH passwords None needs both prompts."""
         config = ConnectionConfig(
             name="mydb",
             db_type="postgresql",
             server="localhost",
             username="user",
-            password="",
+            password=None,
             ssh_enabled=True,
             ssh_auth_type="password",
             ssh_host="bastion.example.com",
             ssh_username="sshuser",
-            ssh_password="",
+            ssh_password=None,
         )
 
         assert _needs_db_password(config)
@@ -352,3 +417,28 @@ class TestPasswordPromptIntegration:
             assert result.ssh_password == "ssh_password"
             assert result.password == "db_password"
             assert mock_getpass.call_count == 2
+
+    def test_config_with_both_passwords_empty_no_prompt(self) -> None:
+        """Config with both DB and SSH passwords empty (explicit) doesn't need prompts."""
+        config = ConnectionConfig(
+            name="mydb",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password="",  # Explicitly empty
+            ssh_enabled=True,
+            ssh_auth_type="password",
+            ssh_host="bastion.example.com",
+            ssh_username="sshuser",
+            ssh_password="",  # Explicitly empty
+        )
+
+        assert not _needs_db_password(config)
+        assert not _needs_ssh_password(config)
+
+        with patch("sqlit.commands.getpass.getpass") as mock_getpass:
+            result = _prompt_for_password(config)
+
+            mock_getpass.assert_not_called()
+            assert result.password == ""
+            assert result.ssh_password == ""

@@ -137,7 +137,7 @@ class ConnectionConfig:
     port: str = ""  # Default derived from schema for server-based databases
     database: str = ""
     username: str = ""
-    password: str = ""
+    password: str | None = None
     # SQL Server specific fields
     auth_type: str = "sql"
     driver: str = field(default_factory=_get_default_driver)
@@ -150,7 +150,7 @@ class ConnectionConfig:
     ssh_port: str = "22"
     ssh_username: str = ""
     ssh_auth_type: str = "key"  # "key" or "password"
-    ssh_password: str = ""
+    ssh_password: str | None = None
     ssh_key_path: str = ""
     # Supabase specific fields
     supabase_region: str = ""

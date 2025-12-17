@@ -84,14 +84,14 @@ class ConnectionStore(JSONFileStore):
         Args:
             config: ConnectionConfig to populate with credentials.
         """
-        if not config.password:
+        if config.password is None:
             password = self.credentials_service.get_password(config.name)
-            if password:
+            if password is not None:
                 config.password = password
 
-        if not config.ssh_password:
+        if config.ssh_password is None:
             ssh_password = self.credentials_service.get_ssh_password(config.name)
-            if ssh_password:
+            if ssh_password is not None:
                 config.ssh_password = ssh_password
 
     def _save_credentials(self, config: ConnectionConfig) -> None:
@@ -99,13 +99,16 @@ class ConnectionStore(JSONFileStore):
 
         Args:
             config: ConnectionConfig containing credentials to save.
+
+        Note: Empty string "" is a valid password (e.g., CockroachDB insecure mode).
+              Only None means "delete/no password stored".
         """
-        if config.password:
+        if config.password is not None:
             self.credentials_service.set_password(config.name, config.password)
         else:
             self.credentials_service.delete_password(config.name)
 
-        if config.ssh_password:
+        if config.ssh_password is not None:
             self.credentials_service.set_ssh_password(config.name, config.ssh_password)
         else:
             self.credentials_service.delete_ssh_password(config.name)
@@ -117,11 +120,12 @@ class ConnectionStore(JSONFileStore):
             config: ConnectionConfig to convert.
 
         Returns:
-            Dict representation without password and ssh_password.
+            Dict representation with password fields set to None.
+            None indicates "load from credentials service on next load".
         """
         data = vars(config).copy()
-        data["password"] = ""
-        data["ssh_password"] = ""
+        data["password"] = None
+        data["ssh_password"] = None
         return data
 
     def save_all(self, connections: list[ConnectionConfig]) -> None:

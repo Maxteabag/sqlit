@@ -187,7 +187,7 @@ class KeyringCredentialsService(CredentialsService):
             return None
 
     def set_password(self, connection_name: str, password: str) -> None:
-        if not password:
+        if password is None:
             self.delete_password(connection_name)
             return
         try:
@@ -214,7 +214,7 @@ class KeyringCredentialsService(CredentialsService):
             return None
 
     def set_ssh_password(self, connection_name: str, password: str) -> None:
-        if not password:
+        if password is None:
             self.delete_ssh_password(connection_name)
             return
         try:
@@ -248,7 +248,7 @@ class PlaintextCredentialsService(CredentialsService):
         return self._passwords.get(connection_name)
 
     def set_password(self, connection_name: str, password: str) -> None:
-        if password:
+        if password is not None:
             self._passwords[connection_name] = password
         else:
             self.delete_password(connection_name)
@@ -260,7 +260,7 @@ class PlaintextCredentialsService(CredentialsService):
         return self._ssh_passwords.get(connection_name)
 
     def set_ssh_password(self, connection_name: str, password: str) -> None:
-        if password:
+        if password is not None:
             self._ssh_passwords[connection_name] = password
         else:
             self.delete_ssh_password(connection_name)
@@ -293,7 +293,7 @@ class PlaintextFileCredentialsService(CredentialsService):
         return self._read_all().get(self._key(connection_name, "db"))
 
     def set_password(self, connection_name: str, password: str) -> None:
-        if not password:
+        if password is None:
             self.delete_password(connection_name)
             return
         data = self._read_all()
@@ -309,7 +309,7 @@ class PlaintextFileCredentialsService(CredentialsService):
         return self._read_all().get(self._key(connection_name, "ssh"))
 
     def set_ssh_password(self, connection_name: str, password: str) -> None:
-        if not password:
+        if password is None:
             self.delete_ssh_password(connection_name)
             return
         data = self._read_all()

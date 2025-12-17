@@ -182,8 +182,8 @@ class TestConnectionPasswordFlow:
     """Test the connection flow with password prompts."""
 
     @pytest.mark.asyncio
-    async def test_connect_with_empty_password_shows_prompt(self) -> None:
-        """Connecting with empty password shows password input screen."""
+    async def test_connect_with_none_password_shows_prompt(self) -> None:
+        """Connecting with None password shows password input screen."""
         from sqlit.app import SSMSTUI
         from sqlit.mocks import get_mock_profile
 
@@ -191,13 +191,13 @@ class TestConnectionPasswordFlow:
         app = SSMSTUI(mock_profile=mock_profile)
 
         async with app.run_test() as pilot:
-            # Create a connection with empty password
+            # Create a connection with None password (not set)
             config = ConnectionConfig(
                 name="test_db",
                 db_type="postgresql",
                 server="localhost",
                 username="user",
-                password="",  # Empty password
+                password=None,  # None = prompt needed
             )
             app.connections = [config]
 
@@ -256,18 +256,18 @@ class TestConnectionPasswordFlow:
         app = SSMSTUI(mock_profile=mock_profile)
 
         async with app.run_test() as pilot:
-            # Create a connection with SSH enabled and both passwords empty
+            # Create a connection with SSH enabled and both passwords None (not set)
             config = ConnectionConfig(
                 name="test_db",
                 db_type="postgresql",
                 server="localhost",
                 username="user",
-                password="",  # Empty DB password
+                password=None,  # None = prompt needed
                 ssh_enabled=True,
                 ssh_auth_type="password",
                 ssh_host="bastion.example.com",
                 ssh_username="sshuser",
-                ssh_password="",  # Empty SSH password
+                ssh_password=None,  # None = prompt needed
             )
             app.connections = [config]
 
@@ -289,13 +289,13 @@ class TestConnectionPasswordFlow:
         app = SSMSTUI(mock_profile=mock_profile)
 
         async with app.run_test() as pilot:
-            # Create a connection with empty password
+            # Create a connection with None password (not set)
             config = ConnectionConfig(
                 name="test_db",
                 db_type="postgresql",
                 server="localhost",
                 username="user",
-                password="",
+                password=None,  # None = prompt needed
             )
             app.connections = [config]
 
@@ -338,13 +338,13 @@ class TestConnectionPasswordFlow:
         app._session_factory = mock_session_factory
 
         async with app.run_test() as pilot:
-            # Create a connection with empty password
+            # Create a connection with None password (not set)
             config = ConnectionConfig(
                 name="test_db",
                 db_type="postgresql",
                 server="localhost",
                 username="user",
-                password="",
+                password=None,  # None = prompt needed
             )
             app.connections = [config]
 
@@ -367,8 +367,8 @@ class TestConnectionPasswordFlow:
             # Check that the connection was made with the entered password
             assert connection_config is not None
             assert connection_config.password == "entered_password"
-            # Original config should still have empty password
-            assert config.password == ""
+            # Original config should still have None password
+            assert config.password is None
 
     @pytest.mark.asyncio
     async def test_file_based_database_no_password_prompt(self) -> None:

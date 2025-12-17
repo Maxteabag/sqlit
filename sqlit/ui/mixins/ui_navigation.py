@@ -147,7 +147,11 @@ class UINavigationMixin:
         """Focus the Results pane."""
         if self._fullscreen_mode != "none":
             self._set_fullscreen_mode("none")
-        self.results_table.focus()
+        try:
+            self.results_table.focus()
+        except Exception:
+            # Results table may not exist yet (Lazy loading)
+            pass
 
     def action_enter_insert_mode(self: AppProtocol) -> None:
         """Enter INSERT mode for query editing."""

@@ -244,8 +244,8 @@ class TestProcedureNameEscaping:
         parent = MockTreeNode("Procedures", ("folder", "procedures", "db"))
 
         items = [
-            ("procedure", "sp_get_data[v2]"),
-            ("procedure", "proc[test]/run"),
+            ("procedure", "", "sp_get_data[v2]"),
+            ("procedure", "", "proc[test]/run"),
         ]
 
         mixin._on_folder_loaded(parent, "db", "procedures", items)

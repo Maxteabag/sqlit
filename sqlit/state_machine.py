@@ -682,7 +682,11 @@ class ResultsFocusedState(State):
         return left, right
 
     def is_active(self, app: SSMSTUI) -> bool:
-        return app.results_table.has_focus
+        try:
+            return app.results_table.has_focus
+        except Exception:
+            # Results table may not exist yet (Lazy loading)
+            return False
 
 
 class UIStateMachine:

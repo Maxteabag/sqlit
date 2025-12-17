@@ -103,9 +103,12 @@ def build_connection_config_from_args(
         "db_type": schema.db_type,
     }
 
+    # Fields where None means "not set" vs "" means "explicitly empty"
+    nullable_fields = {"password", "ssh_password"}
+
     for field in schema.fields:
         value = raw_values.get(field.name, "")
-        if value is None:
+        if value is None and field.name not in nullable_fields:
             value = ""
         if field.name == "ssh_enabled":
             if isinstance(value, bool):
