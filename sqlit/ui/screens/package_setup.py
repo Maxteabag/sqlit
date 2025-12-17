@@ -50,10 +50,6 @@ class PackageSetupScreen(ModalScreen):
         margin-top: 1;
         overflow-y: auto;
     }
-
-    #package-script.flash-copy {
-        background: $primary 30%;
-    }
     """
 
     def __init__(self, error: MissingDriverError, *, on_install: Callable[[MissingDriverError], None]):
@@ -98,10 +94,10 @@ class PackageSetupScreen(ModalScreen):
         self._on_install(self.error)
 
     def action_yank(self) -> None:
+        from ...widgets import flash_widget
+
         self.app.copy_to_clipboard(self._instructions_text.strip())
-        script = self.query_one("#package-script", Static)
-        script.add_class("flash-copy")
-        self.set_timer(0.15, lambda: script.remove_class("flash-copy"))
+        flash_widget(self.query_one("#package-script", Static))
 
     def action_cancel(self) -> None:
         self.dismiss(None)

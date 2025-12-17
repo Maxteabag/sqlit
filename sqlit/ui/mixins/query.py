@@ -42,12 +42,14 @@ class QueryMixin:
 
     def action_copy_query(self: AppProtocol) -> None:
         """Copy the current query to clipboard."""
+        from ...widgets import flash_widget
+
         query = self.query_input.text.strip()
         if not query:
             self.notify("Query is empty", severity="warning")
             return
         self._copy_text(query)
-        self.notify("Query copied")
+        flash_widget(self.query_input)
 
     def action_copy_context(self: AppProtocol) -> None:
         """Copy based on current focus (query or results)."""

@@ -35,10 +35,6 @@ class ErrorScreen(ModalScreen):
     #error-message {
         padding: 1;
     }
-
-    #error-message.flash {
-        background: $error 50%;
-    }
     """
 
     def __init__(self, title: str, message: str):
@@ -61,8 +57,7 @@ class ErrorScreen(ModalScreen):
         return super().check_action(action, parameters)
 
     def action_copy_message(self) -> None:
+        from ...widgets import flash_widget
+
         self.app.copy_to_clipboard(self.message)
-        # Flash the message to indicate copy
-        msg = self.query_one("#error-message", Static)
-        msg.add_class("flash")
-        self.set_timer(0.15, lambda: msg.remove_class("flash"))
+        flash_widget(self.query_one("#error-message", Static))

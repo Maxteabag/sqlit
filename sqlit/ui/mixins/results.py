@@ -32,9 +32,11 @@ class ResultsMixin:
 
     def _flash_table_yank(self: AppProtocol, table: DataTable, scope: str) -> None:
         """Briefly flash the yanked cell(s) to confirm a copy action."""
+        from ...widgets import flash_widget
+
         previous_cursor_type = getattr(table, "cursor_type", "cell")
         css_class = "flash-cell"
-        target_cursor_type = "cell"
+        target_cursor_type: str = "cell"
 
         if scope == "row":
             css_class = "flash-row"
@@ -48,19 +50,13 @@ class ResultsMixin:
         except Exception:
             pass
 
-        table.add_class(css_class)
-
-        def _clear() -> None:
+        def restore_cursor() -> None:
             try:
-                table.remove_class(css_class)
-                try:
-                    table.cursor_type = previous_cursor_type  # type: ignore[assignment]
-                except Exception:
-                    pass
+                table.cursor_type = previous_cursor_type  # type: ignore[assignment]
             except Exception:
                 pass
 
-        table.set_timer(0.15, _clear)
+        flash_widget(table, css_class, on_complete=restore_cursor)
 
     def _format_tsv(self, columns: list[str], rows: list[tuple]) -> str:
         """Format columns and rows as TSV."""

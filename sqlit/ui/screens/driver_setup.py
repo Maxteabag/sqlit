@@ -53,10 +53,6 @@ class DriverSetupScreen(ModalScreen):
         margin-top: 1;
         overflow-y: auto;
     }
-
-    #install-commands.flash {
-        background: $primary 30%;
-    }
     """
 
     def __init__(self, installed_drivers: list[str] | None = None):
@@ -148,13 +144,13 @@ class DriverSetupScreen(ModalScreen):
         self.dismiss(("install", self._install_commands))
 
     def action_yank(self) -> None:
+        from ...widgets import flash_widget
+
         script = self._install_script.strip()
         if not script:
             return
         self.app.copy_to_clipboard(script)
-        box = self.query_one("#install-commands", TextArea)
-        box.add_class("flash")
-        self.set_timer(0.15, lambda: box.remove_class("flash"))
+        flash_widget(self.query_one("#install-commands", TextArea))
 
     def action_cancel(self) -> None:
         self.dismiss(None)

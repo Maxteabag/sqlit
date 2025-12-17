@@ -36,10 +36,6 @@ class MessageScreen(ModalScreen):
     #message-content {
         padding: 1;
     }
-
-    #message-content.flash {
-        background: $primary 30%;
-    }
     """
 
     def __init__(

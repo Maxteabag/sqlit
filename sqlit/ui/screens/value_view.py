@@ -42,10 +42,6 @@ class ValueViewScreen(ModalScreen):
         width: auto;
         height: auto;
     }
-
-    #value-text.flash-copy {
-        background: $success;
-    }
     """
 
     def __init__(self, value: str, title: str = "Value"):
@@ -88,15 +84,11 @@ class ValueViewScreen(ModalScreen):
         self.dismiss(None)
 
     def action_copy(self) -> None:
+        from ...widgets import flash_widget
+
         copied = getattr(self.app, "_copy_text", None)
         if callable(copied):
             copied(self.value)
-            self._flash_copy()
+            flash_widget(self.query_one("#value-text"))
         else:
             self.notify("Copy unavailable", timeout=2)
-
-    def _flash_copy(self) -> None:
-        """Flash the text background to indicate copy."""
-        text_area = self.query_one("#value-text")
-        text_area.add_class("flash-copy")
-        self.set_timer(0.15, lambda: text_area.remove_class("flash-copy"))

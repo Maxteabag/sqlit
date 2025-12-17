@@ -91,13 +91,15 @@ class SSMSTUI(
     DataTable.flash-cell:focus > .datatable--cursor,
     DataTable.flash-row:focus > .datatable--cursor,
     DataTable.flash-all:focus > .datatable--cursor {
-        background: $success;
-        color: $background;
-        text-style: bold;
+        background: $success 30%;
     }
 
     DataTable.flash-all {
-        border: solid $success;
+        border: solid $success 30%;
+    }
+
+    .flash {
+        background: $success 30%;
     }
 
     Screen.results-fullscreen #sidebar {
