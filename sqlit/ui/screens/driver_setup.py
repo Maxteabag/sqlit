@@ -91,7 +91,7 @@ class DriverSetupScreen(ModalScreen):
             options = []
             if has_drivers:
                 for driver in self.installed_drivers:
-                    options.append(Option(f"[green]{driver}[/]", id=driver))
+                    options.append(Option(f"[#4ADE80]{driver}[/]", id=driver))
             else:
                 for driver in SUPPORTED_DRIVERS[:3]:  # Show top 3 options
                     options.append(Option(f"[dim]{driver}[/] (not installed)", id=driver))

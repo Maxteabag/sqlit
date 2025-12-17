@@ -183,11 +183,14 @@ class UINavigationMixin:
             status = self.status_bar
         except Exception:
             return
-        if getattr(self, "_connection_failed", False):
+        # Hide connection info while query is executing
+        if getattr(self, "_query_executing", False):
+            conn_info = ""
+        elif getattr(self, "_connection_failed", False):
             conn_info = "[#ff6b6b]Connection failed[/]"
         elif self.current_config:
             display_info = self.current_config.get_display_info()
-            conn_info = f"[#90EE90]Connected to {self.current_config.name}[/] ({display_info})"
+            conn_info = f"[#4ADE80]Connected to {self.current_config.name}[/] ({display_info})"
         else:
             conn_info = "Not connected"
 
@@ -204,18 +207,17 @@ class UINavigationMixin:
         if getattr(self, "_query_executing", False):
             import time
 
+            from ...utils import format_duration_ms
+
             spinner_idx = getattr(self, "_spinner_index", 0)
             spinner = SPINNER_FRAMES[spinner_idx % len(SPINNER_FRAMES)]
             start_time = getattr(self, "_query_start_time", None)
             if start_time:
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
-                if elapsed_ms >= 1000:
-                    elapsed_str = f"{elapsed_ms / 1000:.1f}s"
-                else:
-                    elapsed_str = f"{elapsed_ms:.0f}ms"
-                status_parts.append(f"[bold yellow]{spinner} Executing [{elapsed_str}][/] [dim]<space>z to cancel[/]")
+                elapsed_str = format_duration_ms(elapsed_ms, always_seconds=True)
+                status_parts.append(f"[bold yellow]{spinner} Executing [{elapsed_str}][/] [dim]^z to cancel[/]")
             else:
-                status_parts.append(f"[bold yellow]{spinner} Executing[/] [dim]<space>z to cancel[/]")
+                status_parts.append(f"[bold yellow]{spinner} Executing[/] [dim]^z to cancel[/]")
 
         status_str = "  ".join(status_parts)
         if status_str:

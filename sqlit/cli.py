@@ -68,6 +68,13 @@ def main() -> int:
         help="Mock installation method for install hints: pipx, pip, or unknown (can't auto-install).",
     )
     parser.add_argument(
+        "--mock-query-delay",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="Add artificial delay to mock query execution (e.g. 3.0 for 3 seconds).",
+    )
+    parser.add_argument(
         "--profile-startup",
         action="store_true",
         help="Log startup timing diagnostics to stderr.",
@@ -169,6 +176,10 @@ def main() -> int:
         os.environ["SQLIT_MOCK_PIPX"] = str(args.mock_pipx)
     else:
         os.environ.pop("SQLIT_MOCK_PIPX", None)
+    if args.mock_query_delay and args.mock_query_delay > 0:
+        os.environ["SQLIT_MOCK_QUERY_DELAY"] = str(args.mock_query_delay)
+    else:
+        os.environ.pop("SQLIT_MOCK_QUERY_DELAY", None)
     if args.profile_startup:
         os.environ["SQLIT_PROFILE_STARTUP"] = "1"
     else:

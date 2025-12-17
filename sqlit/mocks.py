@@ -69,6 +69,7 @@ class MockDatabaseAdapter(DatabaseAdapter):
         required_fields: list[str] | None = None,
         allowed_connections: list[dict[str, Any]] | None = None,
         auth_error: str = "Authentication failed",
+        query_delay: float = 0.0,
     ):
         self._name = name
         self._tables = tables or []
@@ -85,6 +86,16 @@ class MockDatabaseAdapter(DatabaseAdapter):
         self._required_fields = required_fields or []
         self._allowed_connections = allowed_connections or []
         self._auth_error = auth_error or "Authentication failed"
+        # Use provided delay or fall back to environment variable
+        if query_delay > 0:
+            self._query_delay = query_delay
+        else:
+            import os
+            env_delay = os.environ.get("SQLIT_MOCK_QUERY_DELAY", "")
+            try:
+                self._query_delay = float(env_delay) if env_delay else 0.0
+            except ValueError:
+                self._query_delay = 0.0
 
     @property
     def name(self) -> str:
@@ -146,6 +157,11 @@ class MockDatabaseAdapter(DatabaseAdapter):
 
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query and return (columns, rows, truncated)."""
+        import time
+
+        if self._query_delay > 0:
+            time.sleep(self._query_delay)
+
         query_lower = query.lower().strip()
 
         # Check for specific query results (case-insensitive pattern matching)

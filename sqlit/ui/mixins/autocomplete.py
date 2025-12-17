@@ -161,7 +161,7 @@ class AutocompleteMixin:
         cursor_pos = self._location_to_offset(text, cursor_loc)
 
         word_start = cursor_pos
-        while word_start > 0 and text[word_start - 1] not in " \t\n,()[]":
+        while word_start > 0 and text[word_start - 1] not in " \t\n,()[].":
             word_start -= 1
 
         if word_start > 0 and text[word_start - 1] == ".":
@@ -233,6 +233,20 @@ class AutocompleteMixin:
         else:
             self._hide_autocomplete()
 
+    def action_autocomplete_next(self: AppProtocol) -> None:
+        """Move to next autocomplete suggestion."""
+        if self._autocomplete_visible:
+            self.autocomplete_dropdown.move_selection(1)
+
+    def action_autocomplete_prev(self: AppProtocol) -> None:
+        """Move to previous autocomplete suggestion."""
+        if self._autocomplete_visible:
+            self.autocomplete_dropdown.move_selection(-1)
+
+    def action_autocomplete_close(self: AppProtocol) -> None:
+        """Close autocomplete dropdown without exiting insert mode."""
+        self._hide_autocomplete()
+
     def on_key(self: AppProtocol, event: Any) -> None:
         """Handle key events for autocomplete navigation."""
         from ...widgets import VimMode
@@ -258,6 +272,8 @@ class AutocompleteMixin:
                 event.stop()
         elif event.key == "escape":
             self._hide_autocomplete()
+            event.prevent_default()
+            event.stop()
 
     def _load_schema_cache(self: AppProtocol) -> None:
         """Load database schema for autocomplete asynchronously."""

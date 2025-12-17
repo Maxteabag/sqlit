@@ -9,6 +9,7 @@ from textual.timer import Timer
 from textual.worker import Worker
 
 from ..protocols import AppProtocol
+from ...utils import format_duration_ms
 
 if TYPE_CHECKING:
     from ...services import QueryService
@@ -76,10 +77,6 @@ class QueryMixin:
         if hasattr(self, "_query_worker") and self._query_worker is not None:
             self._query_worker.cancel()
 
-        self.results_table.clear(columns=True)
-        self.results_table.add_column("Status")
-        self.results_table.add_row("Executing query...")
-
         self._start_query_spinner()
 
         self._query_worker = self.run_worker(
@@ -98,7 +95,7 @@ class QueryMixin:
         self._update_status_bar()
         if hasattr(self, "_spinner_timer") and self._spinner_timer is not None:
             self._spinner_timer.stop()
-        self._spinner_timer = self.set_interval(0.1, self._animate_spinner)
+        self._spinner_timer = self.set_interval(1 / 30, self._animate_spinner)  # 30fps
 
     def _stop_query_spinner(self: AppProtocol) -> None:
         """Stop the query execution spinner animation."""
@@ -187,7 +184,7 @@ class QueryMixin:
             str_row = tuple(escape_markup(str(v)) if v is not None else "NULL" for v in row)
             self.results_table.add_row(*str_row)
 
-        time_str = f"{elapsed_ms:.0f}ms" if elapsed_ms >= 1 else f"{elapsed_ms:.2f}ms"
+        time_str = format_duration_ms(elapsed_ms)
         if truncated:
             self.notify(f"Query returned {row_count}+ rows in {time_str} (truncated)", severity="warning")
         else:
@@ -202,7 +199,7 @@ class QueryMixin:
         self.results_table.clear(columns=True)
         self.results_table.add_column("Result")
         self.results_table.add_row(f"{affected} row(s) affected")
-        time_str = f"{elapsed_ms:.0f}ms" if elapsed_ms >= 1 else f"{elapsed_ms:.2f}ms"
+        time_str = format_duration_ms(elapsed_ms)
         self.notify(f"Query executed: {affected} row(s) affected in {time_str}")
 
     def _display_query_error(self: AppProtocol, error_message: str) -> None:

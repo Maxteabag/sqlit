@@ -39,14 +39,16 @@ from .ui.mixins import (
     ConnectionMixin,
     QueryMixin,
     ResultsMixin,
+    TreeFilterMixin,
     TreeMixin,
     UINavigationMixin,
 )
-from .widgets import AutocompleteDropdown, ContextFooter, VimMode
+from .widgets import AutocompleteDropdown, ContextFooter, TreeFilterInput, VimMode
 
 
 class SSMSTUI(
     TreeMixin,
+    TreeFilterMixin,
     ConnectionMixin,
     QueryMixin,
     AutocompleteMixin,
@@ -66,7 +68,7 @@ class SSMSTUI(
             accent="#6D8DC4",
             warning="#f59e0b",
             error="#BE728C",
-            success="#22c55e",
+            success="#4ADE80",
             foreground="#a9b1d6",
             background="#1A1B26",
             surface="#24283B",
@@ -86,6 +88,15 @@ class SSMSTUI(
     CSS = """
     Screen {
         background: $surface;
+    }
+
+    TextArea {
+        & > .text-area--cursor-line {
+            background: transparent;
+        }
+        &:focus > .text-area--cursor-line {
+            background: $surface-lighten-1;
+        }
     }
 
     DataTable.flash-cell:focus > .datatable--cursor,
@@ -249,11 +260,24 @@ class SSMSTUI(
         Binding("n", "new_query", "New", show=False),
         Binding("h", "show_history", "History", show=False),
         Binding("z", "collapse_tree", "Collapse", show=False),
+        Binding("j", "tree_cursor_down", "Down", show=False),
+        Binding("k", "tree_cursor_up", "Up", show=False),
         Binding("v", "view_cell", "View cell", show=False),
+        Binding("h", "results_cursor_left", "Left", show=False),
+        Binding("j", "results_cursor_down", "Down", show=False),
+        Binding("k", "results_cursor_up", "Up", show=False),
+        Binding("l", "results_cursor_right", "Right", show=False),
         Binding("y", "copy_context", "Copy", show=False),
         Binding("Y", "copy_row", "Copy row", show=False),
         Binding("a", "copy_results", "Copy results", show=False),
-        Binding("ctrl+c", "cancel_operation", "Cancel", show=False),
+        Binding("ctrl+z", "cancel_operation", "Cancel", show=False),
+        Binding("ctrl+j", "autocomplete_next", "Next suggestion", show=False),
+        Binding("ctrl+k", "autocomplete_prev", "Prev suggestion", show=False),
+        Binding("slash", "tree_filter", "Filter", show=False),
+        Binding("escape", "tree_filter_close", "Close filter", show=False),
+        Binding("enter", "tree_filter_accept", "Select", show=False),
+        Binding("n", "tree_filter_next", "Next match", show=False),
+        Binding("N", "tree_filter_prev", "Prev match", show=False),
     ]
 
     def __init__(
@@ -385,6 +409,10 @@ class SSMSTUI(
 
         return self.query_one("#autocomplete-dropdown", AutocompleteDropdown)
 
+    @property
+    def tree_filter_input(self) -> TreeFilterInput:
+        return self.query_one("#tree-filter", TreeFilterInput)
+
     def push_screen(
         self,
         screen: Any,
@@ -457,6 +485,7 @@ class SSMSTUI(
             with Horizontal(id="content"):
                 with Vertical(id="sidebar") as sidebar:
                     sidebar.border_title = r"\[e]─Explorer"
+                    yield TreeFilterInput(id="tree-filter")
                     tree: Tree[Any] = Tree("Servers", id="object-tree")
                     tree.show_root = False
                     tree.guide_depth = 2

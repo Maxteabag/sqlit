@@ -9,46 +9,8 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
+from ...utils import fuzzy_match, highlight_matches
 from ...widgets import Dialog
-
-
-def fuzzy_match(pattern: str, text: str) -> tuple[bool, list[int]]:
-    """Check if pattern fuzzy matches text and return matched indices.
-
-    Returns (matches, indices) where indices are positions in text that matched.
-    """
-    if not pattern:
-        return True, []
-
-    pattern = pattern.lower()
-    text_lower = text.lower()
-
-    pattern_idx = 0
-    indices = []
-
-    for i, char in enumerate(text_lower):
-        if pattern_idx < len(pattern) and char == pattern[pattern_idx]:
-            indices.append(i)
-            pattern_idx += 1
-
-    return pattern_idx == len(pattern), indices
-
-
-def highlight_matches(text: str, indices: list[int]) -> str:
-    """Highlight matched characters in text."""
-    if not indices:
-        return text
-
-    result = []
-    idx_set = set(indices)
-
-    for i, char in enumerate(text):
-        if i in idx_set:
-            result.append(f"[bold yellow]{char}[/]")
-        else:
-            result.append(char)
-
-    return "".join(result)
 
 
 class ConnectionPickerScreen(ModalScreen):

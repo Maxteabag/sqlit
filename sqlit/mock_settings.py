@@ -141,6 +141,11 @@ def _build_adapter_from_settings(db_type: str, config: dict[str, Any]) -> MockDa
         if parsed_default:
             default_query_result = parsed_default
 
+    query_delay = 0.0
+    raw_delay = config.get("query_delay")
+    if isinstance(raw_delay, (int, float)):
+        query_delay = float(raw_delay)
+
     return MockDatabaseAdapter(
         name=name,
         tables=tables,
@@ -154,6 +159,7 @@ def _build_adapter_from_settings(db_type: str, config: dict[str, Any]) -> MockDa
         required_fields=required_fields,
         allowed_connections=allowed,
         auth_error=auth_error,
+        query_delay=query_delay,
     )
 
 

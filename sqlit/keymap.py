@@ -41,6 +41,7 @@ class ActionKeyDef:
     key: str  # The key to press
     action: str  # The action name
     context: str | None = None  # Optional context hint (for documentation)
+    guard: str | None = None  # Guard name (resolved at runtime)
 
 
 class KeymapProvider(ABC):
@@ -128,8 +129,8 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("y", "copy_context", "results"),
             ActionKeyDef("Y", "copy_row", "results"),
             ActionKeyDef("a", "copy_results", "results"),
-            # Cancel
-            ActionKeyDef("ctrl+c", "cancel_operation", "global"),
+            # Cancel (only when query executing)
+            ActionKeyDef("ctrl+z", "cancel_operation", "global", guard="query_executing"),
         ]
 
 

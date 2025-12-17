@@ -57,7 +57,7 @@ class TreeMixin:
                 and conn.name == self.current_config.name
             )
             if is_connected:
-                label = f"[green]* {escaped_name}[/green] [{db_type_label}] ({display_info})"
+                label = f"[#4ADE80]* {escaped_name}[/] [{db_type_label}] ({display_info})"
             else:
                 label = f"[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})"
             node = self.object_tree.root.add(label)
@@ -79,7 +79,7 @@ class TreeMixin:
             db_type_label = self._db_type_badge(config.db_type)
             escaped_name = escape_markup(config.name)
             if connected:
-                name = f"[green]* {escaped_name}[/green]"
+                name = f"[#4ADE80]* {escaped_name}[/]"
             else:
                 name = escaped_name
             return f"{name} [{db_type_label}] ({display_info})"
@@ -433,6 +433,16 @@ class TreeMixin:
         collapse_all(self.object_tree.root)
         self._expanded_paths.clear()
         self._save_expanded_state()
+
+    def action_tree_cursor_down(self: AppProtocol) -> None:
+        """Move tree cursor down (vim j)."""
+        if self.object_tree.has_focus:
+            self.object_tree.action_cursor_down()
+
+    def action_tree_cursor_up(self: AppProtocol) -> None:
+        """Move tree cursor up (vim k)."""
+        if self.object_tree.has_focus:
+            self.object_tree.action_cursor_up()
 
     def action_select_table(self: AppProtocol) -> None:
         """Generate and execute SELECT query for selected table/view."""

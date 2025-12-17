@@ -171,6 +171,66 @@ class Dialog(Container):
             self.border_subtitle = subtitle
 
 
+class TreeFilterInput(Static):
+    """Filter input widget for the explorer tree."""
+
+    DEFAULT_CSS = """
+    TreeFilterInput {
+        width: 100%;
+        height: 1;
+        background: $surface;
+        display: none;
+        padding: 0 1;
+    }
+
+    TreeFilterInput.visible {
+        display: block;
+    }
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__("", *args, **kwargs)
+        self.filter_text: str = ""
+        self.match_count: int = 0
+        self.total_count: int = 0
+
+    def set_filter(self, text: str, match_count: int = 0, total_count: int = 0) -> None:
+        """Set the filter text and match count."""
+        self.filter_text = text
+        self.match_count = match_count
+        self.total_count = total_count
+        self._rebuild()
+
+    def clear(self) -> None:
+        """Clear the filter."""
+        self.filter_text = ""
+        self.match_count = 0
+        self.total_count = 0
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        """Rebuild the display."""
+        if not self.filter_text:
+            self.update("[dim]/[/] ")
+        else:
+            count_text = f"[dim]{self.match_count}/{self.total_count}[/]"
+            self.update(f"[dim]/[/] {self.filter_text} {count_text}")
+
+    def show(self) -> None:
+        """Show the filter input."""
+        self.add_class("visible")
+        self._rebuild()
+
+    def hide(self) -> None:
+        """Hide the filter input."""
+        self.remove_class("visible")
+
+    @property
+    def is_visible(self) -> bool:
+        """Check if filter is visible."""
+        return "visible" in self.classes
+
+
 class AutocompleteDropdown(Static):
     """Dropdown widget for SQL autocomplete suggestions."""
 

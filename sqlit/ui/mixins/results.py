@@ -124,3 +124,23 @@ class ResultsMixin:
         text = self._format_tsv(self._last_result_columns, self._last_result_rows)
         self._copy_text(text)
         self._flash_table_yank(self.results_table, "all")
+
+    def action_results_cursor_left(self: AppProtocol) -> None:
+        """Move results cursor left (vim h)."""
+        if self.results_table.has_focus:
+            self.results_table.action_cursor_left()
+
+    def action_results_cursor_down(self: AppProtocol) -> None:
+        """Move results cursor down (vim j)."""
+        if self.results_table.has_focus:
+            self.results_table.action_cursor_down()
+
+    def action_results_cursor_up(self: AppProtocol) -> None:
+        """Move results cursor up (vim k)."""
+        if self.results_table.has_focus:
+            self.results_table.action_cursor_up()
+
+    def action_results_cursor_right(self: AppProtocol) -> None:
+        """Move results cursor right (vim l)."""
+        if self.results_table.has_focus:
+            self.results_table.action_cursor_right()

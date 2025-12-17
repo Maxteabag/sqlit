@@ -340,13 +340,38 @@ class MainScreenState(State):
         self.allows("toggle_fullscreen", help="Toggle fullscreen", help_key="f")
         self.allows("show_help")
         self.allows("change_theme")
-        self.allows("cancel_operation")  # ctrl+c to cancel running operations
         self.allows("leader_key", key="<space>", label="Commands", right=True)
 
     def is_active(self, app: SSMSTUI) -> bool:
         from textual.screen import ModalScreen
 
-        return not any(isinstance(screen, ModalScreen) for screen in app.screen_stack[1:])
+        if any(isinstance(screen, ModalScreen) for screen in app.screen_stack[1:]):
+            return False
+        # Defer to QueryExecutingState if a query is running
+        return not getattr(app, "_query_executing", False)
+
+
+class QueryExecutingState(State):
+    """State when a query is being executed."""
+
+    help_category = "Query"
+
+    def _setup_actions(self) -> None:
+        self.allows("cancel_operation", key="^z", label="Cancel", help="Cancel query")
+        self.allows("quit")
+
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+        left: list[DisplayBinding] = [
+            DisplayBinding(key="^z", label="Cancel", action="cancel_operation"),
+        ]
+        return left, []
+
+    def is_active(self, app: SSMSTUI) -> bool:
+        from textual.screen import ModalScreen
+
+        if any(isinstance(screen, ModalScreen) for screen in app.screen_stack[1:]):
+            return False
+        return getattr(app, "_query_executing", False)
 
 
 class LeaderPendingState(State):
@@ -379,6 +404,41 @@ class LeaderPendingState(State):
         return getattr(app, "_leader_pending", False)
 
 
+class TreeFilterActiveState(State):
+    """State when tree filter is active."""
+
+    help_category = "Explorer"
+
+    def _setup_actions(self) -> None:
+        self.allows("tree_filter_close", help="Close filter", help_key="esc")
+        self.allows("tree_filter_accept", help="Select item", help_key="enter")
+        self.allows("tree_filter_next", help="Next match", help_key="n/j")
+        self.allows("tree_filter_prev", help="Previous match", help_key="N/k")
+        self.allows("quit")
+        self.forbids(
+            "focus_explorer",
+            "focus_query",
+            "focus_results",
+            "leader_key",
+            "new_connection",
+            "tree_filter",
+        )
+
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+        left: list[DisplayBinding] = [
+            DisplayBinding(key="esc", label="Close", action="tree_filter_close"),
+            DisplayBinding(key="enter", label="Select", action="tree_filter_accept"),
+            DisplayBinding(key="n/N", label="Next/Prev", action="tree_filter_next"),
+        ]
+        return left, []
+
+    def is_active(self, app: SSMSTUI) -> bool:
+        return (
+            app.object_tree.has_focus
+            and getattr(app, "_tree_filter_visible", False)
+        )
+
+
 class TreeFocusedState(State):
     """Base state when tree has focus."""
 
@@ -388,9 +448,15 @@ class TreeFocusedState(State):
         self.allows("new_connection", key="n", label="New", help="New connection")
         self.allows("refresh_tree", key="f", label="Refresh", help="Refresh tree", help_key="R/f")
         self.allows("collapse_tree", help="Collapse all", help_key="z")
+        self.allows("tree_cursor_down")  # vim j
+        self.allows("tree_cursor_up")  # vim k
+        self.allows("tree_filter", help="Filter tree", help_key="/")
 
     def is_active(self, app: SSMSTUI) -> bool:
-        return app.object_tree.has_focus
+        if not app.object_tree.has_focus:
+            return False
+        # Defer to TreeFilterActiveState if filter is visible
+        return not getattr(app, "_tree_filter_visible", False)
 
 
 class TreeOnConnectionState(State):
@@ -640,7 +706,49 @@ class QueryInsertModeState(State):
     def is_active(self, app: SSMSTUI) -> bool:
         from .widgets import VimMode
 
-        return app.query_input.has_focus and app.vim_mode == VimMode.INSERT
+        if not app.query_input.has_focus or app.vim_mode != VimMode.INSERT:
+            return False
+        # Defer to AutocompleteActiveState if autocomplete is visible
+        return not getattr(app, "_autocomplete_visible", False)
+
+
+class AutocompleteActiveState(State):
+    """Query editor with autocomplete dropdown visible."""
+
+    help_category = "Query Editor (Insert)"
+
+    def _setup_actions(self) -> None:
+        self.allows("autocomplete_next", help="Next suggestion", help_key="^j")
+        self.allows("autocomplete_prev", help="Previous suggestion", help_key="^k")
+        self.allows("autocomplete_accept", help="Accept autocomplete", help_key="tab")
+        self.allows("autocomplete_close", help="Close autocomplete", help_key="esc")
+        self.allows("execute_query_insert")
+        self.allows("quit")
+        self.forbids(
+            "exit_insert_mode",  # Escape closes autocomplete, not exits insert mode
+            "focus_explorer",
+            "focus_results",
+            "leader_key",
+            "new_connection",
+            "show_help",
+        )
+
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+        left: list[DisplayBinding] = [
+            DisplayBinding(key="tab", label="Accept", action="autocomplete_accept"),
+            DisplayBinding(key="^j/^k", label="Next/Prev", action="autocomplete_next"),
+            DisplayBinding(key="esc", label="Close", action="autocomplete_close"),
+        ]
+        return left, []
+
+    def is_active(self, app: SSMSTUI) -> bool:
+        from .widgets import VimMode
+
+        return (
+            app.query_input.has_focus
+            and app.vim_mode == VimMode.INSERT
+            and getattr(app, "_autocomplete_visible", False)
+        )
 
 
 class ResultsFocusedState(State):
@@ -653,6 +761,10 @@ class ResultsFocusedState(State):
         self.allows("copy_context", key="y", label="Copy cell", help="Copy selected cell")
         self.allows("copy_row", key="Y", label="Copy row", help="Copy selected row")
         self.allows("copy_results", key="a", label="Copy all", help="Copy all results")
+        self.allows("results_cursor_left")  # vim h
+        self.allows("results_cursor_down")  # vim j
+        self.allows("results_cursor_up")  # vim k
+        self.allows("results_cursor_right")  # vim l
 
     def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
@@ -697,11 +809,14 @@ class UIStateMachine:
 
         self.modal_active = ModalActiveState(parent=self.root)
 
+        self.query_executing = QueryExecutingState(parent=self.root)
+
         self.main_screen = MainScreenState(parent=self.root)
 
         self.leader_pending = LeaderPendingState(parent=self.main_screen)
 
         self.tree_focused = TreeFocusedState(parent=self.main_screen)
+        self.tree_filter_active = TreeFilterActiveState(parent=self.main_screen)
         self.tree_on_connection = TreeOnConnectionState(parent=self.tree_focused)
         self.tree_on_table = TreeOnTableState(parent=self.tree_focused)
         self.tree_on_folder = TreeOnFolderState(parent=self.tree_focused)
@@ -709,16 +824,20 @@ class UIStateMachine:
         self.query_focused = QueryFocusedState(parent=self.main_screen)
         self.query_normal = QueryNormalModeState(parent=self.query_focused)
         self.query_insert = QueryInsertModeState(parent=self.query_focused)
+        self.autocomplete_active = AutocompleteActiveState(parent=self.query_focused)
 
         self.results_focused = ResultsFocusedState(parent=self.main_screen)
 
         self._states = [
             self.modal_active,
+            self.query_executing,  # Before main_screen (more specific when query running)
             self.leader_pending,
+            self.tree_filter_active,  # Before tree_focused (more specific when filter active)
             self.tree_on_connection,
             self.tree_on_table,
             self.tree_on_folder,
             self.tree_focused,
+            self.autocomplete_active,  # Before query_insert (more specific)
             self.query_insert,
             self.query_normal,
             self.query_focused,
