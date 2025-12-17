@@ -6,6 +6,7 @@ via the provider registry when requested.
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import TYPE_CHECKING
 
 from ..providers import PROVIDERS
@@ -55,15 +56,17 @@ def get_supported_adapter_db_types() -> list[str]:
     return _get_supported_adapter_db_types()
 
 
-_ADAPTER_CLASS_BY_NAME: dict[str, type[DatabaseAdapter]] | None = None
+_ADAPTER_PATH_BY_NAME: dict[str, tuple[str, str]] | None = None
 
 
 def __getattr__(name: str) -> type[DatabaseAdapter]:
-    global _ADAPTER_CLASS_BY_NAME
-    if _ADAPTER_CLASS_BY_NAME is None:
-        _ADAPTER_CLASS_BY_NAME = {spec.adapter_cls.__name__: spec.adapter_cls for spec in PROVIDERS.values()}
+    global _ADAPTER_PATH_BY_NAME
+    if _ADAPTER_PATH_BY_NAME is None:
+        _ADAPTER_PATH_BY_NAME = {spec.adapter_path[1]: spec.adapter_path for spec in PROVIDERS.values()}
 
-    adapter_cls = _ADAPTER_CLASS_BY_NAME.get(name)
-    if adapter_cls is None:
+    adapter_path = _ADAPTER_PATH_BY_NAME.get(name)
+    if adapter_path is None:
         raise AttributeError(name)
-    return adapter_cls
+    module_name, class_name = adapter_path
+    module = import_module(module_name)
+    return getattr(module, class_name)

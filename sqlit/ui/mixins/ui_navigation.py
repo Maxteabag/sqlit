@@ -128,7 +128,10 @@ class UINavigationMixin:
         from ...widgets import VimMode
         from .query import SPINNER_FRAMES
 
-        status = self.status_bar
+        try:
+            status = self.status_bar
+        except Exception:
+            return
         if getattr(self, "_connection_failed", False):
             conn_info = "[#ff6b6b]Connection failed[/]"
         elif self.current_config:
@@ -458,9 +461,16 @@ class UINavigationMixin:
         from ...widgets import VimMode
 
         self._update_section_labels()
-        if not self.query_input.has_focus and self.vim_mode == VimMode.INSERT:
+        try:
+            has_query_focus = self.query_input.has_focus
+        except Exception:
+            has_query_focus = False
+        if not has_query_focus and self.vim_mode == VimMode.INSERT:
             self.vim_mode = VimMode.NORMAL
-            self.query_input.read_only = True
+            try:
+                self.query_input.read_only = True
+            except Exception:
+                pass
         self._update_footer_bindings()
         self._update_status_bar()
 

@@ -53,6 +53,8 @@ from ...widgets import Dialog
 class ConnectionScreen(ModalScreen):
     """Modal screen for adding/editing a connection."""
 
+    AUTO_FOCUS = "#conn-name"
+
     _INSTALL_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     BINDINGS = [
@@ -73,7 +75,7 @@ class ConnectionScreen(ModalScreen):
 
     #connection-dialog {
         width: 62;
-        height: auto;
+        height: 85%;
         max-height: 85%;
         border: solid $primary;
         background: $surface;
@@ -158,20 +160,21 @@ class ConnectionScreen(ModalScreen):
     }
 
     #connection-tabs {
-        height: auto;
+        height: 1fr;
     }
 
     TabbedContent {
-        height: auto;
+        height: 1fr;
     }
 
     TabbedContent > ContentSwitcher {
-        height: auto;
+        height: 1fr;
     }
 
     TabPane {
-        height: auto;
+        height: 1fr;
         min-height: 18;
+        overflow-y: auto;
     }
 
     Tab:disabled {
@@ -653,7 +656,7 @@ class ConnectionScreen(ModalScreen):
         shortcuts = [("Test", "^t"), ("Save", "^s"), ("Cancel", "<esc>")]
 
         with Dialog(id="connection-dialog", title=title, shortcuts=shortcuts):
-            with TabbedContent(id="connection-tabs"):
+            with TabbedContent(id="connection-tabs", initial="tab-general"):
                 with TabPane("General", id="tab-general"):
                     name_container = Container(id="container-name", classes="field-container")
                     name_container.border_title = "Name"
@@ -703,8 +706,7 @@ class ConnectionScreen(ModalScreen):
             yield TextArea("", id="test-error", read_only=True, classes="hidden")
 
     def on_mount(self) -> None:
-        self.query_one("#conn-name", Input).focus()
-
+        self.call_after_refresh(self._ensure_initial_tab)
         self._set_initial_select_values()
         self._apply_prefill_values()
         self._update_field_visibility()
@@ -718,6 +720,13 @@ class ConnectionScreen(ModalScreen):
 
         if self._post_install_message and not self._missing_driver_error:
             self._update_driver_status_ui()
+
+    def _ensure_initial_tab(self) -> None:
+        try:
+            tabs = self.query_one("#connection-tabs", TabbedContent)
+        except Exception:
+            return
+        tabs.active = "tab-general"
 
     def _apply_prefill_values(self) -> None:
         if not self._prefill_values:

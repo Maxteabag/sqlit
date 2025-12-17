@@ -27,11 +27,11 @@ HISTORY_PATH = CONFIG_DIR / "query_history.json"
 
 # Module-level convenience functions for backward compatibility.
 # These are wrappers to avoid import cycles with the store modules.
-def load_connections() -> list[ConnectionConfig]:
+def load_connections(load_credentials: bool = True) -> list[ConnectionConfig]:
     """Load saved connections from config file."""
     from .stores.connections import load_connections as _load_connections
 
-    return _load_connections()
+    return _load_connections(load_credentials=load_credentials)
 
 
 def save_connections(connections: list[ConnectionConfig]) -> None:
