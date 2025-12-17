@@ -73,8 +73,8 @@ class SSMSTUI(
             panel="#414868",
             dark=True,
             variables={
-                "border": "#ffffff",
-                "border-blurred": "#ffffff",
+                "border": "#414868",
+                "border-blurred": "#414868",
                 "footer-background": "#24283B",
                 "footer-key-foreground": "#7FA1DE",
                 "button-color-foreground": "#1A1B26",
@@ -476,7 +476,7 @@ class SSMSTUI(
         with Vertical(id="main-container"):
             with Horizontal(id="content"):
                 with Vertical(id="sidebar") as sidebar:
-                    sidebar.border_title = r"[white]\[e][/]─Explorer"
+                    sidebar.border_title = r"\[e]─Explorer"
                     tree: Tree[Any] = Tree("Servers", id="object-tree")
                     tree.show_root = False
                     tree.guide_depth = 2
@@ -484,7 +484,7 @@ class SSMSTUI(
 
                 with Vertical(id="main-panel"):
                     with Container(id="query-area") as query_area:
-                        query_area.border_title = r"[white]\[q][/]─Query"
+                        query_area.border_title = r"\[q]─Query"
                         yield TextArea(
                             "",
                             language="sql",
@@ -494,7 +494,7 @@ class SSMSTUI(
                         yield Lazy(AutocompleteDropdown(id="autocomplete-dropdown"))
 
                     with Container(id="results-area") as results_area:
-                        results_area.border_title = r"[white]\[r][/]─Results"
+                        results_area.border_title = r"\[r]─Results"
                         yield Lazy(DataTable(id="results-table", zebra_stripes=True))
 
             yield Static("Not connected", id="status-bar")
