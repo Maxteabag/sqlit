@@ -1,8 +1,6 @@
 """SQLite adapter using built-in sqlite3."""
 
 from __future__ import annotations
-
-import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from .base import ColumnInfo, DatabaseAdapter, TableInfo, resolve_file_path
@@ -28,6 +26,8 @@ class SQLiteAdapter(DatabaseAdapter):
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to SQLite database file."""
+        import sqlite3
+
         file_path = resolve_file_path(config.file_path)
         # check_same_thread=False allows connection to be used from background threads
         # (for async query execution). SQLite serializes access internally.
