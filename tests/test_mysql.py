@@ -31,12 +31,11 @@ class TestMySQLIntegration(BaseDatabaseTestsWithLimit):
         try:
             # Create connection
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "mysql",
                 "--name",
                 connection_name,
-                "--db-type",
-                "mysql",
                 "--server",
                 MYSQL_HOST,
                 "--port",
@@ -68,12 +67,11 @@ class TestMySQLIntegration(BaseDatabaseTestsWithLimit):
 
         # Create connection first
         cli_runner(
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "mysql",
             "--name",
             connection_name,
-            "--db-type",
-            "mysql",
             "--server",
             MYSQL_HOST,
             "--port",

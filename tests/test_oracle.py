@@ -21,12 +21,11 @@ class TestOracleIntegration:
         try:
             # Create connection
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "oracle",
                 "--name",
                 connection_name,
-                "--db-type",
-                "oracle",
                 "--server",
                 ORACLE_HOST,
                 "--port",
@@ -192,12 +191,11 @@ class TestOracleIntegration:
 
         # Create connection first
         cli_runner(
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "oracle",
             "--name",
             connection_name,
-            "--db-type",
-            "oracle",
             "--server",
             ORACLE_HOST,
             "--port",

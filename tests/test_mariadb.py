@@ -31,12 +31,11 @@ class TestMariaDBIntegration(BaseDatabaseTestsWithLimit):
         try:
             # Create connection
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "mariadb",
                 "--name",
                 connection_name,
-                "--db-type",
-                "mariadb",
                 "--server",
                 MARIADB_HOST,
                 "--port",
@@ -68,12 +67,11 @@ class TestMariaDBIntegration(BaseDatabaseTestsWithLimit):
 
         # Create connection first
         cli_runner(
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "mariadb",
             "--name",
             connection_name,
-            "--db-type",
-            "mariadb",
             "--server",
             MARIADB_HOST,
             "--port",

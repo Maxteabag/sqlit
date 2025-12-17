@@ -35,12 +35,11 @@ class TestCockroachDBIntegration(BaseDatabaseTestsWithLimit):
 
         try:
             args = [
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "cockroachdb",
                 "--name",
                 connection_name,
-                "--db-type",
-                "cockroachdb",
                 "--server",
                 COCKROACHDB_HOST,
                 "--port",
@@ -77,12 +76,11 @@ class TestCockroachDBIntegration(BaseDatabaseTestsWithLimit):
         connection_name = "test_delete_cockroachdb"
 
         args = [
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "cockroachdb",
             "--name",
             connection_name,
-            "--db-type",
-            "cockroachdb",
             "--server",
             COCKROACHDB_HOST,
             "--port",

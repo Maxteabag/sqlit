@@ -16,8 +16,6 @@ class TestSQLiteIntegration(BaseDatabaseTestsWithLimit):
             connection_fixture="sqlite_connection",
             db_fixture="sqlite_db",
             create_connection_args=lambda db: [
-                "--db-type",
-                "sqlite",
                 "--file-path",
                 str(db),
             ],
@@ -30,12 +28,11 @@ class TestSQLiteIntegration(BaseDatabaseTestsWithLimit):
         try:
             # Create connection
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "sqlite",
                 "--name",
                 connection_name,
-                "--db-type",
-                "sqlite",
                 "--file-path",
                 str(sqlite_db),
             )
@@ -97,12 +94,11 @@ class TestSQLiteIntegration(BaseDatabaseTestsWithLimit):
 
         # Create connection first
         cli_runner(
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "sqlite",
             "--name",
             connection_name,
-            "--db-type",
-            "sqlite",
             "--file-path",
             str(sqlite_db),
         )

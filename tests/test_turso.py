@@ -28,12 +28,11 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
 
         try:
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "turso",
                 "--name",
                 connection_name,
-                "--db-type",
-                "turso",
                 "--server",
                 turso_db,
                 "--password",
@@ -92,12 +91,11 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
         connection_name = "test_delete_turso"
 
         cli_runner(
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "turso",
             "--name",
             connection_name,
-            "--db-type",
-            "turso",
             "--server",
             turso_db,
             "--password",

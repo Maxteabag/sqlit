@@ -45,12 +45,11 @@ class TestSSHTunnelIntegration:
         try:
             # Create connection with SSH tunnel
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "postgresql",
                 "--name",
                 connection_name,
-                "--db-type",
-                "postgresql",
                 "--server",
                 SSH_REMOTE_DB_HOST,
                 "--port",
@@ -200,12 +199,11 @@ class TestSSHTunnelIntegration:
 
         # Create connection first
         cli_runner(
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "postgresql",
             "--name",
             connection_name,
-            "--db-type",
-            "postgresql",
             "--server",
             SSH_REMOTE_DB_HOST,
             "--port",

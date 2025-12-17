@@ -128,12 +128,11 @@ def sqlite_connection(sqlite_db: Path) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "sqlite",
         "--name",
         connection_name,
-        "--db-type",
-        "sqlite",
         "--file-path",
         str(sqlite_db),
     )
@@ -300,12 +299,11 @@ def mssql_connection(mssql_db: str) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "mssql",
         "--name",
         connection_name,
-        "--db-type",
-        "mssql",
         "--server",
         f"{MSSQL_HOST},{MSSQL_PORT}" if MSSQL_PORT != 1433 else MSSQL_HOST,
         "--database",
@@ -442,12 +440,11 @@ def postgres_connection(postgres_db: str) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "postgresql",
         "--name",
         connection_name,
-        "--db-type",
-        "postgresql",
         "--server",
         POSTGRES_HOST,
         "--port",
@@ -585,12 +582,11 @@ def mysql_connection(mysql_db: str) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "mysql",
         "--name",
         connection_name,
-        "--db-type",
-        "mysql",
         "--server",
         MYSQL_HOST,
         "--port",
@@ -747,12 +743,11 @@ def oracle_connection(oracle_db: str) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "oracle",
         "--name",
         connection_name,
-        "--db-type",
-        "oracle",
         "--server",
         ORACLE_HOST,
         "--port",
@@ -894,12 +889,11 @@ def mariadb_connection(mariadb_db: str) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "mariadb",
         "--name",
         connection_name,
-        "--db-type",
-        "mariadb",
         "--server",
         MARIADB_HOST,
         "--port",
@@ -987,12 +981,11 @@ def duckdb_connection(duckdb_db: Path) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "duckdb",
         "--name",
         connection_name,
-        "--db-type",
-        "duckdb",
         "--file-path",
         str(duckdb_db),
     )
@@ -1136,12 +1129,11 @@ def cockroachdb_connection(cockroachdb_db: str) -> str:
     cleanup_connection(connection_name)
 
     args = [
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "cockroachdb",
         "--name",
         connection_name,
-        "--db-type",
-        "cockroachdb",
         "--server",
         COCKROACHDB_HOST,
         "--port",
@@ -1268,12 +1260,11 @@ def turso_connection(turso_db: str) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "turso",
         "--name",
         connection_name,
-        "--db-type",
-        "turso",
         "--server",
         turso_db,
         "--password",
@@ -1403,12 +1394,11 @@ def d1_connection(d1_db: str) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "d1",
         "--name",
         connection_name,
-        "--db-type",
-        "d1",
         "--host",
         D1_ACCOUNT_ID,
         "--password",
@@ -1550,12 +1540,11 @@ def ssh_connection(ssh_postgres_db: str) -> str:
     cleanup_connection(connection_name)
 
     run_cli(
-        "connection",
-        "create",
+        "connections",
+        "add",
+        "postgresql",
         "--name",
         connection_name,
-        "--db-type",
-        "postgresql",
         "--server",
         SSH_REMOTE_DB_HOST,
         "--port",

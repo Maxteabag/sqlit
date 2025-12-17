@@ -31,12 +31,11 @@ class TestD1Integration(BaseDatabaseTestsWithLimit):
         try:
             # Create connection
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "d1",
                 "--name",
                 connection_name,
-                "--db-type",
-                "d1",
                 "--host",
                 D1_ACCOUNT_ID,
                 "--database",

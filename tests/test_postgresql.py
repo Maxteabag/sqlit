@@ -36,12 +36,11 @@ class TestPostgreSQLIntegration(BaseDatabaseTestsWithLimit):
         try:
             # Create connection
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "postgresql",
                 "--name",
                 connection_name,
-                "--db-type",
-                "postgresql",
                 "--server",
                 POSTGRES_HOST,
                 "--port",
@@ -78,12 +77,11 @@ class TestPostgreSQLIntegration(BaseDatabaseTestsWithLimit):
 
         # Create connection first
         cli_runner(
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "postgresql",
             "--name",
             connection_name,
-            "--db-type",
-            "postgresql",
             "--server",
             POSTGRES_HOST,
             "--port",

@@ -20,12 +20,11 @@ class TestMSSQLIntegration:
 
         try:
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "mssql",
                 "--name",
                 connection_name,
-                "--db-type",
-                "mssql",
                 "--server",
                 f"{MSSQL_HOST},{MSSQL_PORT}" if MSSQL_PORT != 1433 else MSSQL_HOST,
                 "--database",
@@ -186,12 +185,11 @@ class TestMSSQLIntegration:
         connection_name = "test_delete_mssql"
 
         cli_runner(
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "mssql",
             "--name",
             connection_name,
-            "--db-type",
-            "mssql",
             "--server",
             f"{MSSQL_HOST},{MSSQL_PORT}" if MSSQL_PORT != 1433 else MSSQL_HOST,
             "--database",

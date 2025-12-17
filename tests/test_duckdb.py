@@ -20,8 +20,6 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
             connection_fixture="duckdb_connection",
             db_fixture="duckdb_db",
             create_connection_args=lambda db: [
-                "--db-type",
-                "duckdb",
                 "--file-path",
                 str(db),
             ],
@@ -34,12 +32,11 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
         try:
             # Create connection
             result = cli_runner(
-                "connection",
-                "create",
+                "connections",
+                "add",
+                "duckdb",
                 "--name",
                 connection_name,
-                "--db-type",
-                "duckdb",
                 "--file-path",
                 str(duckdb_db),
             )
@@ -100,12 +97,11 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
 
         # Create connection first
         cli_runner(
-            "connection",
-            "create",
+            "connections",
+            "add",
+            "duckdb",
             "--name",
             connection_name,
-            "--db-type",
-            "duckdb",
             "--file-path",
             str(duckdb_db),
         )
