@@ -34,7 +34,7 @@ def apply_mock_environment(settings: dict[str, Any]) -> None:
             os.environ.pop("SQLIT_MOCK_INSTALL_RESULT", None)
 
         pipx = str(drivers.get("pipx", "")).strip().lower()
-        if pipx in {"pipx", "pip"}:
+        if pipx in {"pipx", "pip", "unknown"}:
             os.environ["SQLIT_MOCK_PIPX"] = pipx
         elif pipx == "auto":
             os.environ.pop("SQLIT_MOCK_PIPX", None)

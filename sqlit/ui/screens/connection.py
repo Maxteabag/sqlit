@@ -531,12 +531,24 @@ class ConnectionScreen(ModalScreen):
 
         if self._missing_driver_error:
             error = self._missing_driver_error
-            install_cmd = f'pip install "sqlit-tui[{error.extra_name}]"'
-            test_status.update(
-                f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
-                f"[dim]Install with:[/] {escape(install_cmd)}"
-            )
-            dialog.border_subtitle = "[bold]Install ^i[/]  Cancel <esc>"
+            from ...install_strategy import detect_strategy
+
+            strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
+            if strategy.can_auto_install:
+                install_cmd = strategy.manual_instructions.split("\n")[0].strip()
+                test_status.update(
+                    f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
+                    f"[dim]Install with:[/] {escape(install_cmd)}"
+                )
+                dialog.border_subtitle = "[bold]Install ^i[/]  Cancel <esc>"
+            else:
+                # For unknown install methods, show reason and hint to press ^i for details
+                reason = strategy.reason_unavailable or "Auto-install not available"
+                test_status.update(
+                    f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
+                    f"[dim]{escape(reason)} Press ^i for install instructions.[/]"
+                )
+                dialog.border_subtitle = "[bold]Help ^i[/]  Cancel <esc>"
         else:
             if self._post_install_message and (self._last_test_ok is None or self._last_test_ok):
                 test_status.update(f"✓ {self._post_install_message}")
@@ -1457,12 +1469,23 @@ class ConnectionScreen(ModalScreen):
 
     def _prompt_install_missing_driver(self, error: Exception) -> None:
         from ...db.exceptions import MissingDriverError
-        from ..screens import ConfirmScreen
+        from ...install_strategy import detect_strategy
+        from ..screens import ConfirmScreen, MessageScreen
 
         if not isinstance(error, MissingDriverError):
             return
 
         if self._install_in_progress:
+            return
+
+        strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
+        if not strategy.can_auto_install:
+            self.app.push_screen(
+                MessageScreen(
+                    "Manual installation required",
+                    strategy.manual_instructions,
+                )
+            )
             return
 
         self.app.push_screen(

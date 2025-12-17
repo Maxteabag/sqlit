@@ -37,11 +37,16 @@ def _is_pipx() -> bool:
     pipx_override = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
     if pipx_override in {"1", "true", "yes", "pipx"}:
         return True
-    if pipx_override in {"0", "false", "no", "pip"}:
+    if pipx_override in {"0", "false", "no", "pip", "unknown"}:
         return False
 
     exe = sys.executable.lower()
     return "pipx" in exe or "/pipx/venvs/" in exe or "\\pipx\\venvs\\" in exe
+
+
+def _is_unknown_install() -> bool:
+    """Check if we should mock an unknown installation method (e.g., uvx)."""
+    return os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower() == "unknown"
 
 
 def _pep668_externally_managed() -> bool:
@@ -94,8 +99,34 @@ def _install_paths_writable() -> bool:
     return False
 
 
+def _format_manual_instructions(package_name: str, reason: str) -> str:
+    """Format manual installation instructions with rich markup."""
+    return (
+        f"{reason}\n\n"
+        f"[bold]Install the driver using your preferred package manager:[/]\n\n"
+        f"  [cyan]pip[/]     pip install {package_name}\n"
+        f"  [cyan]pipx[/]    pipx inject sqlit-tui {package_name}\n"
+        f"  [cyan]uv[/]      uv pip install {package_name}\n"
+        f"  [cyan]uvx[/]     uvx --with {package_name} sqlit-tui\n"
+        f"  [cyan]poetry[/]  poetry add {package_name}\n"
+        f"  [cyan]pdm[/]     pdm add {package_name}\n"
+        f"  [cyan]conda[/]   conda install {package_name}"
+    )
+
+
 def detect_strategy(*, extra_name: str, package_name: str) -> InstallStrategy:
     """Detect the best installation strategy for optional driver dependencies."""
+    if _is_unknown_install():
+        return InstallStrategy(
+            kind="unknown",
+            can_auto_install=False,
+            manual_instructions=_format_manual_instructions(
+                package_name,
+                "Unable to detect how sqlit was installed.",
+            ),
+            reason_unavailable="Unable to detect installation method.",
+        )
+
     if _is_pipx():
         cmd = ["pipx", "inject", "sqlit-tui", package_name]
         return InstallStrategy(
@@ -109,12 +140,10 @@ def detect_strategy(*, extra_name: str, package_name: str) -> InstallStrategy:
         return InstallStrategy(
             kind="externally-managed",
             can_auto_install=False,
-            manual_instructions=(
-                "This Python environment is externally managed (PEP 668).\n"
-                "Install the driver via your OS package manager, or install sqlit-tui in an isolated environment.\n\n"
-                f"pipx install 'sqlit-tui[{extra_name}]'\n"
-                f"pipx inject sqlit-tui {package_name}\n"
-            ).rstrip(),
+            manual_instructions=_format_manual_instructions(
+                package_name,
+                "This Python environment is externally managed (PEP 668).",
+            ),
             reason_unavailable="Externally managed Python environment (PEP 668).",
         )
 
@@ -122,9 +151,9 @@ def detect_strategy(*, extra_name: str, package_name: str) -> InstallStrategy:
         return InstallStrategy(
             kind="no-pip",
             can_auto_install=False,
-            manual_instructions=(
-                "pip is not available for this Python interpreter.\n"
-                "Install the driver via your OS package manager, or install sqlit-tui in an isolated environment."
+            manual_instructions=_format_manual_instructions(
+                package_name,
+                "pip is not available for this Python interpreter.",
             ),
             reason_unavailable="pip is not available.",
         )
@@ -151,9 +180,9 @@ def detect_strategy(*, extra_name: str, package_name: str) -> InstallStrategy:
     return InstallStrategy(
         kind="pip-unwritable",
         can_auto_install=False,
-        manual_instructions=(
-            "This Python environment is not writable and user-site installs are disabled.\n"
-            "Install the driver via your OS package manager, or use a virtual environment/pipx."
+        manual_instructions=_format_manual_instructions(
+            package_name,
+            "This Python environment is not writable and user-site installs are disabled.",
         ),
         reason_unavailable="Python environment not writable and user-site disabled.",
     )

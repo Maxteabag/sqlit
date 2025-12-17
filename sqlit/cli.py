@@ -63,9 +63,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--mock-pipx",
-        choices=["auto", "pipx", "pip"],
+        choices=["auto", "pipx", "pip", "unknown"],
         default="auto",
-        help="Mock whether sqlit is running under pipx for install hints (default: auto).",
+        help="Mock installation method for install hints: pipx, pip, or unknown (can't auto-install).",
     )
     parser.add_argument(
         "--profile-startup",

@@ -27,14 +27,16 @@ class MessageScreen(ModalScreen):
     }
 
     #message-dialog {
-        width: 70;
-        max-width: 80%;
+        width: auto;
+        min-width: 70;
+        max-width: 95%;
         border: solid $primary;
         border-subtitle-color: $primary;
     }
 
     #message-content {
-        padding: 1;
+        padding: 1 2;
+        color: $text;
     }
     """
 
