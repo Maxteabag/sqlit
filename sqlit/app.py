@@ -81,28 +81,6 @@ class SSMSTUI(
                 "input-selection-background": "#2a3144 40%",
             },
         ),
-        Theme(
-            name="sqlit-light",
-            primary="#2f7f3f",
-            secondary="#4d6fb3",
-            accent="#4d6fb3",
-            warning="#b45309",
-            error="#b91c1c",
-            success="#15803d",
-            foreground="#1f2937",
-            background="#f5f7fb",
-            surface="#e7ebf4",
-            panel="#d8dde9",
-            dark=False,
-            variables={
-                "border": "#111827",
-                "border-blurred": "#111827",
-                "footer-background": "#e7ebf4",
-                "footer-key-foreground": "#7FA1DE",
-                "button-color-foreground": "#f5f7fb",
-                "input-selection-background": "#cbd5e1 50%",
-            },
-        ),
     ]
 
     CSS = """
@@ -516,9 +494,9 @@ class SSMSTUI(
             try:
                 self.theme = settings["theme"]
             except Exception:
-                self.theme = "tokyo-night"
+                self.theme = "sqlit"
         else:
-            self.theme = "tokyo-night"
+            self.theme = "sqlit"
 
         self._expanded_paths = set(settings.get("expanded_nodes", []))
         self._startup_stamp("settings_applied")
