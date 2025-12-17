@@ -143,7 +143,10 @@ class AutocompleteMixin:
 
     def _hide_autocomplete(self: AppProtocol) -> None:
         """Hide the autocomplete dropdown."""
-        self.autocomplete_dropdown.hide()
+        try:
+            self.autocomplete_dropdown.hide()
+        except Exception:
+            pass  # Widget not mounted yet
         self._autocomplete_visible = False
 
     def _apply_autocomplete(self: AppProtocol) -> None:

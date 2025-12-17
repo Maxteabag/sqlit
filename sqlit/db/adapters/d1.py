@@ -158,8 +158,11 @@ class D1Adapter(DatabaseAdapter):
                 continue
             name = col.get("name")
             data_type = col.get("type")
+            # pk > 0 indicates column is part of primary key
+            pk_value = col.get("pk", 0)
+            is_pk = isinstance(pk_value, int) and pk_value > 0
             if isinstance(name, str) and isinstance(data_type, str):
-                cols.append(ColumnInfo(name=name, data_type=data_type))
+                cols.append(ColumnInfo(name=name, data_type=data_type, is_primary_key=is_pk))
         return cols
 
     def get_procedures(self, conn: D1Connection, database: str | None = None) -> list[str]:

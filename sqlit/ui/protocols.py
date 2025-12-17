@@ -234,6 +234,7 @@ class AppProtocol(Protocol):
     _last_result_rows: list[tuple[Any, ...]]
     _last_result_row_count: int
     _internal_clipboard: str
+    _last_query_table: dict[str, Any] | None
 
     # === UI state ===
 

@@ -758,6 +758,7 @@ class ResultsFocusedState(State):
 
     def _setup_actions(self) -> None:
         self.allows("view_cell", key="v", label="View cell", help="View selected cell")
+        self.allows("edit_cell", key="u", label="Update cell", help="Update cell (generate UPDATE)")
         self.allows("copy_context", key="y", label="Copy cell", help="Copy selected cell")
         self.allows("copy_row", key="Y", label="Copy row", help="Copy selected row")
         self.allows("copy_results", key="a", label="Copy all", help="Copy all results")
@@ -777,6 +778,7 @@ class ResultsFocusedState(State):
             left.append(DisplayBinding(key="y", label="Copy error", action="copy_context"))
         else:
             left.append(DisplayBinding(key="v", label="View cell", action="view_cell"))
+            left.append(DisplayBinding(key="u", label="Update", action="edit_cell"))
             left.append(DisplayBinding(key="y", label="Copy cell", action="copy_context"))
             left.append(DisplayBinding(key="Y", label="Copy row", action="copy_row"))
             left.append(DisplayBinding(key="a", label="Copy all", action="copy_results"))

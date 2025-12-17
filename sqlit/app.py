@@ -263,6 +263,7 @@ class SSMSTUI(
         Binding("j", "tree_cursor_down", "Down", show=False),
         Binding("k", "tree_cursor_up", "Up", show=False),
         Binding("v", "view_cell", "View cell", show=False),
+        Binding("u", "edit_cell", "Update cell", show=False),
         Binding("h", "results_cursor_left", "Left", show=False),
         Binding("j", "results_cursor_down", "Down", show=False),
         Binding("k", "results_cursor_up", "Up", show=False),
@@ -345,6 +346,7 @@ class SSMSTUI(
         self._columns_loading: set[str] = set()
         self._state_machine = UIStateMachine()
         self._session_factory: Any | None = None
+        self._last_query_table: dict | None = None
 
         if mock_profile:
             self._session_factory = self._create_mock_session_factory(mock_profile)

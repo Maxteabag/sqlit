@@ -44,6 +44,7 @@ class ColumnInfo:
 
     name: str
     data_type: str
+    is_primary_key: bool = False
 
 
 # Type alias for table/view info: (schema, name)
@@ -318,6 +319,23 @@ class MySQLBaseAdapter(CursorBasedAdapter):
     ) -> list[ColumnInfo]:
         """Get columns for a table. Schema parameter is ignored (MySQL has no schemas)."""
         cursor = conn.cursor()
+
+        # Get primary key columns
+        if database:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.key_column_usage "
+                "WHERE table_schema = %s AND table_name = %s AND constraint_name = 'PRIMARY'",
+                (database, table),
+            )
+        else:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.key_column_usage "
+                "WHERE table_schema = DATABASE() AND table_name = %s AND constraint_name = 'PRIMARY'",
+                (table,),
+            )
+        pk_columns = {row[0] for row in cursor.fetchall()}
+
+        # Get all columns
         if database:
             cursor.execute(
                 "SELECT column_name, data_type FROM information_schema.columns "
@@ -332,7 +350,7 @@ class MySQLBaseAdapter(CursorBasedAdapter):
                 "ORDER BY ordinal_position",
                 (table,),
             )
-        return [ColumnInfo(name=row[0], data_type=row[1]) for row in cursor.fetchall()]
+        return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in cursor.fetchall()]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures."""
@@ -412,13 +430,31 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         """Get columns for a table."""
         cursor = conn.cursor()
         schema = schema or "public"
+
+        # Get primary key columns
+        cursor.execute(
+            "SELECT kcu.column_name "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "  AND tc.table_schema = kcu.table_schema "
+            "WHERE tc.constraint_type = 'PRIMARY KEY' "
+            "AND tc.table_schema = %s AND tc.table_name = %s",
+            (schema, table),
+        )
+        pk_columns = {row[0] for row in cursor.fetchall()}
+
+        # Get all columns
         cursor.execute(
             "SELECT column_name, data_type FROM information_schema.columns "
             "WHERE table_schema = %s AND table_name = %s "
             "ORDER BY ordinal_position",
             (schema, table),
         )
-        return [ColumnInfo(name=row[0], data_type=row[1]) for row in cursor.fetchall()]
+        return [
+            ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns)
+            for row in cursor.fetchall()
+        ]
 
     def quote_identifier(self, name: str) -> str:
         """Quote identifier using double quotes for PostgreSQL.

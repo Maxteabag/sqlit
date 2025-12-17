@@ -446,7 +446,7 @@ class TreeMixin:
 
     def action_select_table(self: AppProtocol) -> None:
         """Generate and execute SELECT query for selected table/view."""
-        if not self.current_adapter:
+        if not self.current_adapter or not self._session:
             return
 
         node = self.object_tree.cursor_node
@@ -457,6 +457,20 @@ class TreeMixin:
         data = node.data
         if not isinstance(data, TableNode | ViewNode):
             return
+
+        # Store table info for edit_cell action
+        try:
+            columns = self._session.adapter.get_columns(
+                self._session.connection, data.name, data.database, data.schema
+            )
+            self._last_query_table = {
+                "database": data.database,
+                "schema": data.schema,
+                "name": data.name,
+                "columns": columns,
+            }
+        except Exception:
+            self._last_query_table = None
 
         self.query_input.text = self.current_adapter.build_select_query(data.name, 100, data.database, data.schema)
         self.action_execute_query()

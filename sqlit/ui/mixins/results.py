@@ -144,3 +144,102 @@ class ResultsMixin:
         """Move results cursor right (vim l)."""
         if self.results_table.has_focus:
             self.results_table.action_cursor_right()
+
+    def action_edit_cell(self: AppProtocol) -> None:
+        """Generate an UPDATE query for the selected cell and enter insert mode."""
+        table = self.results_table
+        if table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+
+        if not self._last_result_columns:
+            self.notify("No column info", severity="warning")
+            return
+
+        try:
+            cursor_row, cursor_col = table.cursor_coordinate
+            value = table.get_cell_at(table.cursor_coordinate)
+            row_values = table.get_row_at(cursor_row)
+        except Exception:
+            return
+
+        # Get column name
+        if cursor_col >= len(self._last_result_columns):
+            return
+        column_name = self._last_result_columns[cursor_col]
+
+        # Check if this column is a primary key - don't allow editing PKs
+        if hasattr(self, "_last_query_table") and self._last_query_table:
+            for col in self._last_query_table.get("columns", []):
+                if col.name == column_name and col.is_primary_key:
+                    self.notify("Cannot edit primary key column", severity="warning")
+                    return
+
+        # Format value for SQL
+        def sql_value(v: object) -> str:
+            if v is None:
+                return "NULL"
+            if isinstance(v, bool):
+                return "TRUE" if v else "FALSE"
+            if isinstance(v, int | float):
+                return str(v)
+            # String - escape single quotes
+            return "'" + str(v).replace("'", "''") + "'"
+
+        # Get table name and primary key columns
+        table_name = "<table>"
+        pk_column_names: set[str] = set()
+
+        if hasattr(self, "_last_query_table") and self._last_query_table:
+            table_info = self._last_query_table
+            table_name = table_info["name"]
+            # Get PK columns from column info
+            for col in table_info.get("columns", []):
+                if col.is_primary_key:
+                    pk_column_names.add(col.name)
+
+        # Build WHERE clause - prefer PK columns, fall back to all columns
+        where_parts = []
+        for i, col in enumerate(self._last_result_columns):
+            if i < len(row_values):
+                # If we have PK info, only use PK columns; otherwise use all columns
+                if pk_column_names and col not in pk_column_names:
+                    continue
+                val = row_values[i]
+                if val is None:
+                    where_parts.append(f"{col} IS NULL")
+                else:
+                    where_parts.append(f"{col} = {sql_value(val)}")
+
+        # If no where parts (no PKs matched result columns), fall back to all columns
+        if not where_parts:
+            for i, col in enumerate(self._last_result_columns):
+                if i < len(row_values):
+                    val = row_values[i]
+                    if val is None:
+                        where_parts.append(f"{col} IS NULL")
+                    else:
+                        where_parts.append(f"{col} = {sql_value(val)}")
+
+        where_clause = " AND ".join(where_parts)
+
+        # Generate UPDATE query with empty placeholder for the new value
+        query = f"UPDATE {table_name} SET {column_name} = '' WHERE {where_clause};"
+
+        # Find position inside the empty quotes (after "SET column = '")
+        set_prefix = f"SET {column_name} = '"
+        cursor_pos = query.find(set_prefix) + len(set_prefix)
+
+        # Set query and switch to insert mode
+        self.query_input.text = query
+        self.query_input.focus()
+
+        # Position cursor inside the empty quotes
+        self.query_input.cursor_location = (0, cursor_pos)
+
+        # Enter insert mode
+        from ...widgets import VimMode
+        self.vim_mode = VimMode.INSERT
+        self.query_input.read_only = False
+        self._update_status_bar()
+        self._update_footer_bindings()

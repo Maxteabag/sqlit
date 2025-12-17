@@ -85,11 +85,23 @@ class OracleAdapter(DatabaseAdapter):
     ) -> list[ColumnInfo]:
         """Get columns for a table from Oracle. Schema parameter is ignored."""
         cursor = conn.cursor()
+
+        # Get primary key columns
+        cursor.execute(
+            "SELECT cols.column_name "
+            "FROM user_constraints cons "
+            "JOIN user_cons_columns cols ON cons.constraint_name = cols.constraint_name "
+            "WHERE cons.constraint_type = 'P' AND cons.table_name = :1",
+            (table.upper(),),
+        )
+        pk_columns = {row[0] for row in cursor.fetchall()}
+
+        # Get all columns
         cursor.execute(
             "SELECT column_name, data_type FROM user_tab_columns " "WHERE table_name = :1 ORDER BY column_id",
             (table.upper(),),
         )
-        return [ColumnInfo(name=row[0], data_type=row[1]) for row in cursor.fetchall()]
+        return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in cursor.fetchall()]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures from Oracle."""

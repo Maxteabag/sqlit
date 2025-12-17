@@ -90,13 +90,28 @@ class DuckDBAdapter(DatabaseAdapter):
     ) -> list[ColumnInfo]:
         """Get columns for a table from DuckDB."""
         schema = schema or "main"
+
+        # Get primary key columns
+        result = conn.execute(
+            "SELECT kcu.column_name "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "  AND tc.table_schema = kcu.table_schema "
+            "WHERE tc.constraint_type = 'PRIMARY KEY' "
+            "AND tc.table_schema = ? AND tc.table_name = ?",
+            (schema, table),
+        )
+        pk_columns = {row[0] for row in result.fetchall()}
+
+        # Get all columns
         result = conn.execute(
             "SELECT column_name, data_type FROM information_schema.columns "
             "WHERE table_schema = ? AND table_name = ? "
             "ORDER BY ordinal_position",
             (schema, table),
         )
-        return [ColumnInfo(name=row[0], data_type=row[1]) for row in result.fetchall()]
+        return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in result.fetchall()]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """DuckDB doesn't support stored procedures - return empty list."""

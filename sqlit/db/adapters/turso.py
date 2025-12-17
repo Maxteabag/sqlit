@@ -90,7 +90,8 @@ class TursoAdapter(DatabaseAdapter):
         quoted_table = self.quote_identifier(table)
         result = conn.execute(f"PRAGMA table_info({quoted_table})")
         # PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
-        return [ColumnInfo(name=row[1], data_type=row[2] or "TEXT") for row in result.rows]
+        # pk > 0 indicates column is part of primary key
+        return [ColumnInfo(name=row[1], data_type=row[2] or "TEXT", is_primary_key=row[5] > 0) for row in result.rows]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Turso doesn't support stored procedures - return empty list."""

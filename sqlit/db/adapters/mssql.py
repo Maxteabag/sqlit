@@ -139,6 +139,33 @@ class SQLServerAdapter(DatabaseAdapter):
         """Get columns for a table from SQL Server."""
         cursor = conn.cursor()
         schema = schema or "dbo"
+
+        # Get primary key columns
+        if database:
+            cursor.execute(
+                f"SELECT kcu.COLUMN_NAME "
+                f"FROM [{database}].INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
+                f"JOIN [{database}].INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
+                f"  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
+                f"  AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA "
+                f"WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' "
+                f"AND tc.TABLE_SCHEMA = ? AND tc.TABLE_NAME = ?",
+                (schema, table),
+            )
+        else:
+            cursor.execute(
+                "SELECT kcu.COLUMN_NAME "
+                "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
+                "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
+                "  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
+                "  AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA "
+                "WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' "
+                "AND tc.TABLE_SCHEMA = ? AND tc.TABLE_NAME = ?",
+                (schema, table),
+            )
+        pk_columns = {row[0] for row in cursor.fetchall()}
+
+        # Get all columns
         if database:
             cursor.execute(
                 f"SELECT COLUMN_NAME, DATA_TYPE FROM [{database}].INFORMATION_SCHEMA.COLUMNS "
@@ -151,7 +178,7 @@ class SQLServerAdapter(DatabaseAdapter):
                 "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
                 (schema, table),
             )
-        return [ColumnInfo(name=row[0], data_type=row[1]) for row in cursor.fetchall()]
+        return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in cursor.fetchall()]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures from SQL Server."""

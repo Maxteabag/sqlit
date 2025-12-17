@@ -91,6 +91,23 @@ class MariaDBAdapter(MySQLBaseAdapter):
     ) -> list[ColumnInfo]:
         """Get columns for a table from MariaDB. Schema parameter is ignored."""
         cursor = conn.cursor()
+
+        # Get primary key columns
+        if database:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.key_column_usage "
+                "WHERE table_schema = ? AND table_name = ? AND constraint_name = 'PRIMARY'",
+                (database, table),
+            )
+        else:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.key_column_usage "
+                "WHERE table_schema = DATABASE() AND table_name = ? AND constraint_name = 'PRIMARY'",
+                (table,),
+            )
+        pk_columns = {row[0] for row in cursor.fetchall()}
+
+        # Get all columns
         if database:
             cursor.execute(
                 "SELECT column_name, data_type FROM information_schema.columns "
@@ -105,7 +122,7 @@ class MariaDBAdapter(MySQLBaseAdapter):
                 "ORDER BY ordinal_position",
                 (table,),
             )
-        return [ColumnInfo(name=row[0], data_type=row[1]) for row in cursor.fetchall()]
+        return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in cursor.fetchall()]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures from MariaDB."""

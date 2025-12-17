@@ -32,6 +32,7 @@ class QueryMixin:
     _schema_worker: Worker[Any] | None = None
     _cancellable_query: Any | None = None
     _spinner_timer: Timer | None = None
+    _query_cursor_cache: dict[str, tuple[int, int]] | None = None  # query text -> cursor (row, col)
 
     def action_execute_query(self: AppProtocol) -> None:
         """Execute the current query."""
@@ -309,7 +310,27 @@ class QueryMixin:
 
         action, data = result
         if action == "select":
+            # Initialize cursor cache if needed
+            if self._query_cursor_cache is None:
+                self._query_cursor_cache = {}
+
+            # Save current query's cursor position before switching
+            current_query = self.query_input.text
+            if current_query:
+                self._query_cursor_cache[current_query] = self.query_input.cursor_location
+
+            # Set new query text
             self.query_input.text = data
+
+            # Restore cursor position if we have it cached, otherwise go to end
+            if data in self._query_cursor_cache:
+                self.query_input.cursor_location = self._query_cursor_cache[data]
+            else:
+                # Move cursor to end of query
+                lines = data.split("\n")
+                last_line = len(lines) - 1
+                last_col = len(lines[-1]) if lines else 0
+                self.query_input.cursor_location = (last_line, last_col)
         elif action == "delete":
             self._delete_history_entry(data)
             self.action_show_history()
