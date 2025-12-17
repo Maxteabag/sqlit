@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -218,6 +219,10 @@ class SSMSTUI(
     def __init__(self, mock_profile: MockProfile | None = None):
         super().__init__()
         self._mock_profile = mock_profile
+        self._debug_mode = os.environ.get("SQLIT_DEBUG") == "1"
+        self._startup_mark = self._parse_startup_mark(os.environ.get("SQLIT_STARTUP_MARK"))
+        self._startup_init_time = time.perf_counter()
+        self._launch_ms: float | None = None
         self.connections: list[ConnectionConfig] = []
         self.current_connection: Any | None = None
         self.current_config: ConnectionConfig | None = None
@@ -445,9 +450,25 @@ class SSMSTUI(
             self.object_tree.cursor_line = 0
         self._update_section_labels()
         self._maybe_restore_connection_screen()
+        if self._debug_mode:
+            self.call_after_refresh(self._record_launch_ms)
 
     def _get_restart_cache_path(self) -> Path:
         return Path(tempfile.gettempdir()) / "sqlit-driver-install-restore.json"
+
+    @staticmethod
+    def _parse_startup_mark(value: str | None) -> float | None:
+        if not value:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _record_launch_ms(self) -> None:
+        base = self._startup_mark if self._startup_mark is not None else self._startup_init_time
+        self._launch_ms = (time.perf_counter() - base) * 1000
+        self._update_status_bar()
 
     def _maybe_restore_connection_screen(self) -> None:
         """Restore an in-progress connection form after a driver-install restart."""

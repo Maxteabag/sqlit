@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 
 from .config import AuthType, DatabaseType
 
@@ -38,6 +39,11 @@ def main() -> int:
         choices=["auto", "pipx", "pip"],
         default="auto",
         help="Mock whether sqlit is running under pipx for install hints (default: auto).",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show startup timing in the status bar.",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -118,6 +124,7 @@ def main() -> int:
         help="Maximum rows to fetch (default: 1000, use 0 for unlimited)",
     )
 
+    startup_mark = time.perf_counter()
     args = parser.parse_args()
     if args.mock_missing_drivers:
         os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = str(args.mock_missing_drivers)
@@ -129,7 +136,12 @@ def main() -> int:
         os.environ["SQLIT_MOCK_PIPX"] = str(args.mock_pipx)
     else:
         os.environ.pop("SQLIT_MOCK_PIPX", None)
-
+    if args.debug:
+        os.environ["SQLIT_DEBUG"] = "1"
+        os.environ["SQLIT_STARTUP_MARK"] = str(startup_mark)
+    else:
+        os.environ.pop("SQLIT_DEBUG", None)
+        os.environ.pop("SQLIT_STARTUP_MARK", None)
     if args.command is None:
         from .app import SSMSTUI
 
