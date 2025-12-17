@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from typing import Any
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
+from textual.lazy import Lazy
 from textual.timer import Timer
 from textual.widgets import DataTable, Static, TextArea, Tree
 from textual.worker import Worker
@@ -218,6 +220,11 @@ class SSMSTUI(
     def __init__(self, mock_profile: MockProfile | None = None):
         super().__init__()
         self._mock_profile = mock_profile
+        self._startup_profile = os.environ.get("SQLIT_PROFILE_STARTUP") == "1"
+        self._startup_mark = self._parse_startup_mark(os.environ.get("SQLIT_STARTUP_MARK"))
+        self._startup_init_time = time.perf_counter()
+        self._startup_events: list[tuple[str, float]] = []
+        self._startup_stamp("init_start")
         self.connections: list[ConnectionConfig] = []
         self.current_connection: Any | None = None
         self.current_config: ConnectionConfig | None = None
@@ -268,6 +275,7 @@ class SSMSTUI(
 
         if mock_profile:
             self._session_factory = self._create_mock_session_factory(mock_profile)
+        self._startup_stamp("init_end")
 
     def _create_mock_session_factory(self, profile: MockProfile) -> Any:
         """Create a session factory that uses mock adapters."""
@@ -387,6 +395,7 @@ class SSMSTUI(
             os.execvp(exe, argv)
 
     def compose(self) -> ComposeResult:
+        self._startup_stamp("compose_start")
         with Vertical(id="main-container"):
             with Horizontal(id="content"):
                 with Vertical(id="sidebar"):
@@ -405,21 +414,24 @@ class SSMSTUI(
                             id="query-input",
                             read_only=True,
                         )
-                        yield AutocompleteDropdown(id="autocomplete-dropdown")
+                        yield Lazy(AutocompleteDropdown(id="autocomplete-dropdown"))
 
                     with Container(id="results-area"):
                         yield Static(r"\[r] Results", classes="section-label", id="label-results")
-                        yield DataTable(id="results-table", zebra_stripes=True)
+                        yield Lazy(DataTable(id="results-table", zebra_stripes=True))
 
             yield Static("Not connected", id="status-bar")
 
         yield ContextFooter()
+        self._startup_stamp("compose_end")
 
     def on_mount(self) -> None:
         """Initialize the app."""
+        self._startup_stamp("on_mount_start")
         self._restart_argv = self._compute_restart_argv()
 
         settings = load_settings()
+        self._startup_stamp("settings_loaded")
         if "theme" in settings:
             try:
                 self.theme = settings["theme"]
@@ -428,23 +440,91 @@ class SSMSTUI(
         else:
             self.theme = "tokyo-night"
 
-        settings = load_settings()
         self._expanded_paths = set(settings.get("expanded_nodes", []))
+        self._startup_stamp("settings_applied")
 
         if self._mock_profile:
             self.connections = self._mock_profile.connections.copy()
         else:
-            self.connections = load_connections()
+            self.connections = load_connections(load_credentials=False)
+        self._startup_stamp("connections_loaded")
 
         self.refresh_tree()
-        self._update_footer_bindings()
+        self._startup_stamp("tree_refreshed")
 
         self.object_tree.focus()
+        self._startup_stamp("tree_focused")
         # Move cursor to first node if available
         if self.object_tree.root.children:
             self.object_tree.cursor_line = 0
         self._update_section_labels()
         self._maybe_restore_connection_screen()
+        self._startup_stamp("restore_checked")
+        self.call_after_refresh(self._update_status_bar)
+        self._update_footer_bindings()
+        self._startup_stamp("footer_updated")
+        self._log_startup_timing()
+
+    def _startup_stamp(self, name: str) -> None:
+        if not self._startup_profile:
+            return
+        self._startup_events.append((name, time.perf_counter()))
+
+    @staticmethod
+    def _parse_startup_mark(value: str | None) -> float | None:
+        if not value:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _log_startup_timing(self) -> None:
+        if not self._startup_profile:
+            return
+        now = time.perf_counter()
+        if self._startup_mark is not None:
+            since_start = (now - self._startup_mark) * 1000
+        else:
+            since_start = None
+        init_to_mount = (now - self._startup_init_time) * 1000
+
+        parts = []
+        if since_start is not None:
+            parts.append(f"start_to_mount_ms={since_start:.2f}")
+        parts.append(f"init_to_mount_ms={init_to_mount:.2f}")
+        print(f"[sqlit] startup {' '.join(parts)}", file=sys.stderr)
+        self._log_startup_steps()
+
+        def after_refresh() -> None:
+            now_refresh = time.perf_counter()
+            if self._startup_mark is not None:
+                start_to_refresh = (now_refresh - self._startup_mark) * 1000
+            else:
+                start_to_refresh = None
+            init_to_refresh = (now_refresh - self._startup_init_time) * 1000
+
+            self._log_startup_step("first_refresh", now_refresh)
+            refresh_parts = []
+            if start_to_refresh is not None:
+                refresh_parts.append(f"start_to_first_refresh_ms={start_to_refresh:.2f}")
+            refresh_parts.append(f"init_to_first_refresh_ms={init_to_refresh:.2f}")
+            print(f"[sqlit] startup {' '.join(refresh_parts)}", file=sys.stderr)
+
+        self.call_after_refresh(after_refresh)
+
+    def _log_startup_steps(self) -> None:
+        for name, ts in self._startup_events:
+            self._log_startup_step(name, ts)
+
+    def _log_startup_step(self, name: str, timestamp: float) -> None:
+        if not self._startup_profile:
+            return
+        parts = [f"step={name}"]
+        if self._startup_mark is not None:
+            parts.append(f"start_ms={(timestamp - self._startup_mark) * 1000:.2f}")
+        parts.append(f"init_ms={(timestamp - self._startup_init_time) * 1000:.2f}")
+        print(f"[sqlit] startup {' '.join(parts)}", file=sys.stderr)
 
     def _get_restart_cache_path(self) -> Path:
         return Path(tempfile.gettempdir()) / "sqlit-driver-install-restore.json"

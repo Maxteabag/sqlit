@@ -47,6 +47,22 @@ class ConnectionMixin:
     current_config: ConnectionConfig | None = None
     current_adapter: DatabaseAdapter | None = None
 
+    def _populate_credentials_if_missing(self: AppProtocol, config: ConnectionConfig) -> None:
+        """Populate missing credentials from the credentials service."""
+        if config.password and config.ssh_password:
+            return
+        from ...services.credentials import get_credentials_service
+
+        service = get_credentials_service()
+        if not config.password:
+            password = service.get_password(config.name)
+            if password:
+                config.password = password
+        if not config.ssh_password:
+            ssh_password = service.get_ssh_password(config.name)
+            if ssh_password:
+                config.ssh_password = ssh_password
+
     def connect_to_server(self: AppProtocol, config: ConnectionConfig) -> None:
         """Connect to a database (async, non-blocking).
 
@@ -56,6 +72,8 @@ class ConnectionMixin:
         from dataclasses import replace
 
         from ..screens import PasswordInputScreen
+
+        self._populate_credentials_if_missing(config)
 
         if _needs_ssh_password(config):
 

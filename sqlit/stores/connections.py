@@ -45,7 +45,7 @@ class ConnectionStore(JSONFileStore):
         """Reset the singleton instance (useful for testing)."""
         cls._instance = None
 
-    def load_all(self) -> list[ConnectionConfig]:
+    def load_all(self, load_credentials: bool = True) -> list[ConnectionConfig]:
         """Load all saved connections.
 
         Connections are loaded from JSON, and passwords are retrieved
@@ -70,8 +70,9 @@ class ConnectionStore(JSONFileStore):
             configs = []
             for conn in migrated:
                 config = ConnectionConfig(**conn)
-                # Retrieve passwords from credentials service
-                self._load_credentials(config)
+                if load_credentials:
+                    # Retrieve passwords from credentials service
+                    self._load_credentials(config)
                 configs.append(config)
             return configs
         except (TypeError, KeyError):
@@ -216,9 +217,9 @@ class ConnectionStore(JSONFileStore):
 _store = ConnectionStore()
 
 
-def load_connections() -> list[ConnectionConfig]:
+def load_connections(load_credentials: bool = True) -> list[ConnectionConfig]:
     """Load saved connections from config file."""
-    return _store.load_all()
+    return _store.load_all(load_credentials=load_credentials)
 
 
 def save_connections(connections: list[ConnectionConfig]) -> None:
