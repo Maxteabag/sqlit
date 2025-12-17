@@ -34,8 +34,8 @@ class ContextFooter(Horizontal):
     ContextFooter {
         height: 1;
         dock: bottom;
-        background: $surface;
-        color: $primary;
+        background: $footer-background;
+        color: $footer-key-foreground;
         padding: 0 1;
     }
 
@@ -89,8 +89,9 @@ class Dialog(Container):
 
     DEFAULT_CSS = """
     Dialog {
-        border: solid $primary;
+        border: round $primary;
         background: $surface;
+        color: $primary;
         padding: 1;
         height: auto;
         max-height: 85%;
@@ -99,7 +100,7 @@ class Dialog(Container):
         scrollbar-visibility: hidden;
 
         border-title-align: left;
-        border-title-color: $text-muted;
+        border-title-color: $primary;
         border-title-background: $surface;
         border-title-style: bold;
 
@@ -129,7 +130,15 @@ class Dialog(Container):
         if shortcuts:
             # Use a visible separator. Border subtitles can collapse regular spaces,
             # so we use non-breaking spaces to preserve padding around the separator.
-            subtitle = "\u00a0·\u00a0".join(f"{action}: [bold]{key}[/]" for action, key in shortcuts)
+            def format_key(key: str) -> str:
+                # Wrap key in <> if not already wrapped
+                if key.startswith("<") and key.endswith(">"):
+                    return key
+                return f"<{key}>"
+
+            subtitle = "\u00a0·\u00a0".join(
+                f"{action}: [bold]{format_key(key)}[/]" for action, key in shortcuts
+            )
             self.border_subtitle = subtitle
 
 
@@ -145,7 +154,7 @@ class AutocompleteDropdown(Static):
         height: auto;
         max-height: 10;
         background: $surface;
-        border: solid $primary;
+        border: round $border;
         padding: 0;
         display: none;
     }

@@ -51,7 +51,16 @@ class TreeMixin:
             display_info = escape_markup(conn.get_display_info())
             db_type_label = self._db_type_badge(conn.db_type)
             escaped_name = escape_markup(conn.name)
-            node = self.object_tree.root.add(f"[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})")
+            # Check if this is the connected server
+            is_connected = (
+                self.current_config is not None
+                and conn.name == self.current_config.name
+            )
+            if is_connected:
+                label = f"[green]* {escaped_name}[/green] [{db_type_label}] ({display_info})"
+            else:
+                label = f"[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})"
+            node = self.object_tree.root.add(label)
             node.data = ConnectionNode(config=conn)
             node.allow_expand = True
 
@@ -70,7 +79,7 @@ class TreeMixin:
             db_type_label = self._db_type_badge(config.db_type)
             escaped_name = escape_markup(config.name)
             if connected:
-                name = f"[green]{escaped_name}[/green]"
+                name = f"[green]* {escaped_name}[/green]"
             else:
                 name = escaped_name
             return f"{name} [{db_type_label}] ({display_info})"

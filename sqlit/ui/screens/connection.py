@@ -81,7 +81,7 @@ class ConnectionScreen(ModalScreen):
         background: $surface;
         padding: 1;
         border-title-align: left;
-        border-title-color: $text-muted;
+        border-title-color: $primary;
         border-title-background: $surface;
         border-title-style: bold;
         border-subtitle-align: right;
@@ -109,7 +109,7 @@ class ConnectionScreen(ModalScreen):
     .field-container {
         position: relative;
         height: auto;
-        border: solid $primary-darken-2;
+        border: solid $panel;
         background: $surface;
         padding: 0;
         margin-top: 0;
@@ -125,14 +125,17 @@ class ConnectionScreen(ModalScreen):
 
     .field-container.invalid {
         border: solid $error;
+        border-title-color: $error;
     }
 
     .field-container.focused {
         border: solid $primary;
+        border-title-color: $primary;
     }
 
     .field-container.invalid.focused {
         border: solid $error;
+        border-title-color: $error;
     }
 
     .field-container Input {

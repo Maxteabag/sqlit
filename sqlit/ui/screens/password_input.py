@@ -41,7 +41,7 @@ class PasswordInputScreen(ModalScreen):
     }
 
     #password-container {
-        border: solid $primary-darken-2;
+        border: solid $panel;
         background: $surface;
         padding: 0;
         margin-top: 0;
@@ -54,6 +54,7 @@ class PasswordInputScreen(ModalScreen):
 
     #password-container.focused {
         border: solid $primary;
+        border-title-color: $primary;
     }
 
     #password-container Input {

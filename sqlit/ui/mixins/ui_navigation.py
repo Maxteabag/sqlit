@@ -5,8 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from textual.timer import Timer
-from textual.widgets import Static
-
 from ..protocols import AppProtocol
 
 if TYPE_CHECKING:
@@ -36,9 +34,9 @@ class UINavigationMixin:
     def _update_section_labels(self: AppProtocol) -> None:
         """Update section labels to highlight the active pane."""
         try:
-            label_explorer = self.query_one("#label-explorer", Static)
-            label_query = self.query_one("#label-query", Static)
-            label_results = self.query_one("#label-results", Static)
+            pane_explorer = self.query_one("#sidebar")
+            pane_query = self.query_one("#query-area")
+            pane_results = self.query_one("#results-area")
         except Exception:
             return
 
@@ -62,15 +60,64 @@ class UINavigationMixin:
 
         # Only update labels if a pane is focused (don't clear when dialogs are open)
         if active_pane:
-            label_explorer.remove_class("active")
-            label_query.remove_class("active")
-            label_results.remove_class("active")
-            if active_pane == "explorer":
-                label_explorer.add_class("active")
-            elif active_pane == "query":
-                label_query.add_class("active")
-            elif active_pane == "results":
-                label_results.add_class("active")
+            self._last_active_pane = active_pane
+
+        # Update active-pane class based on dialog state
+        # When dialog is open, remove active-pane class (border reverts to default)
+        # but title text will stay primary via explicit markup in _sync_active_pane_title
+        dialog_open = bool(getattr(self, "_dialog_open", False))
+        pane_explorer.remove_class("active-pane")
+        pane_query.remove_class("active-pane")
+        pane_results.remove_class("active-pane")
+
+        if not dialog_open:
+            last_active = getattr(self, "_last_active_pane", None)
+            if last_active == "explorer":
+                pane_explorer.add_class("active-pane")
+            elif last_active == "query":
+                pane_query.add_class("active-pane")
+            elif last_active == "results":
+                pane_results.add_class("active-pane")
+
+        self._sync_active_pane_title()
+
+    def _sync_active_pane_title(self: AppProtocol) -> None:
+        """Adjust pane title color when dialogs are open.
+
+        Keybinding hints [e], [q], [r] are:
+        - White by default (inactive pane)
+        - Primary when pane is selected
+        - White when dialog is open (keybindings disabled)
+
+        The pane title (Explorer, Query, Results) uses CSS border-title-color:
+        - $border (white) for inactive panes
+        - $primary for active pane (via .active-pane class)
+        """
+        try:
+            pane_explorer = self.query_one("#sidebar")
+            pane_query = self.query_one("#query-area")
+            pane_results = self.query_one("#results-area")
+        except Exception:
+            return
+
+        dialog_open = bool(getattr(self, "_dialog_open", False))
+        active_pane = getattr(self, "_last_active_pane", None)
+
+        def set_title(pane: Any, key: str, label: str, *, active: bool) -> None:
+            if active and dialog_open:
+                # Active pane with dialog: key white (disabled), title stays primary
+                # Border reverts to default (active-pane class removed)
+                pane.border_title = f"[white]\\[{key}][/]─[$primary]{label}[/]"
+            elif active:
+                # Active pane, no dialog: both key and title primary
+                pane.border_title = f"[$primary]\\[{key}]─{label}[/]"
+            else:
+                # Inactive pane: key white, title white via CSS
+                pane.border_title = f"[white]\\[{key}][/]─{label}"
+
+        set_title(pane_explorer, "e", "Explorer", active=active_pane == "explorer")
+        set_title(pane_query, "q", "Query", active=active_pane == "query")
+        set_title(pane_results, "r", "Results", active=active_pane == "results")
 
     def action_focus_explorer(self: AppProtocol) -> None:
         """Focus the Explorer pane."""

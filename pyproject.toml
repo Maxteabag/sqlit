@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: Database",
 ]
 dependencies = [
-    "textual[syntax]>=6.8.0",
+    "textual[syntax]>=6.10.0",
     "pyperclip>=1.8.2",
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",  # sshtunnel requires paramiko<4.0.0 (DSSKey removed in 4.0)

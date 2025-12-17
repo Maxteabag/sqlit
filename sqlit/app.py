@@ -15,6 +15,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.lazy import Lazy
+from textual.theme import Theme
 from textual.timer import Timer
 from textual.widgets import DataTable, Static, TextArea, Tree
 from textual.worker import Worker
@@ -55,6 +56,53 @@ class SSMSTUI(
     """Main SSMS TUI application."""
 
     TITLE = "sqlit"
+
+    _SQLIT_THEMES = [
+        Theme(
+            name="sqlit",
+            primary="#97CB93",
+            secondary="#6D8DC4",
+            accent="#6D8DC4",
+            warning="#f59e0b",
+            error="#ef4444",
+            success="#22c55e",
+            foreground="#a9b1d6",
+            background="#1A1B26",
+            surface="#24283B",
+            panel="#414868",
+            dark=True,
+            variables={
+                "border": "#ffffff",
+                "border-blurred": "#ffffff",
+                "footer-background": "#24283B",
+                "footer-key-foreground": "#7FA1DE",
+                "button-color-foreground": "#1A1B26",
+                "input-selection-background": "#2a3144 40%",
+            },
+        ),
+        Theme(
+            name="sqlit-light",
+            primary="#2f7f3f",
+            secondary="#4d6fb3",
+            accent="#4d6fb3",
+            warning="#b45309",
+            error="#b91c1c",
+            success="#15803d",
+            foreground="#1f2937",
+            background="#f5f7fb",
+            surface="#e7ebf4",
+            panel="#d8dde9",
+            dark=False,
+            variables={
+                "border": "#111827",
+                "border-blurred": "#111827",
+                "footer-background": "#e7ebf4",
+                "footer-key-foreground": "#7FA1DE",
+                "button-color-foreground": "#f5f7fb",
+                "input-selection-background": "#cbd5e1 50%",
+            },
+        ),
+    ]
 
     CSS = """
     Screen {
@@ -122,7 +170,7 @@ class SSMSTUI(
 
     #sidebar {
         width: 35;
-        border-right: solid $primary;
+        border-right: solid $border;
         padding: 1;
     }
 
@@ -136,7 +184,7 @@ class SSMSTUI(
 
     #query-area {
         height: 50%;
-        border-bottom: solid $primary;
+        border-bottom: solid $border;
         padding: 1;
     }
 
@@ -438,6 +486,9 @@ class SSMSTUI(
         """Initialize the app."""
         self._startup_stamp("on_mount_start")
         self._restart_argv = self._compute_restart_argv()
+
+        for theme in self._SQLIT_THEMES:
+            self.register_theme(theme)
 
         settings = load_settings()
         self._startup_stamp("settings_loaded")

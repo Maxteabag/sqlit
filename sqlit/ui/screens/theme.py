@@ -10,16 +10,25 @@ from textual.widgets.option_list import Option
 
 from ...widgets import Dialog
 
-THEMES = [
-    ("textual-dark", "Textual Dark"),
-    ("textual-light", "Textual Light"),
-    ("nord", "Nord"),
-    ("gruvbox", "Gruvbox"),
-    ("tokyo-night", "Tokyo Night"),
-    ("solarized-light", "Solarized Light"),
-    ("catppuccin-mocha", "Catppuccin Mocha"),
-    ("dracula", "Dracula"),
-]
+THEME_LABELS = {
+    "sqlit": "Sqlit",
+    "sqlit-light": "Sqlit Light",
+    "textual-dark": "Textual Dark",
+    "textual-light": "Textual Light",
+    "nord": "Nord",
+    "gruvbox": "Gruvbox",
+    "tokyo-night": "Tokyo Night",
+    "solarized-light": "Solarized Light",
+    "solarized-dark": "Solarized Dark",
+    "monokai": "Monokai",
+    "flexoki": "Flexoki",
+    "catppuccin-latte": "Catppuccin Latte",
+    "rose-pine": "Rose Pine",
+    "rose-pine-moon": "Rose Pine Moon",
+    "rose-pine-dawn": "Rose Pine Dawn",
+    "catppuccin-mocha": "Catppuccin Mocha",
+    "dracula": "Dracula",
+}
 
 
 class ThemeScreen(ModalScreen[str | None]):
@@ -54,12 +63,32 @@ class ThemeScreen(ModalScreen[str | None]):
     def __init__(self, current_theme: str):
         super().__init__()
         self.current_theme = current_theme
+        self._theme_ids: list[str] = []
+
+    def _build_theme_list(self) -> list[tuple[str, str]]:
+        available = set(self.app.available_themes)
+        available.discard("textual-ansi")
+        ordered: list[tuple[str, str]] = []
+        seen: set[str] = set()
+
+        for theme_id, theme_name in THEME_LABELS.items():
+            if theme_id in available:
+                ordered.append((theme_id, theme_name))
+                seen.add(theme_id)
+
+        for theme_id in sorted(available - seen):
+            theme_name = " ".join(part.capitalize() for part in theme_id.split("-"))
+            ordered.append((theme_id, theme_name))
+
+        return ordered
 
     def compose(self) -> ComposeResult:
         shortcuts = [("Select", "<enter>"), ("Cancel", "<esc>")]
         with Dialog(id="theme-dialog", title="Select Theme", shortcuts=shortcuts):
             options = []
-            for theme_id, theme_name in THEMES:
+            themes = self._build_theme_list()
+            self._theme_ids = [theme_id for theme_id, _ in themes]
+            for theme_id, theme_name in themes:
                 prefix = "> " if theme_id == self.current_theme else "  "
                 options.append(Option(f"{prefix}{theme_name}", id=theme_id))
             yield OptionList(*options, id="theme-list")
@@ -68,7 +97,7 @@ class ThemeScreen(ModalScreen[str | None]):
         option_list = self.query_one("#theme-list", OptionList)
         option_list.focus()
         # Highlight current theme
-        for i, (theme_id, _) in enumerate(THEMES):
+        for i, theme_id in enumerate(self._theme_ids):
             if theme_id == self.current_theme:
                 option_list.highlighted = i
                 break
