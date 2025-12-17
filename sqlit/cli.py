@@ -45,6 +45,11 @@ def main() -> int:
         action="store_true",
         help="Log startup timing diagnostics to stderr.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show startup timing in the status bar.",
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -138,9 +143,15 @@ def main() -> int:
         os.environ.pop("SQLIT_MOCK_PIPX", None)
     if args.profile_startup:
         os.environ["SQLIT_PROFILE_STARTUP"] = "1"
-        os.environ["SQLIT_STARTUP_MARK"] = str(startup_mark)
     else:
         os.environ.pop("SQLIT_PROFILE_STARTUP", None)
+    if args.debug:
+        os.environ["SQLIT_DEBUG"] = "1"
+    else:
+        os.environ.pop("SQLIT_DEBUG", None)
+    if args.profile_startup or args.debug:
+        os.environ["SQLIT_STARTUP_MARK"] = str(startup_mark)
+    else:
         os.environ.pop("SQLIT_STARTUP_MARK", None)
 
     if args.command is None:

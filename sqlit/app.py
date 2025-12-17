@@ -220,10 +220,12 @@ class SSMSTUI(
     def __init__(self, mock_profile: MockProfile | None = None):
         super().__init__()
         self._mock_profile = mock_profile
+        self._debug_mode = os.environ.get("SQLIT_DEBUG") == "1"
         self._startup_profile = os.environ.get("SQLIT_PROFILE_STARTUP") == "1"
         self._startup_mark = self._parse_startup_mark(os.environ.get("SQLIT_STARTUP_MARK"))
         self._startup_init_time = time.perf_counter()
         self._startup_events: list[tuple[str, float]] = []
+        self._launch_ms: float | None = None
         self._startup_stamp("init_start")
         self.connections: list[ConnectionConfig] = []
         self.current_connection: Any | None = None
@@ -460,6 +462,8 @@ class SSMSTUI(
         self._update_section_labels()
         self._maybe_restore_connection_screen()
         self._startup_stamp("restore_checked")
+        if self._debug_mode:
+            self.call_after_refresh(self._record_launch_ms)
         self.call_after_refresh(self._update_status_bar)
         self._update_footer_bindings()
         self._startup_stamp("footer_updated")
@@ -478,6 +482,11 @@ class SSMSTUI(
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    def _record_launch_ms(self) -> None:
+        base = self._startup_mark if self._startup_mark is not None else self._startup_init_time
+        self._launch_ms = (time.perf_counter() - base) * 1000
+        self._update_status_bar()
 
     def _log_startup_timing(self) -> None:
         if not self._startup_profile:

@@ -186,6 +186,15 @@ class UINavigationMixin:
         notification = getattr(self, "_last_notification", "")
         timestamp = getattr(self, "_last_notification_time", "")
         severity = getattr(self, "_last_notification_severity", "information")
+        launch_ms = getattr(self, "_launch_ms", None)
+        show_launch = (
+            getattr(self, "_debug_mode", False)
+            and isinstance(launch_ms, (int, float))
+            and not self.current_config
+            and not getattr(self, "_connection_failed", False)
+        )
+        launch_str = f"[dim]Launched in {launch_ms:.0f}ms[/]" if show_launch else ""
+        launch_plain = f"Launched in {launch_ms:.0f}ms" if show_launch else ""
 
         if notification:
             # Normal/warning notifications on right side
@@ -211,6 +220,20 @@ class UINavigationMixin:
                 status.update(f"{left_content}{' ' * gap}{notif_str}")
             else:
                 status.update(f"{left_content}  {notif_str}")
+        elif launch_str:
+            import re
+
+            left_plain = re.sub(r"\[.*?\]", "", left_content)
+            try:
+                total_width = self.size.width - 2
+            except Exception:
+                total_width = 80
+
+            gap = total_width - len(left_plain) - len(launch_plain)
+            if gap > 2:
+                status.update(f"{left_content}{' ' * gap}{launch_str}")
+            else:
+                status.update(f"{left_content}  {launch_str}")
         else:
             status.update(left_content)
 
