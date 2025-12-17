@@ -145,7 +145,6 @@ class DriverSetupScreen(ModalScreen):
             )
             return
 
-        self.notify("Installing driver... This may ask for your password.", timeout=5)
         self.dismiss(("install", self._install_commands))
 
     def action_yank(self) -> None:

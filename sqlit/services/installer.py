@@ -88,7 +88,7 @@ class Installer:
             command = ["pipx", "inject", "sqlit-tui", error.package_name]
             cwd: str | None = None
         else:
-            command = [sys.executable, "-m", "pip", "install", error.package_name]
+            command = [sys.executable, "-m", "pip", "install", f"sqlit-tui[{error.extra_name}]"]
             cwd = None
 
         if cancel_event.is_set():
