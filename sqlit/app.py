@@ -15,6 +15,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.lazy import Lazy
+from textual.screen import ModalScreen
 from textual.theme import Theme
 from textual.timer import Timer
 from textual.widgets import DataTable, Static, TextArea, Tree
@@ -64,7 +65,7 @@ class SSMSTUI(
             secondary="#6D8DC4",
             accent="#6D8DC4",
             warning="#f59e0b",
-            error="#ef4444",
+            error="#BE728C",
             success="#22c55e",
             foreground="#a9b1d6",
             background="#1A1B26",
@@ -152,7 +153,6 @@ class SSMSTUI(
 
     Screen.explorer-fullscreen #sidebar {
         width: 1fr;
-        border-right: none;
     }
 
     Screen.explorer-hidden #sidebar {
@@ -170,8 +170,9 @@ class SSMSTUI(
 
     #sidebar {
         width: 35;
-        border-right: solid $border;
+        border: round $border;
         padding: 1;
+        margin: 0;
     }
 
     #object-tree {
@@ -184,18 +185,30 @@ class SSMSTUI(
 
     #query-area {
         height: 50%;
-        border-bottom: solid $border;
+        border: round $border;
         padding: 1;
+        margin: 0;
     }
 
     #query-input {
         height: 1fr;
+        border: none;
     }
 
     #results-area {
         height: 50%;
         padding: 1;
+        border: round $border;
+        margin: 0;
     }
+
+    #sidebar.active-pane,
+    #query-area.active-pane,
+    #results-area.active-pane {
+        border: round $primary;
+        border-title-color: $primary;
+    }
+
 
     #results-table {
         height: 1fr;
@@ -207,16 +220,13 @@ class SSMSTUI(
         padding: 0 1;
     }
 
-    .section-label {
-        height: 1;
-        color: $text-muted;
-        padding: 0 1;
-        margin-bottom: 1;
-    }
-
-    .section-label.active {
-        color: $primary;
-        text-style: bold;
+    #sidebar,
+    #query-area,
+    #results-area {
+        border-title-align: left;
+        border-title-color: $border;
+        border-title-background: $surface;
+        border-title-style: bold;
     }
 
     #autocomplete-dropdown {
@@ -315,6 +325,8 @@ class SSMSTUI(
         self._connection_failed: bool = False
         self._leader_timer: Timer | None = None
         self._leader_pending: bool = False
+        self._dialog_open: bool = False
+        self._last_active_pane: str | None = None
         self._query_worker: Worker[Any] | None = None
         self._query_executing: bool = False
         self._cancellable_query: Any | None = None
@@ -403,16 +415,24 @@ class SSMSTUI(
         if wait_for_dismiss:
             future = super().push_screen(screen, callback, wait_for_dismiss=True)
             self._update_footer_bindings()
+            self._update_dialog_state()
             return future
         mount = super().push_screen(screen, callback, wait_for_dismiss=False)
         self._update_footer_bindings()
+        self._update_dialog_state()
         return mount
 
     def pop_screen(self) -> Any:
         """Override pop_screen to update footer when screen changes."""
         result = super().pop_screen()
         self._update_footer_bindings()
+        self._update_dialog_state()
         return result
+
+    def _update_dialog_state(self) -> None:
+        """Track whether a modal dialog is open and update pane title styling."""
+        self._dialog_open = any(isinstance(screen, ModalScreen) for screen in self.screen_stack)
+        self._update_section_labels()
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         """Check if an action is allowed in the current state.
@@ -455,16 +475,16 @@ class SSMSTUI(
         self._startup_stamp("compose_start")
         with Vertical(id="main-container"):
             with Horizontal(id="content"):
-                with Vertical(id="sidebar"):
-                    yield Static(r"\[E] Explorer", classes="section-label", id="label-explorer")
+                with Vertical(id="sidebar") as sidebar:
+                    sidebar.border_title = r"[white]\[e][/]─Explorer"
                     tree: Tree[Any] = Tree("Servers", id="object-tree")
                     tree.show_root = False
                     tree.guide_depth = 2
                     yield tree
 
                 with Vertical(id="main-panel"):
-                    with Container(id="query-area"):
-                        yield Static(r"\[q] Query", classes="section-label", id="label-query")
+                    with Container(id="query-area") as query_area:
+                        query_area.border_title = r"[white]\[q][/]─Query"
                         yield TextArea(
                             "",
                             language="sql",
@@ -473,8 +493,8 @@ class SSMSTUI(
                         )
                         yield Lazy(AutocompleteDropdown(id="autocomplete-dropdown"))
 
-                    with Container(id="results-area"):
-                        yield Static(r"\[r] Results", classes="section-label", id="label-results")
+                    with Container(id="results-area") as results_area:
+                        results_area.border_title = r"[white]\[r][/]─Results"
                         yield Lazy(DataTable(id="results-table", zebra_stripes=True))
 
             yield Static("Not connected", id="status-bar")
