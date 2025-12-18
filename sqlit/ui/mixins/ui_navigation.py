@@ -346,6 +346,7 @@ class UINavigationMixin:
         self._last_result_row_count = 1
 
         self.results_table.clear(columns=True)
+        self.results_table.show_header = True
         self.results_table.add_column("Error")
         self.results_table.add_row(wrapped)
         self._update_footer_bindings()

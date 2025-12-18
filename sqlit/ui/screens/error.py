@@ -29,7 +29,9 @@ class ErrorScreen(ModalScreen):
         width: 60;
         max-width: 80%;
         border: solid $error;
+        border-title-color: $error;
         border-subtitle-color: $error;
+        color: $error;
     }
 
     #error-message {

@@ -762,6 +762,7 @@ class ResultsFocusedState(State):
         self.allows("copy_context", key="y", label="Copy cell", help="Copy selected cell")
         self.allows("copy_row", key="Y", label="Copy row", help="Copy selected row")
         self.allows("copy_results", key="a", label="Copy all", help="Copy all results")
+        self.allows("clear_results", key="x", label="Clear", help="Clear results")
         self.allows("results_cursor_left")  # vim h
         self.allows("results_cursor_down")  # vim j
         self.allows("results_cursor_up")  # vim k
@@ -782,8 +783,9 @@ class ResultsFocusedState(State):
             left.append(DisplayBinding(key="y", label="Copy cell", action="copy_context"))
             left.append(DisplayBinding(key="Y", label="Copy row", action="copy_row"))
             left.append(DisplayBinding(key="a", label="Copy all", action="copy_results"))
+        left.append(DisplayBinding(key="x", label="Clear", action="clear_results"))
 
-        seen.update(["view_cell", "copy_context", "copy_row", "copy_results"])
+        seen.update(["view_cell", "copy_context", "copy_row", "copy_results", "clear_results"])
 
         right: list[DisplayBinding] = []
         if self.parent:

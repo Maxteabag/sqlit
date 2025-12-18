@@ -145,6 +145,14 @@ class ResultsMixin:
         if self.results_table.has_focus:
             self.results_table.action_cursor_right()
 
+    def action_clear_results(self: AppProtocol) -> None:
+        """Clear the results table."""
+        self.results_table.clear(columns=True)
+        self.results_table.show_header = False
+        self._last_result_columns = []
+        self._last_result_rows = []
+        self._last_result_row_count = 0
+
     def action_edit_cell(self: AppProtocol) -> None:
         """Generate an UPDATE query for the selected cell and enter insert mode."""
         table = self.results_table

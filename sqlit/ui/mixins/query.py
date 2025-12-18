@@ -179,6 +179,7 @@ class QueryMixin:
         self._last_result_row_count = row_count
 
         self.results_table.clear(columns=True)
+        self.results_table.show_header = True
         self.results_table.add_columns(*columns)
 
         for row in rows[:1000]:
@@ -198,6 +199,7 @@ class QueryMixin:
         self._last_result_row_count = 1
 
         self.results_table.clear(columns=True)
+        self.results_table.show_header = True
         self.results_table.add_column("Result")
         self.results_table.add_row(f"{affected} row(s) affected")
         time_str = format_duration_ms(elapsed_ms)
@@ -210,6 +212,7 @@ class QueryMixin:
         self._last_result_row_count = 1
 
         self.results_table.clear(columns=True)
+        self.results_table.show_header = True
         self.results_table.add_column("Error")
         self.results_table.add_row(escape_markup(error_message))
         self.notify(f"Query error: {error_message}", severity="error")
@@ -240,6 +243,7 @@ class QueryMixin:
         self._stop_query_spinner()
 
         self.results_table.clear(columns=True)
+        self.results_table.show_header = True
         self.results_table.add_column("Status")
         self.results_table.add_row("Query cancelled")
 
@@ -262,6 +266,7 @@ class QueryMixin:
 
             # Update results table to show cancelled state
             self.results_table.clear(columns=True)
+            self.results_table.show_header = True
             self.results_table.add_column("Status")
             self.results_table.add_row("Query cancelled")
             cancelled = True
@@ -287,6 +292,7 @@ class QueryMixin:
         """Start a new query (clear input and results)."""
         self.query_input.text = ""
         self.results_table.clear(columns=True)
+        self.results_table.show_header = False
 
     def action_show_history(self: AppProtocol) -> None:
         """Show query history for the current connection."""

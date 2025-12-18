@@ -75,8 +75,8 @@ class SSMSTUI(
             panel="#414868",
             dark=True,
             variables={
-                "border": "#414868",
-                "border-blurred": "#414868",
+                "border": "#7a7f99",
+                "border-blurred": "#7a7f99",
                 "footer-background": "#24283B",
                 "footer-key-foreground": "#7FA1DE",
                 "button-color-foreground": "#1A1B26",
@@ -271,6 +271,7 @@ class SSMSTUI(
         Binding("y", "copy_context", "Copy", show=False),
         Binding("Y", "copy_row", "Copy row", show=False),
         Binding("a", "copy_results", "Copy results", show=False),
+        Binding("x", "clear_results", "Clear results", show=False),
         Binding("ctrl+z", "cancel_operation", "Cancel", show=False),
         Binding("ctrl+j", "autocomplete_next", "Next suggestion", show=False),
         Binding("ctrl+k", "autocomplete_prev", "Prev suggestion", show=False),
@@ -506,7 +507,7 @@ class SSMSTUI(
 
                     with Container(id="results-area") as results_area:
                         results_area.border_title = r"\[r]─Results"
-                        yield Lazy(DataTable(id="results-table", zebra_stripes=True))
+                        yield Lazy(DataTable(id="results-table", zebra_stripes=True, show_header=False))
 
             yield Static("Not connected", id="status-bar")
 
@@ -536,14 +537,14 @@ class SSMSTUI(
 
         self._apply_mock_settings(settings)
 
-        if self._mock_profile:
+        if self._startup_connection:
+            # Only show the explicit startup connection, not saved ones
+            self._setup_startup_connection(self._startup_connection)
+        elif self._mock_profile:
             self.connections = self._mock_profile.connections.copy()
         else:
             self.connections = load_connections(load_credentials=False)
         self._startup_stamp("connections_loaded")
-
-        if self._startup_connection:
-            self._insert_startup_connection(self._startup_connection)
 
         self.refresh_tree()
         self._startup_stamp("tree_refreshed")
@@ -574,16 +575,11 @@ class SSMSTUI(
             self._mock_profile = mock_profile
             self._session_factory = self._create_mock_session_factory(mock_profile)
 
-    def _insert_startup_connection(self, config: ConnectionConfig) -> None:
-        existing_names = {c.name for c in self.connections}
-        base_name = config.name or "Temp Connection"
-        name = base_name
-        counter = 2
-        while name in existing_names:
-            name = f"{base_name} ({counter})"
-            counter += 1
-        config.name = name
-        self.connections.insert(0, config)
+    def _setup_startup_connection(self, config: ConnectionConfig) -> None:
+        """Set up a startup connection as the only visible connection."""
+        if not config.name:
+            config.name = "Temp Connection"
+        self.connections = [config]
         self._startup_connect_config = config
 
     def _startup_stamp(self, name: str) -> None:
