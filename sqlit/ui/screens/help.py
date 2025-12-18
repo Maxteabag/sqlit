@@ -27,15 +27,18 @@ class HelpScreen(ModalScreen):
     }
 
     #help-dialog {
-        width: 90;
-        max-width: 90%;
-        max-height: 90%;
+        width: 60;
+        max-width: 70%;
+        max-height: 80%;
     }
 
     #help-scroll {
         height: auto;
+        max-height: 100%;
         background: $surface;
         border: none;
+        scrollbar-gutter: stable;
+        color: white;
     }
     """
 

@@ -632,13 +632,7 @@ class QueryNormalModeState(State):
         self.allows("clear_query", key="d", label="Clear", help="Clear query")
         self.allows("new_query", key="n", label="New", help="New query (clear all)")
         self.allows("copy_context", key="y", label="Copy query", help="Copy current query")
-        self.allows(
-            "show_history",
-            lambda app: app.current_config is not None,
-            key="h",
-            label="History",
-            help="Query history",
-        )
+        self.allows("show_history", key="h", label="History", help="Query history")
 
     def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
@@ -652,8 +646,7 @@ class QueryNormalModeState(State):
         left.append(DisplayBinding(key="y", label="Copy query", action="copy_context"))
         seen.add("copy_context")
 
-        if app.current_config is not None:
-            left.append(DisplayBinding(key="h", label="History", action="show_history"))
+        left.append(DisplayBinding(key="h", label="History", action="show_history"))
         seen.add("show_history")
 
         left.append(DisplayBinding(key="d", label="Clear", action="clear_query"))
@@ -684,7 +677,7 @@ class QueryInsertModeState(State):
 
     def _setup_actions(self) -> None:
         self.allows("exit_insert_mode", key="esc", label="Normal Mode", help="Exit to NORMAL mode")
-        self.allows("execute_query_insert", key="f5", label="Execute", help="Execute query (stay INSERT)")
+        self.allows("execute_query_insert", key="f5 | ^enter", label="Execute", help="Execute query (stay INSERT)")
         self.allows("autocomplete_accept", help="Accept autocomplete", help_key="tab")
         self.allows("quit")
         self.forbids(
@@ -698,7 +691,7 @@ class QueryInsertModeState(State):
     def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = [
             DisplayBinding(key="esc", label="Normal Mode", action="exit_insert_mode"),
-            DisplayBinding(key="f5", label="Execute", action="execute_query_insert"),
+            DisplayBinding(key="f5 | ^enter", label="Execute", action="execute_query_insert"),
             DisplayBinding(key="tab", label="Autocomplete", action="autocomplete_accept"),
         ]
         return left, []
@@ -909,7 +902,7 @@ class UIStateMachine:
 
             lines.append(f"[bold]{category}:[/]")
             for entry in entries:
-                key_display = self._format_key_for_help(entry.key).ljust(10)
+                key_display = self._format_key_for_help(entry.key).ljust(16)
                 lines.append(f"  {key_display} {entry.description}")
             lines.append("")
 

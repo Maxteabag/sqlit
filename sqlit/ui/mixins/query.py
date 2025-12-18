@@ -297,7 +297,7 @@ class QueryMixin:
     def action_show_history(self: AppProtocol) -> None:
         """Show query history for the current connection."""
         if not self.current_config:
-            self.notify("Not connected to a database", severity="warning")
+            self.notify("Not connected", severity="warning")
             return
 
         from ...config import load_query_history

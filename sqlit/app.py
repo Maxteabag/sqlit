@@ -256,6 +256,7 @@ class SSMSTUI(
         Binding("escape", "exit_insert_mode", "Normal", show=False),
         Binding("enter", "execute_query", "Execute", show=False),
         Binding("f5", "execute_query_insert", "Execute", show=False),
+        Binding("ctrl+enter", "execute_query_insert", "Execute", show=False),
         Binding("d", "clear_query", "Clear", show=False),
         Binding("n", "new_query", "New", show=False),
         Binding("h", "show_history", "History", show=False),

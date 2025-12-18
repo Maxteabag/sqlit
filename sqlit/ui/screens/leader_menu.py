@@ -9,6 +9,8 @@ from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from ...widgets import Dialog
+
 if TYPE_CHECKING:
     from ...app import SSMSTUI
 
@@ -29,13 +31,14 @@ class LeaderMenuScreen(ModalScreen):
     }
 
     #leader-menu {
+        max-width: 35;
+        margin: 0;
+        border: solid $primary;
+    }
+
+    #leader-menu-content {
         width: auto;
         height: auto;
-        max-width: 50;
-        background: $surface;
-        border: solid $primary;
-        padding: 1;
-        margin: 1 2;
     }
     """
 
@@ -70,10 +73,13 @@ class LeaderMenuScreen(ModalScreen):
                     lines.append(f"  [bold $warning]{cmd.key}[/] {cmd.label}")
             lines.append("")
 
-        lines.append("[$primary]Close: <esc>[/]")
+        # Remove trailing empty line
+        if lines and lines[-1] == "":
+            lines.pop()
 
         content = "\n".join(lines)
-        yield Static(content, id="leader-menu")
+        with Dialog(id="leader-menu", shortcuts=[("Close", "esc")]):
+            yield Static(content, id="leader-menu-content")
 
     def action_dismiss(self) -> None:  # type: ignore[override]
         self.dismiss(None)
