@@ -21,14 +21,22 @@ from .mocks import (
 
 
 class ConnectionScreenTestApp(App):
-    def __init__(self, config: ConnectionConfig | None = None, editing: bool = False):
+    def __init__(
+        self,
+        config: ConnectionConfig | None = None,
+        editing: bool = False,
+        prefill_values: dict | None = None,
+    ):
         super().__init__()
         self._config = config
         self._editing = editing
+        self._prefill_values = prefill_values
         self.screen_result = None
 
     async def on_mount(self) -> None:
-        screen = ConnectionScreen(self._config, editing=self._editing)
+        screen = ConnectionScreen(
+            self._config, editing=self._editing, prefill_values=self._prefill_values
+        )
         await self.push_screen(screen, self._capture_result)
 
     def _capture_result(self, result) -> None:

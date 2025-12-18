@@ -27,6 +27,8 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
+from dataclasses import replace
+
 from ...config import (
     ConnectionConfig,
     DatabaseType,
@@ -40,14 +42,19 @@ from ...db import (
     is_file_based,
     supports_ssh,
 )
+from ...db.exceptions import MissingDriverError, MissingODBCDriverError
 from ...fields import (
     FieldDefinition,
     FieldGroup,
     FieldType,
     schema_to_field_definitions,
 )
+from ...install_strategy import detect_strategy
 from ...validation import ValidationState, validate_connection_form
 from ...widgets import Dialog
+
+
+_TEST_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
 class ConnectionScreen(ModalScreen):
@@ -75,8 +82,8 @@ class ConnectionScreen(ModalScreen):
 
     #connection-dialog {
         width: 62;
-        height: 85%;
-        max-height: 85%;
+        height: auto;
+        max-height: 38;
         border: solid $primary;
         background: $surface;
         padding: 1;
@@ -246,17 +253,6 @@ class ConnectionScreen(ModalScreen):
     #test-status.success {
         color: $success;
     }
-
-    #test-error {
-        height: 6;
-        border: solid $primary-darken-2;
-        background: $surface-darken-1;
-        margin-top: 1;
-    }
-
-    #test-error.hidden {
-        display: none;
-    }
     """
 
     def __init__(
@@ -284,6 +280,11 @@ class ConnectionScreen(ModalScreen):
         self._install_in_progress: bool = False
         self._install_spinner_timer: Timer | None = None
         self._install_spinner_index: int = 0
+        # Test connection spinner state
+        self._test_in_progress: bool = False
+        self._test_spinner_timer: Timer | None = None
+        self._test_spinner_index: int = 0
+        self._test_start_time: float = 0.0
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         if self.app.screen is not self:
@@ -496,8 +497,6 @@ class ConnectionScreen(ModalScreen):
                 pass
 
     def _check_driver_availability(self, db_type: DatabaseType) -> None:
-        from ...db.exceptions import MissingDriverError
-
         self._missing_driver_error = None
         try:
             adapter = get_adapter(db_type.value)
@@ -531,8 +530,6 @@ class ConnectionScreen(ModalScreen):
 
         if self._missing_driver_error:
             error = self._missing_driver_error
-            from ...install_strategy import detect_strategy
-
             strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
             if strategy.can_auto_install:
                 install_cmd = strategy.manual_instructions.split("\n")[0].strip()
@@ -550,22 +547,60 @@ class ConnectionScreen(ModalScreen):
                 )
                 dialog.border_subtitle = "[bold]Help ^i[/]  Cancel <esc>"
         else:
-            if self._post_install_message and (self._last_test_ok is None or self._last_test_ok):
+            if self._post_install_message:
                 test_status.update(f"✓ {self._post_install_message}")
                 try:
                     test_status.add_class("success")
                 except Exception:
                     pass
             else:
-                if not self._last_test_ok and self._last_test_ok is not None:
-                    pass
-                else:
-                    test_status.update("")
+                test_status.update("")
             dialog.border_subtitle = "[bold]Test ^t[/]  Save ^s  Cancel <esc>"
 
     def _tick_install_spinner(self) -> None:
         self._install_spinner_index += 1
         self._update_driver_status_ui()
+
+    def _start_test_spinner(self) -> None:
+        """Start the connection test spinner animation."""
+        import time
+
+        self._test_in_progress = True
+        self._test_start_time = time.perf_counter()
+        self._test_spinner_index = 0
+        self._update_test_status()
+        if self._test_spinner_timer is not None:
+            self._test_spinner_timer.stop()
+        self._test_spinner_timer = self.set_interval(1 / 30, self._tick_test_spinner)
+
+    def _stop_test_spinner(self) -> None:
+        """Stop the connection test spinner animation."""
+        self._test_in_progress = False
+        if self._test_spinner_timer is not None:
+            self._test_spinner_timer.stop()
+            self._test_spinner_timer = None
+
+    def _tick_test_spinner(self) -> None:
+        """Update test spinner animation frame."""
+        if not self._test_in_progress:
+            return
+        self._test_spinner_index = (self._test_spinner_index + 1) % len(_TEST_SPINNER_FRAMES)
+        self._update_test_status()
+
+    def _update_test_status(self) -> None:
+        """Update the test status display with current spinner frame."""
+        import time
+
+        try:
+            test_status = self.query_one("#test-status", Static)
+        except Exception:
+            return
+
+        if self._test_in_progress:
+            elapsed = time.perf_counter() - self._test_start_time
+            spinner = _TEST_SPINNER_FRAMES[self._test_spinner_index]
+            test_status.update(f"{spinner} Testing ({elapsed:.1f}s)...")
+        # When not in progress, status is updated by success/error handlers
 
     def _get_restart_cache_path(self) -> Path:
         return Path(tempfile.gettempdir()) / "sqlit-driver-install-restore.json"
@@ -602,7 +637,6 @@ class ConnectionScreen(ModalScreen):
             pass
 
     def _start_missing_driver_install(self, error: Any) -> None:
-        from ...db.exceptions import MissingDriverError
         from ...services.installer import Installer
 
         if not isinstance(error, MissingDriverError):
@@ -680,6 +714,7 @@ class ConnectionScreen(ModalScreen):
                             value=self.config.name if self.config else "",
                             placeholder="",
                             id="conn-name",
+                            select_on_focus=False,
                         )
                         yield Static("", id="error-name", classes="error-text hidden")
 
@@ -718,20 +753,84 @@ class ConnectionScreen(ModalScreen):
                             yield from self._create_field_group(group)
 
             yield Static("", id="test-status")
-            yield TextArea("", id="test-error", read_only=True, classes="hidden")
 
     def on_mount(self) -> None:
+        import os
+        import sys
+        import time
+
+        debug = os.environ.get("SQLIT_DEBUG_TIMING")
+
+        if debug:
+            t0 = time.perf_counter()
+
         self.call_after_refresh(self._ensure_initial_tab)
+
+        if debug:
+            print(f"[DEBUG] _ensure_initial_tab scheduled: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
+            t1 = time.perf_counter()
+
         self._set_initial_select_values()
+
+        if debug:
+            print(f"[DEBUG] _set_initial_select_values: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            t1 = time.perf_counter()
+
         self._apply_prefill_values()
+
+        if debug:
+            print(f"[DEBUG] _apply_prefill_values: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            t1 = time.perf_counter()
+
         self._update_field_visibility()
+
+        if debug:
+            print(f"[DEBUG] _update_field_visibility: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            t1 = time.perf_counter()
+
         self._validate_name_unique()
+
+        if debug:
+            print(f"[DEBUG] _validate_name_unique: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            t1 = time.perf_counter()
+
         field_groups = self._get_field_groups_for_type(self._current_db_type, tab="general")
         _general, advanced = self._split_groups_by_advanced(field_groups)
         self._set_advanced_tab_enabled(bool(advanced))
+
+        if debug:
+            print(f"[DEBUG] field_groups + advanced tab: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            t1 = time.perf_counter()
+
         self._update_ssh_tab_enabled(self._current_db_type)
+
+        if debug:
+            print(f"[DEBUG] _update_ssh_tab_enabled: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            t1 = time.perf_counter()
+
         self._update_mssql_driver_setup_visibility(self._current_db_type)
+
+        if debug:
+            print(f"[DEBUG] _update_mssql_driver_setup_visibility: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            print(f"[DEBUG] on_mount total: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
+
+        # Defer driver check to after screen is rendered to avoid blocking UI
+        self.call_after_refresh(self._deferred_driver_check)
+
+    def _deferred_driver_check(self) -> None:
+        """Check driver availability after screen is visible."""
+        import os
+        import sys
+        import time
+
+        debug = os.environ.get("SQLIT_DEBUG_TIMING")
+        if debug:
+            t0 = time.perf_counter()
+
         self._check_driver_availability(self._current_db_type)
+
+        if debug:
+            print(f"[DEBUG] _check_driver_availability: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
 
         if self._post_install_message and not self._missing_driver_error:
             self._update_driver_status_ui()
@@ -1079,7 +1178,6 @@ class ConnectionScreen(ModalScreen):
                 return
 
     def _open_odbc_driver_setup(self, installed_drivers: list[str] | None = None) -> None:
-        from ...db.exceptions import MissingDriverError
         from ...drivers import get_installed_drivers
         from ...terminal import run_in_terminal
         from ..screens import DriverSetupScreen, MessageScreen
@@ -1468,8 +1566,6 @@ class ConnectionScreen(ModalScreen):
             return None
 
     def _prompt_install_missing_driver(self, error: Exception) -> None:
-        from ...db.exceptions import MissingDriverError
-        from ...install_strategy import detect_strategy
         from ..screens import ConfirmScreen, MessageScreen
 
         if not isinstance(error, MissingDriverError):
@@ -1499,10 +1595,6 @@ class ConnectionScreen(ModalScreen):
         )
 
     def action_test_connection(self) -> None:
-        from dataclasses import replace
-
-        from ...db.exceptions import MissingDriverError, MissingODBCDriverError
-        from ...db.providers import is_file_based
         from .password_input import PasswordInputScreen
 
         if self._missing_driver_error:
@@ -1544,35 +1636,19 @@ class ConnectionScreen(ModalScreen):
         self._test_with_config(config)
 
     def _test_with_config(self, config) -> None:
-        from dataclasses import replace
+        import time
 
-        from ...db.exceptions import MissingDriverError, MissingODBCDriverError
-
-        self.query_one("#test-error", TextArea).add_class("hidden")
-        self.query_one("#test-status", Static).update("Testing…")
         self._last_test_ok = None
         self._last_test_error = ""
-        tunnel = None
 
         mock_profile = getattr(self.app, "_mock_profile", None)
 
-        try:
-            if mock_profile:
-                adapter = mock_profile.get_adapter(config.db_type)
-                connect_config = config
-            else:
-                tunnel, host, port = create_ssh_tunnel(config)
-                if tunnel:
-                    connect_config = replace(config, server=host, port=str(port))
-                else:
-                    connect_config = config
-                adapter = get_adapter(config.db_type)
+        def on_test_success() -> None:
+            """Handle successful connection test on main thread."""
+            import time
 
-            conn = adapter.connect(connect_config)
-            conn.close()
-
-            if tunnel:
-                tunnel.stop()
+            self._stop_test_spinner()
+            elapsed = time.perf_counter() - self._test_start_time
             try:
                 set_health = getattr(self.app, "_set_connection_health", None)
                 if callable(set_health):
@@ -1580,59 +1656,103 @@ class ConnectionScreen(ModalScreen):
             except Exception:
                 pass
             self._last_test_ok = True
-            self.query_one("#test-status", Static).update("Last test: OK")
-        except MissingDriverError as e:
-            self._prompt_install_missing_driver(e)
-            self._last_test_ok = False
-            self.query_one("#test-status", Static).update("Last test: failed (missing driver)")
-        except MissingODBCDriverError as e:
-            self._open_odbc_driver_setup(e.installed_drivers)
-            self._last_test_ok = False
-            self.query_one("#test-status", Static).update("Last test: failed (missing ODBC driver)")
-        except (ModuleNotFoundError, ImportError) as e:
-            hint = self._get_package_install_hint(config.db_type)
-            if hint:
-                self.query_one("#test-status", Static).update("Last test: failed (missing package)")
-                err = self.query_one("#test-error", TextArea)
-                err.text = f"{e}\n\nInstall with:\n  {hint}"
-                err.remove_class("hidden")
-                self._last_test_error = err.text
-            else:
-                self.query_one("#test-status", Static).update("Last test: failed")
-                err = self.query_one("#test-error", TextArea)
-                err.text = f"{e}"
-                err.remove_class("hidden")
-                self._last_test_error = err.text
-            self._last_test_ok = False
-        except Exception as e:
             try:
-                set_health = getattr(self.app, "_set_connection_health", None)
-                if callable(set_health):
-                    set_health(config.name, False)
+                test_status = self.query_one("#test-status", Static)
+                test_status.update(f"[green]✓[/] Connection OK ({elapsed:.1f}s)")
             except Exception:
                 pass
-            self._last_test_ok = False
-            self.query_one("#test-status", Static).update("Last test: failed")
-            err = self.query_one("#test-error", TextArea)
-            err.text = str(e)
-            err.remove_class("hidden")
-            self._last_test_error = err.text
-        finally:
-            if tunnel:
+
+        def on_test_error(error: Exception) -> None:
+            """Handle connection test error on main thread."""
+            import time
+
+            self._stop_test_spinner()
+            elapsed = time.perf_counter() - self._test_start_time
+
+            if isinstance(error, MissingDriverError):
+                self._last_test_ok = False
+                self._prompt_install_missing_driver(error)
+            elif isinstance(error, MissingODBCDriverError):
+                self._last_test_ok = False
+                self._open_odbc_driver_setup(error.installed_drivers)
+            elif isinstance(error, (ModuleNotFoundError, ImportError)):
+                hint = self._get_package_install_hint(config.db_type)
+                if hint:
+                    error_msg = f"Install with: {hint}"
+                else:
+                    error_msg = str(error)
+                self._last_test_ok = False
+                self._last_test_error = error_msg
                 try:
-                    tunnel.stop()
+                    test_status = self.query_one("#test-status", Static)
+                    test_status.update(f"[red]✗[/] Missing package ({elapsed:.1f}s)")
                 except Exception:
                     pass
+            else:
+                try:
+                    set_health = getattr(self.app, "_set_connection_health", None)
+                    if callable(set_health):
+                        set_health(config.name, False)
+                except Exception:
+                    pass
+                self._last_test_ok = False
+                self._last_test_error = str(error)
+                try:
+                    test_status = self.query_one("#test-status", Static)
+                    # Show a short version of the error
+                    err_str = str(error)
+                    # Extract just the key part of the error message
+                    if "]" in err_str:
+                        err_str = err_str.split("]")[-1].strip()
+                    if len(err_str) > 50:
+                        err_str = err_str[:47] + "..."
+                    test_status.update(f"[red]✗[/] {err_str} ({elapsed:.1f}s)")
+                except Exception:
+                    pass
+
+        def do_test() -> None:
+            """Run the connection test in a background thread."""
+            tunnel = None
+            try:
+                if mock_profile:
+                    adapter = mock_profile.get_adapter(config.db_type)
+                    connect_config = config
+                else:
+                    tunnel, host, port = create_ssh_tunnel(config)
+                    if tunnel:
+                        connect_config = replace(config, server=host, port=str(port))
+                    else:
+                        connect_config = config
+                    adapter = get_adapter(config.db_type)
+
+                conn = adapter.connect(connect_config)
+                conn.close()
+
+                if tunnel:
+                    tunnel.stop()
+                    tunnel = None
+
+                self.app.call_from_thread(on_test_success)
+            except Exception as e:
+                self.app.call_from_thread(on_test_error, e)
+            finally:
+                if tunnel:
+                    try:
+                        tunnel.stop()
+                    except Exception:
+                        pass
+
+        self._start_test_spinner()
+        self.run_worker(do_test, name="test-connection", thread=True, exclusive=True)
 
     def action_save(self) -> None:
         config = self._get_config()
         if not config:
             return
 
-        from ...db.exceptions import MissingDriverError
-
         if getattr(self.app, "_mock_profile", None):
-            self.dismiss(("save", config))
+            original_name = self.config.name if self.editing and self.config else None
+            self.dismiss(("save", config, original_name))
             return
 
         try:
@@ -1641,7 +1761,8 @@ class ConnectionScreen(ModalScreen):
             self._prompt_install_missing_driver(e)
             return
 
-        self.dismiss(("save", config))
+        original_name = self.config.name if self.editing and self.config else None
+        self.dismiss(("save", config, original_name))
 
     def action_cancel(self) -> None:
         if self._install_in_progress:

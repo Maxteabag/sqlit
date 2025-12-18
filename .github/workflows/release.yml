@@ -104,7 +104,8 @@ jobs:
       - name: Setup SSH for AUR
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur
+          # Decode base64-encoded SSH key (encode with: base64 -w 0 < ~/.ssh/aur_key)
+          echo "${{ secrets.AUR_SSH_KEY }}" | base64 -d > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
           echo "Host aur.archlinux.org" >> ~/.ssh/config
           echo "  IdentityFile ~/.ssh/aur" >> ~/.ssh/config

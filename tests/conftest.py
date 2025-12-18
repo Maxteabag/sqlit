@@ -15,6 +15,10 @@ import pytest
 _TEST_CONFIG_DIR = Path(tempfile.mkdtemp(prefix="sqlit-test-config-"))
 os.environ.setdefault("SQLIT_CONFIG_DIR", str(_TEST_CONFIG_DIR))
 
+# Enable plaintext credential storage for tests (no keyring in CI)
+_settings_file = _TEST_CONFIG_DIR / "settings.json"
+_settings_file.write_text('{"allow_plaintext_credentials": true}')
+
 
 def is_port_open(host: str, port: int, timeout: float = 1.0) -> bool:
     """Check if a TCP port is open."""

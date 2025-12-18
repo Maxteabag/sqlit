@@ -20,64 +20,65 @@ def _get_providers_without_advanced_tab() -> set[str]:
 
 class TestConnectionScreen:
     @pytest.mark.asyncio
-    async def test_create_connection(self):
-        app = ConnectionScreenTestApp()
+    async def test_create_connection(self, tmp_path):
+        """Test creating a new SQLite connection (no external driver needed)."""
+        # Create a temp file that passes validation
+        db_path = tmp_path / "test.db"
+        db_path.touch()
+
+        # Initialize with SQLite to avoid external driver dependencies
+        app = ConnectionScreenTestApp(prefill_values={"db_type": "sqlite"})
 
         async with app.run_test(size=(100, 35)) as pilot:
             screen = app.screen
-            screen.query_one("#conn-name").value = "my-mssql"
-            screen.query_one("#field-server").value = "localhost"
-            screen.query_one("#field-port").value = "1433"
-            screen.query_one("#field-database").value = "mydb"
-            screen.query_one("#field-username").value = "sa"
-            screen.query_one("#field-password").value = "secret"
+            screen.query_one("#conn-name").value = "my-sqlite"
+            screen.query_one("#field-file_path").value = str(db_path)
 
             screen.action_save()
             await pilot.pause()
 
         assert app.screen_result is not None
-        action, config = app.screen_result
+        action, config, original_name = app.screen_result
         assert action == "save"
-        assert config.name == "my-mssql"
-        assert config.db_type == "mssql"
-        assert config.server == "localhost"
-        assert config.port == "1433"
-        assert config.database == "mydb"
-        assert config.username == "sa"
-        assert config.password == "secret"
+        assert config.name == "my-sqlite"
+        assert config.db_type == "sqlite"
+        assert config.file_path == str(db_path)
+        assert original_name is None  # New connection has no original name
 
     @pytest.mark.asyncio
-    async def test_edit_connection(self):
+    async def test_edit_connection(self, tmp_path):
+        """Test editing an existing SQLite connection."""
+        # Create temp files that pass validation
+        old_db = tmp_path / "old.db"
+        new_db = tmp_path / "new.db"
+        old_db.touch()
+        new_db.touch()
+
         original = ConnectionConfig(
             name="prod-db",
-            db_type="mssql",
-            server="old-server",
-            port="1433",
-            database="olddb",
-            username="olduser",
-            password="oldpass",
+            db_type="sqlite",
+            file_path=str(old_db),
         )
         app = ConnectionScreenTestApp(original, editing=True)
 
         async with app.run_test(size=(100, 35)) as pilot:
             screen = app.screen
             assert screen.query_one("#conn-name").value == "prod-db"
-            assert screen.query_one("#field-server").value == "old-server"
+            assert screen.query_one("#field-file_path").value == str(old_db)
 
             screen.query_one("#conn-name").value = "new-prod-db"
-            screen.query_one("#field-server").value = "new-server"
-            screen.query_one("#field-database").value = "newdb"
+            screen.query_one("#field-file_path").value = str(new_db)
 
             screen.action_save()
             await pilot.pause()
 
         assert app.screen_result is not None
-        action, config = app.screen_result
+        action, config, original_name = app.screen_result
         assert action == "save"
         assert config.name == "new-prod-db"
-        assert config.db_type == "mssql"
-        assert config.server == "new-server"
-        assert config.database == "newdb"
+        assert config.db_type == "sqlite"
+        assert config.file_path == str(new_db)
+        assert original_name == "prod-db"  # Original name preserved for edit
 
     @pytest.mark.asyncio
     async def test_cancel_connection(self):
@@ -277,3 +278,111 @@ class TestAdvancedTab:
             advanced_tab = tabs.get_tab(advanced_pane)
 
             assert advanced_tab.disabled
+
+
+class TestEditConnectionNoDuplicates:
+    """Tests to ensure editing connections doesn't create duplicates."""
+
+    @pytest.mark.asyncio
+    async def test_edit_same_name_returns_original_name(self, tmp_path):
+        """Editing a connection with same name should return original_name."""
+        db_path = tmp_path / "test.db"
+        db_path.touch()
+
+        original = ConnectionConfig(
+            name="my-connection",
+            db_type="sqlite",
+            file_path=str(db_path),
+        )
+        app = ConnectionScreenTestApp(original, editing=True)
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            screen = app.screen
+            # Keep the same name, just save
+            screen.action_save()
+            await pilot.pause()
+
+        assert app.screen_result is not None
+        action, config, original_name = app.screen_result
+        assert action == "save"
+        assert config.name == "my-connection"
+        assert original_name == "my-connection"
+
+    @pytest.mark.asyncio
+    async def test_edit_changed_name_returns_original_name(self, tmp_path):
+        """Editing a connection with new name should return original_name for proper removal."""
+        db_path = tmp_path / "test.db"
+        db_path.touch()
+
+        original = ConnectionConfig(
+            name="old-name",
+            db_type="sqlite",
+            file_path=str(db_path),
+        )
+        app = ConnectionScreenTestApp(original, editing=True)
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            screen = app.screen
+            # Change the name
+            screen.query_one("#conn-name").value = "new-name"
+            screen.action_save()
+            await pilot.pause()
+
+        assert app.screen_result is not None
+        action, config, original_name = app.screen_result
+        assert action == "save"
+        assert config.name == "new-name"
+        assert original_name == "old-name"  # Original name preserved
+
+    @pytest.mark.asyncio
+    async def test_new_connection_returns_no_original_name(self, tmp_path):
+        """Creating a new connection should return None for original_name."""
+        db_path = tmp_path / "test.db"
+        db_path.touch()
+
+        app = ConnectionScreenTestApp(prefill_values={"db_type": "sqlite"})
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            screen = app.screen
+            screen.query_one("#conn-name").value = "brand-new"
+            screen.query_one("#field-file_path").value = str(db_path)
+            screen.action_save()
+            await pilot.pause()
+
+        assert app.screen_result is not None
+        action, config, original_name = app.screen_result
+        assert action == "save"
+        assert config.name == "brand-new"
+        assert original_name is None  # New connection has no original
+
+
+class TestDuplicateConnection:
+    """Tests for duplicate connection functionality."""
+
+    @pytest.mark.asyncio
+    async def test_duplicate_returns_no_original_name(self, tmp_path):
+        """Duplicating a connection should return None for original_name (it's a new connection)."""
+        db_path = tmp_path / "test.db"
+        db_path.touch()
+
+        # Simulate duplicate: passing a config but editing=False
+        # (duplicate creates a new connection from template)
+        template = ConnectionConfig(
+            name="original (copy)",
+            db_type="sqlite",
+            file_path=str(db_path),
+        )
+        # When duplicating, editing=False since it's a new connection
+        app = ConnectionScreenTestApp(template, editing=False)
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            screen = app.screen
+            # Save the duplicate
+            screen.action_save()
+            await pilot.pause()
+
+        assert app.screen_result is not None
+        action, config, original_name = app.screen_result
+        assert action == "save"
+        assert config.name == "original (copy)"
+        assert original_name is None  # Duplicate is treated as new connection

@@ -299,10 +299,15 @@ class ConnectionMixin:
         if not result:
             return
 
-        action, config = result
+        action, config = result[0], result[1]
+        original_name = result[2] if len(result) > 2 else None
 
         if action == "save":
-            def do_save(with_config) -> None:  # noqa: ANN001
+            def do_save(with_config, orig_name=None) -> None:  # noqa: ANN001
+                # When editing, remove by original name to properly update renamed connections
+                if orig_name:
+                    self.connections = [c for c in self.connections if c.name != orig_name]
+                # Also remove by new name to handle overwrites/duplicates
                 self.connections = [c for c in self.connections if c.name != with_config.name]
                 self.connections.append(with_config)
                 if getattr(self, "_mock_profile", None):
@@ -319,13 +324,13 @@ class ConnectionMixin:
 
                 if allow_plaintext is True:
                     reset_credentials_service()
-                    do_save(config)
+                    do_save(config, original_name)
                     return
 
                 if allow_plaintext is False:
                     config.password = ""
                     config.ssh_password = ""
-                    do_save(config)
+                    do_save(config, original_name)
                     self.notify("Keyring unavailable: passwords will be prompted when needed", severity="warning")
                     return
 
@@ -335,7 +340,7 @@ class ConnectionMixin:
                         settings2[ALLOW_PLAINTEXT_CREDENTIALS_SETTING] = True
                         save_settings(settings2)
                         reset_credentials_service()
-                        do_save(config)
+                        do_save(config, original_name)
                         self.notify("Saved passwords as plaintext in ~/.sqlit/ (0600)", severity="warning")
                         return
 
@@ -343,7 +348,7 @@ class ConnectionMixin:
                     save_settings(settings2)
                     config.password = ""
                     config.ssh_password = ""
-                    do_save(config)
+                    do_save(config, original_name)
                     self.notify("Passwords were not saved (keyring unavailable)", severity="warning")
 
                 self.push_screen(
@@ -357,7 +362,7 @@ class ConnectionMixin:
                 )
                 return
 
-            do_save(config)
+            do_save(config, original_name)
 
     def action_duplicate_connection(self: AppProtocol) -> None:
         from dataclasses import replace
