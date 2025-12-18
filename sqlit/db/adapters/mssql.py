@@ -7,6 +7,7 @@ import json
 import struct
 
 from typing import TYPE_CHECKING, Any
+from datetime import datetime, timedelta, timezone
 
 from .base import ColumnInfo, DatabaseAdapter, TableInfo
 
@@ -75,9 +76,15 @@ class SQLServerAdapter(DatabaseAdapter):
         elif auth == AuthType.SQL_SERVER:
             return base + f"UID={config.username};PWD={config.password};"
         elif auth == AuthType.AD_PASSWORD:
-            return base + f"Authentication=ActiveDirectoryPassword;" f"UID={config.username};PWD={config.password};"
+            return (
+                base + f"Authentication=ActiveDirectoryPassword;"
+                f"UID={config.username};PWD={config.password};"
+            )
         elif auth == AuthType.AD_INTERACTIVE:
-            return base + f"Authentication=ActiveDirectoryInteractive;" f"UID={config.username};"
+            return (
+                base + f"Authentication=ActiveDirectoryInteractive;"
+                f"UID={config.username};"
+            )
         elif auth == AuthType.AD_INTEGRATED:
             return base + "Encrypt=yes;"
         return base + "Trusted_Connection=yes;"
@@ -85,6 +92,7 @@ class SQLServerAdapter(DatabaseAdapter):
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to SQL Server using pyodbc."""
         from ...config import AuthType
+
         try:
             import pyodbc
         except ImportError as e:
@@ -92,7 +100,9 @@ class SQLServerAdapter(DatabaseAdapter):
 
             if not self.install_extra or not self.install_package:
                 raise e
-            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+            raise MissingDriverError(
+                self.name, self.install_extra, self.install_package
+            ) from e
 
         installed = list(pyodbc.drivers())
         if config.driver not in installed:
@@ -111,13 +121,31 @@ class SQLServerAdapter(DatabaseAdapter):
             # If token not available, fall back to standard integrated auth
             conn_str += "Authentication=ActiveDirectoryIntegrated;"
 
-        return pyodbc.connect(conn_str, timeout=10)
+        connection = pyodbc.connect(conn_str, timeout=10)
+        connection.add_output_converter(-155, self._handle_datetimeoffset)
+        return connection
+
+    def _handle_datetimeoffset(self, dto_value):
+        # ref: https://github.com/mkleehammer/pyodbc/issues/134#issuecomment-281739794
+        tup = struct.unpack(
+            "<6hI2h", dto_value
+        )  # e.g., (2017, 3, 16, 10, 35, 18, 500000000, -6, 0)
+        return datetime(
+            tup[0],
+            tup[1],
+            tup[2],
+            tup[3],
+            tup[4],
+            tup[5],
+            tup[6] // 1000,
+            timezone(timedelta(hours=tup[7], minutes=tup[8])),
+        )
 
     def _get_azure_cli_token(self) -> bytes | None:
         """Get Azure access token from Azure CLI.
 
-Returns:
-            Token bytes in the format pyodbc expects, or None if unavailable.
+        Returns:
+                    Token bytes in the format pyodbc expects, or None if unavailable.
         """
         try:
             result = subprocess.run(
@@ -182,12 +210,17 @@ Returns:
             )
         else:
             cursor.execute(
-                "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS " "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+                "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS "
+                "ORDER BY TABLE_SCHEMA, TABLE_NAME"
             )
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
     def get_columns(
-        self, conn: Any, table: str, database: str | None = None, schema: str | None = None
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
     ) -> list[ColumnInfo]:
         """Get columns for a table from SQL Server."""
         cursor = conn.cursor()
@@ -231,7 +264,12 @@ Returns:
                 "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
                 (schema, table),
             )
-        return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in cursor.fetchall()]
+        return [
+            ColumnInfo(
+                name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures from SQL Server."""
@@ -256,14 +294,22 @@ Returns:
         escaped = name.replace("]", "]]")
         return f"[{escaped}]"
 
-    def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
+    def build_select_query(
+        self,
+        table: str,
+        limit: int,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> str:
         """Build SELECT TOP query for SQL Server."""
         schema = schema or "dbo"
         if database:
             return f"SELECT TOP {limit} * FROM [{database}].[{schema}].[{table}]"
         return f"SELECT TOP {limit} * FROM [{schema}].[{table}]"
 
-    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
+    def execute_query(
+        self, conn: Any, query: str, max_rows: int | None = None
+    ) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on SQL Server with optional row limit."""
         cursor = conn.cursor()
         cursor.execute(query)
