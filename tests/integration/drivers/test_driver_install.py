@@ -27,7 +27,7 @@ def run_command(command: str) -> tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
-def test_no_driver_initially() -> bool:
+def check_no_driver_initially() -> bool:
     log("Step 1: Checking that no ODBC driver is installed initially...")
 
     from sqlit.drivers import get_installed_drivers
@@ -41,7 +41,7 @@ def test_no_driver_initially() -> bool:
     return True
 
 
-def test_get_install_commands() -> list[str] | None:
+def get_install_commands_for_os() -> list[str] | None:
     log("Step 2: Getting installation commands for this OS...")
 
     from sqlit.drivers import get_install_commands, get_os_info
@@ -65,7 +65,7 @@ def test_get_install_commands() -> list[str] | None:
     return install_cmd.commands
 
 
-def test_execute_install_commands(commands: list[str]) -> bool:
+def execute_install_commands(commands: list[str]) -> bool:
     log("Step 3: Executing installation commands...")
 
     for i, command in enumerate(commands, 1):
@@ -94,7 +94,7 @@ def test_execute_install_commands(commands: list[str]) -> bool:
     return True
 
 
-def test_driver_installed() -> str | None:
+def verify_driver_installed() -> str | None:
     log("Step 4: Verifying driver is now installed...")
 
     import sqlit.drivers
@@ -114,7 +114,7 @@ def test_driver_installed() -> str | None:
     return best
 
 
-def test_connection(driver: str) -> bool:
+def verify_connection(driver: str) -> bool:
     log("Step 5: Testing connection to SQL Server...")
 
     host = os.environ.get("MSSQL_HOST", "localhost")
@@ -173,27 +173,42 @@ def main() -> int:
     distro = os.environ.get("DISTRO_NAME", "unknown")
     log(f"Testing on: {distro}")
 
-    if not test_no_driver_initially():
+    if not check_no_driver_initially():
         return 1
 
-    commands = test_get_install_commands()
+    commands = get_install_commands_for_os()
     if commands is None:
         return 1
 
-    if not test_execute_install_commands(commands):
+    if not execute_install_commands(commands):
         return 1
 
-    driver = test_driver_installed()
+    driver = verify_driver_installed()
     if driver is None:
         return 1
 
-    if not test_connection(driver):
+    if not verify_connection(driver):
         return 1
 
     log("=" * 60)
     log("ALL TESTS PASSED", "SUCCESS")
     log("=" * 60)
     return 0
+
+
+def test_driver_install_integration() -> None:
+    """Run the full driver installation integration test.
+
+    This test is skipped unless MSSQL_PASSWORD is set, indicating
+    we're running in the proper CI environment with Docker.
+    """
+    import pytest
+
+    if not os.environ.get("MSSQL_PASSWORD"):
+        pytest.skip("MSSQL_PASSWORD not set - skipping integration test")
+
+    result = main()
+    assert result == 0, "Driver installation integration test failed"
 
 
 if __name__ == "__main__":
