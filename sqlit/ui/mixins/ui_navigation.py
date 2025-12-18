@@ -107,13 +107,13 @@ class UINavigationMixin:
             if active and dialog_open:
                 # Active pane with dialog: key matches border (disabled), title stays primary
                 # Border reverts to default (active-pane class removed)
-                pane.border_title = f"[$border]\\[{key}][/]─[$primary]{label}[/]"
+                pane.border_title = f"[$border]\\[{key}][/] [$primary]{label}[/]"
             elif active:
                 # Active pane, no dialog: both key and title primary
-                pane.border_title = f"[$primary]\\[{key}]─{label}[/]"
+                pane.border_title = f"[$primary]\\[{key}] {label}[/]"
             else:
                 # Inactive pane: key and title match border color via CSS
-                pane.border_title = f"\\[{key}]─{label}"
+                pane.border_title = f"\\[{key}] {label}"
 
         set_title(pane_explorer, "e", "Explorer", active=active_pane == "explorer")
         set_title(pane_query, "q", "Query", active=active_pane == "query")
