@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import subprocess
+import json
+import struct
+
 from typing import TYPE_CHECKING, Any
 
 from .base import ColumnInfo, DatabaseAdapter, TableInfo
+
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -74,12 +79,12 @@ class SQLServerAdapter(DatabaseAdapter):
         elif auth == AuthType.AD_INTERACTIVE:
             return base + f"Authentication=ActiveDirectoryInteractive;" f"UID={config.username};"
         elif auth == AuthType.AD_INTEGRATED:
-            return base + "Authentication=ActiveDirectoryIntegrated;"
-
+            return base + "Encrypt=yes;"
         return base + "Trusted_Connection=yes;"
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to SQL Server using pyodbc."""
+        from ...config import AuthType
         try:
             import pyodbc
         except ImportError as e:
@@ -96,7 +101,55 @@ class SQLServerAdapter(DatabaseAdapter):
             raise MissingODBCDriverError(config.driver, installed)
 
         conn_str = self._build_connection_string(config)
+
+        # For AD_INTEGRATED, try Azure CLI token first
+        if config.get_auth_type() == AuthType.AD_INTEGRATED:
+            token = self._get_azure_cli_token()
+            if token:
+                # SQL_COPT_SS_ACCESS_TOKEN = 1256
+                return pyodbc.connect(conn_str, attrs_before={1256: token}, timeout=10)
+            # If token not available, fall back to standard integrated auth
+            conn_str += "Authentication=ActiveDirectoryIntegrated;"
+
         return pyodbc.connect(conn_str, timeout=10)
+
+    def _get_azure_cli_token(self) -> bytes | None:
+        """Get Azure access token from Azure CLI.
+
+Returns:
+            Token bytes in the format pyodbc expects, or None if unavailable.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "az",
+                    "account",
+                    "get-access-token",
+                    "--resource",
+                    "https://database.windows.net/",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            )
+            token = json.loads(result.stdout)["accessToken"]
+
+            # Convert token to the format pyodbc expects (UTF-16-LE with length prefix)
+            token_bytes = token.encode("utf-16-le")
+            token_struct = struct.pack(
+                f"<I{len(token_bytes)}s", len(token_bytes), token_bytes
+            )
+            return token_struct
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+            KeyError,
+            json.JSONDecodeError,
+        ):
+            # Azure CLI not available, not logged in, or token retrieval failed
+            return None
 
     def get_databases(self, conn: Any) -> list[str]:
         """Get list of databases from SQL Server."""
