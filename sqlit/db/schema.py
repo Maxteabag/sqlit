@@ -505,6 +505,27 @@ SUPABASE_SCHEMA = ConnectionSchema(
 )
 
 
+FIREBIRD_SCHEMA = ConnectionSchema(
+    db_type="firebird",
+    display_name="Firebird",
+    fields=(
+        SchemaField(
+            name="server",
+            label="Server",
+            placeholder="(local connection)",
+            required=False,
+            group="server_port",
+        ),
+        _port_field("3050"),
+        _database_field(),
+        _username_field(),
+        _password_field(),
+    )
+    + SSH_FIELDS,
+    default_port="3050",
+)
+
+
 def get_connection_schema(db_type: str) -> ConnectionSchema:
     from .providers import get_connection_schema as _get_connection_schema
 

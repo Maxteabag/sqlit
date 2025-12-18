@@ -112,6 +112,7 @@ if TYPE_CHECKING:
         SUPABASE = "supabase"
         TURSO = "turso"
         D1 = "d1"
+        FIREBIRD = "firebird"
 
 else:
     DatabaseType = Enum("DatabaseType", {t.upper(): t for t in _get_supported_db_types()})  # type: ignore[misc]

@@ -45,6 +45,7 @@ all = [
     "clickhouse-connect>=0.7.0",
     "requests>=2.32.4",  # min avoids known CVEs
     "libsql-client>=0.1.0",
+    "firebirdsql>=1.3.5",
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",
 ]
@@ -58,6 +59,7 @@ duckdb = ["duckdb>=1.1.0"]  # min avoids known CVEs
 clickhouse = ["clickhouse-connect>=0.7.0"]
 d1 = ["requests>=2.32.4"]  # min avoids known CVEs
 turso = ["libsql-client>=0.1.0"]
+firebird = ["firebirdsql>=1.3.5"]
 ssh = [
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",

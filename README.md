@@ -210,6 +210,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | ClickHouse | `clickhouse-connect` | `pipx inject sqlit-tui clickhouse-connect` | `python -m pip install clickhouse-connect` |
 | Turso | `libsql-client` | `pipx inject sqlit-tui libsql-client` | `python -m pip install libsql-client` |
 | Cloudflare D1 | `requests` | `pipx inject sqlit-tui requests` | `python -m pip install requests` |
+| Firebird | `firebirdsql` | `pip install firebirdsql` | `python -m pip install firebirdsql` |
 
 **Note:** SQL Server also requires the platform-specific ODBC driver. On your first connection attempt, `sqlit` can help you install it if it's missing.
 

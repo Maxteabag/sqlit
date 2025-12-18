@@ -40,6 +40,7 @@ __all__ = [
     # Adapters (lazy via __getattr__)
     "CockroachDBAdapter",
     "DuckDBAdapter",
+    "FirebirdAdapter",
     "MariaDBAdapter",
     "MySQLAdapter",
     "OracleAdapter",
@@ -56,6 +57,7 @@ __all__ = [
 if TYPE_CHECKING:
     from .adapters.cockroachdb import CockroachDBAdapter
     from .adapters.duckdb import DuckDBAdapter
+    from .adapters.firebird import FirebirdAdapter
     from .adapters.mariadb import MariaDBAdapter
     from .adapters.mssql import SQLServerAdapter
     from .adapters.mysql import MySQLAdapter
@@ -88,6 +90,7 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     # Adapters (through sqlit.db.adapters, which itself lazy-loads)
     "CockroachDBAdapter": ("sqlit.db.adapters", "CockroachDBAdapter"),
     "DuckDBAdapter": ("sqlit.db.adapters", "DuckDBAdapter"),
+    "FirebirdAdapter": ("sqlit.db.adapters", "FirebirdAdapter"),
     "MariaDBAdapter": ("sqlit.db.adapters", "MariaDBAdapter"),
     "MySQLAdapter": ("sqlit.db.adapters", "MySQLAdapter"),
     "OracleAdapter": ("sqlit.db.adapters", "OracleAdapter"),

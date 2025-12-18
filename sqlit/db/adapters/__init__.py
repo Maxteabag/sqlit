@@ -22,6 +22,7 @@ __all__ = [
     "ClickHouseAdapter",
     "CockroachDBAdapter",
     "DuckDBAdapter",
+    "FirebirdAdapter",
     "MariaDBAdapter",
     "MySQLAdapter",
     "OracleAdapter",
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
     from .clickhouse import ClickHouseAdapter
     from .cockroachdb import CockroachDBAdapter
     from .duckdb import DuckDBAdapter
+    from .firebird import FirebirdAdapter
     from .mariadb import MariaDBAdapter
     from .mssql import SQLServerAdapter
     from .mysql import MySQLAdapter

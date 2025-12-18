@@ -18,6 +18,7 @@ from .schema import (
     COCKROACHDB_SCHEMA,
     D1_SCHEMA,
     DUCKDB_SCHEMA,
+    FIREBIRD_SCHEMA,
     MARIADB_SCHEMA,
     MSSQL_SCHEMA,
     MYSQL_SCHEMA,
@@ -34,6 +35,7 @@ from .adapters.clickhouse import ClickHouseAdapter
 from .adapters.cockroachdb import CockroachDBAdapter
 from .adapters.d1 import D1Adapter
 from .adapters.duckdb import DuckDBAdapter
+from .adapters.firebird import FirebirdAdapter
 from .adapters.mariadb import MariaDBAdapter
 from .adapters.mssql import SQLServerAdapter
 from .adapters.mysql import MySQLAdapter
@@ -66,6 +68,7 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "supabase": ProviderSpec(schema=SUPABASE_SCHEMA, adapter_class=SupabaseAdapter),
     "d1": ProviderSpec(schema=D1_SCHEMA, adapter_class=D1Adapter),
     "clickhouse": ProviderSpec(schema=CLICKHOUSE_SCHEMA, adapter_class=ClickHouseAdapter),
+    "firebird": ProviderSpec(schema=FIREBIRD_SCHEMA, adapter_class=FirebirdAdapter),
 }
 
 
