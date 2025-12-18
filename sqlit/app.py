@@ -486,8 +486,7 @@ class SSMSTUI(
         self._startup_stamp("compose_start")
         with Vertical(id="main-container"):
             with Horizontal(id="content"):
-                with Vertical(id="sidebar") as sidebar:
-                    sidebar.border_title = r"\[e]─Explorer"
+                with Vertical(id="sidebar"):
                     yield TreeFilterInput(id="tree-filter")
                     tree: Tree[Any] = Tree("Servers", id="object-tree")
                     tree.show_root = False
@@ -495,8 +494,7 @@ class SSMSTUI(
                     yield tree
 
                 with Vertical(id="main-panel"):
-                    with Container(id="query-area") as query_area:
-                        query_area.border_title = r"\[q]─Query"
+                    with Container(id="query-area"):
                         yield TextArea(
                             "",
                             language="sql",
@@ -505,8 +503,7 @@ class SSMSTUI(
                         )
                         yield Lazy(AutocompleteDropdown(id="autocomplete-dropdown"))
 
-                    with Container(id="results-area") as results_area:
-                        results_area.border_title = r"\[r]─Results"
+                    with Container(id="results-area"):
                         yield Lazy(DataTable(id="results-table", zebra_stripes=True, show_header=False))
 
             yield Static("Not connected", id="status-bar")
