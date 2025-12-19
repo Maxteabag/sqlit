@@ -196,6 +196,18 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 
 **Note:** SQL Server also requires the platform-specific ODBC driver. On your first connection attempt, `sqlit` can help you install it if it's missing.
 
+### SSH Tunnel Support
+
+SSH tunnel functionality requires additional dependencies. Install with the `ssh` extra:
+
+| Method | Command |
+| :--- | :--- |
+| pipx | `pipx install 'sqlit-tui[ssh]'` |
+| uv | `uv tool install 'sqlit-tui[ssh]'` |
+| pip | `pip install 'sqlit-tui[ssh]'` |
+
+If you try to create an SSH connection without these dependencies, sqlit will detect this and show you the exact command to install them for your environment.
+
 ## License
 
 MIT
