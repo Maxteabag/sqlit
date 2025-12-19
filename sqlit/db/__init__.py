@@ -15,7 +15,7 @@ from .providers import (
     is_file_based,
     supports_ssh,
 )
-from .tunnel import create_ssh_tunnel
+from .tunnel import create_ssh_tunnel, ensure_ssh_tunnel_available
 
 __all__ = [
     # Base
@@ -50,6 +50,7 @@ __all__ = [
     "TursoAdapter",
     # Tunnel
     "create_ssh_tunnel",
+    "ensure_ssh_tunnel_available",
 ]
 
 if TYPE_CHECKING:

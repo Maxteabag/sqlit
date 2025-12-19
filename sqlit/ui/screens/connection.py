@@ -277,6 +277,8 @@ class ConnectionScreen(ModalScreen):
         self.validation_state: ValidationState = ValidationState()
         self._saved_dialog_subtitle: str | None = None
         self._missing_driver_error: Any = None  # Stores MissingDriverError if driver is missing
+        self._missing_ssh_driver_error: Any = None  # Stores MissingDriverError for SSH tunnel
+        self._install_error: Any = None
         self._install_in_progress: bool = False
         self._install_spinner_timer: Timer | None = None
         self._install_spinner_index: int = 0
@@ -506,6 +508,36 @@ class ConnectionScreen(ModalScreen):
 
         self._update_driver_status_ui()
 
+    def _check_ssh_driver_availability(self) -> None:
+        from ...db import ensure_ssh_tunnel_available
+
+        self._missing_ssh_driver_error = None
+        if not supports_ssh(self._current_db_type.value):
+            self._update_driver_status_ui()
+            return
+        try:
+            ensure_ssh_tunnel_available()
+        except MissingDriverError as e:
+            self._missing_ssh_driver_error = e
+
+        self._update_driver_status_ui()
+
+    def _get_active_tab(self) -> str:
+        try:
+            tabs = self.query_one("#connection-tabs", TabbedContent)
+            return tabs.active
+        except Exception:
+            return "tab-general"
+
+    def _format_install_hint(self, strategy: Any, package_name: str) -> str:
+        if strategy.kind == "pip":
+            return f"pip install {package_name}"
+        if strategy.kind == "pip-user":
+            return f"pip install --user {package_name}"
+        if strategy.kind == "pipx":
+            return f"pipx inject sqlit-tui {package_name}"
+        return strategy.manual_instructions.split("\n")[0].strip()
+
     def _update_driver_status_ui(self) -> None:
         try:
             test_status = self.query_one("#test-status", Static)
@@ -518,8 +550,8 @@ class ConnectionScreen(ModalScreen):
         except Exception:
             pass
 
-        if self._install_in_progress and self._missing_driver_error:
-            error = self._missing_driver_error
+        if self._install_in_progress and self._install_error:
+            error = self._install_error
             spinner = self._INSTALL_SPINNER_FRAMES[self._install_spinner_index % len(self._INSTALL_SPINNER_FRAMES)]
             test_status.update(
                 f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
@@ -528,11 +560,16 @@ class ConnectionScreen(ModalScreen):
             dialog.border_subtitle = "[bold]Installing…[/]  Cancel <esc>"
             return
 
-        if self._missing_driver_error:
+        active_tab = self._get_active_tab()
+        if active_tab == "tab-ssh":
+            error = self._missing_ssh_driver_error
+        else:
             error = self._missing_driver_error
+
+        if error:
             strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
             if strategy.can_auto_install:
-                install_cmd = strategy.manual_instructions.split("\n")[0].strip()
+                install_cmd = self._format_install_hint(strategy, error.package_name)
                 test_status.update(
                     f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
                     f"[dim]Install with:[/] {escape(install_cmd)}"
@@ -645,6 +682,7 @@ class ConnectionScreen(ModalScreen):
             return
 
         self._install_in_progress = True
+        self._install_error = error
         self._install_spinner_index = 0
         self._post_install_message = None
         self._update_driver_status_ui()
@@ -672,9 +710,13 @@ class ConnectionScreen(ModalScreen):
 
         self._stop_install_spinner()
         self._install_in_progress = False
+        self._install_error = None
 
         if success:
-            self._check_driver_availability(self._current_db_type)
+            if isinstance(error, MissingDriverError) and error.extra_name == "ssh":
+                self._check_ssh_driver_availability()
+            else:
+                self._check_driver_availability(self._current_db_type)
             self._post_install_message = "Successfully installed driver"
             self._update_driver_status_ui()
 
@@ -828,6 +870,8 @@ class ConnectionScreen(ModalScreen):
             t0 = time.perf_counter()
 
         self._check_driver_availability(self._current_db_type)
+        if self._get_active_tab() == "tab-ssh":
+            self._check_ssh_driver_availability()
 
         if debug:
             print(f"[DEBUG] _check_driver_availability: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
@@ -881,6 +925,12 @@ class ConnectionScreen(ModalScreen):
                 tabs.active = active_tab
             except Exception:
                 pass
+
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        if self._get_active_tab() == "tab-ssh":
+            self._check_ssh_driver_availability()
+        else:
+            self._update_driver_status_ui()
 
     def on_descendant_focus(self, event: Any) -> None:
         focused = self.focused
@@ -1235,9 +1285,14 @@ class ConnectionScreen(ModalScreen):
     def action_install_driver(self) -> None:
         if self._install_in_progress:
             return
+        active_tab = self._get_active_tab()
+        if active_tab == "tab-ssh" and self._missing_ssh_driver_error:
+            self._prompt_install_missing_driver(self._missing_ssh_driver_error)
+            return
         if self._missing_driver_error:
             self._prompt_install_missing_driver(self._missing_driver_error)
-        elif self._current_db_type.value == "mssql":
+            return
+        if self._current_db_type.value == "mssql":
             self._open_odbc_driver_setup()
 
     def _clear_field_error(self, name: str) -> None:
