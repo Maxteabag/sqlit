@@ -198,7 +198,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 
 ## Vision
 The core purpose of this application is to read Read&Write to a SQL database.
-The core elements to achieve this purpose is: CEQR: 
+The core elements to achieve this purpose is: CEQR:
 C: Connecting
 E: Exploring
 Q: Querying
@@ -215,7 +215,7 @@ A: Aesthetically pleasing
 F: Fun
 F: Fast
 
-If an idea or feature does *not* achieve any of the 'CBQV' elements adhering to all of the 'EAFF' requirements. It does not belong to sqlit. 
+If an idea or feature does *not* achieve any of the 'CBQV' elements adhering to all of the 'EAFF' requirements. It does not belong to sqlit.
 
 
 [E]asy:
@@ -233,8 +233,8 @@ Sqlit aims to fulfill its core purpose for the user, with intention to giving th
 
 Essentially, sqlit aims to do CRUD on SQL really well.
 
-This implies this tool is more suited for developer's daily use than an database administrator. 
-Every feature in sqlit should have a target audience in which they will use it every time they use sqlit. 
+This implies this tool is more suited for developer's daily use than an database administrator.
+Every feature in sqlit should have a target audience in which they will use it every time they use sqlit.
 If nobody is going to a feature every day. It does not belong to sqlit.
 E.g.
 1) advanced query performance debugging -> rarely used -> does not belong in sqlit
@@ -247,7 +247,7 @@ Voluntary advanced usage: Anything beyond most essentials to achieve CEQR should
 
 The idea is the user is exposed to an interface that's minimalistic and easy, but if they want to become 'power users' they may dig into command menu or see help and memorize.
 
-Advances features should not be advertised on the main tool bar or anywhere else where the user has no say in whether it's rendered, as they take up space and distract from the most essential features for crud. 
+Advances features should not be advertised on the main tool bar or anywhere else where the user has no say in whether it's rendered, as they take up space and distract from the most essential features for crud.
 
 One state: There should be no settings or preferences with important exception of interface (aesthetics, keyboard bindings). No settings to enable or disable features for conditional behaviour. Do not include a feature that a user finds annoying. Settings to disable a feature is a symptom of this. Anything beyond essential must be sought after if needed, not disabled if unwanted.
 
@@ -260,7 +260,7 @@ To make sqlit as 'aesthetically pleasing' any keybinding not strictly necessary 
 Keybindings will favour 'vim' traditions as the core audience is developers who enjoy working in terminals.
 We shy away from ^+ commands and will only use them where it is not natural to have a "insert/normal" mode and where input is crucial. (Typical is pop up modals)
 
-Ideal: 
+Ideal:
 It should be easy to use for someone who just started using sqlit.
 sqlit should provide fun and a feeling of mastery and satisfaction for those who want to achieve it, by becoming a sql-manipulating wizard with creative keybinding combos.
 
@@ -269,7 +269,7 @@ Designing keybindings decision hierarchy:
 2. Harmony (we should think about which keybindings are used in sequence, in typical to flow and maximize user mastery satisfaction and opportunity to combine them fast)
 3. Traditions (vim, specifically)
 
-Example: 
+Example:
 <e> = explorer pane, <q> = query pane, <r> = results pane.
 Rationale: E;Q;R satisfies both intuitiveness (each binding is the first letter of the pane), harmony (proximity: qwerty speaks for itself)
 
