@@ -112,6 +112,26 @@ services:
       retries: 10
       start_period: 10s
 
+  firebird:
+    image: firebirdsql/firebird:5.0.3-noble
+    container_name: sqlit-test-firebird
+    environment:
+      FIREBIRD_USER: "testuser"
+      FIREBIRD_PASSWORD: "TestPassword123!"
+      FIREBIRD_DATABASE: "/var/lib/firebird/data/test_sqlit.fdb"
+    ports:
+      - "3050:3050"
+    healthcheck:
+      # Firebird doesn't come with a straightforward health check, but this
+      # ought to be enough, I hope...
+      test: ["CMD", "nc", "-vz", "localhost", "3050"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    tmpfs:
+      - /var/lib/firebird/data
+
   # SSH server for testing SSH tunnel connections
   # Connects to postgres container on docker network
   ssh:

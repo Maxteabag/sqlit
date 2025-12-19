@@ -114,6 +114,7 @@ markers = [
     "postgresql: PostgreSQL database tests",
     "mysql: MySQL database tests",
     "oracle: Oracle database tests",
+    "firebird: Firebird database tests",
     "clickhouse: ClickHouse database tests",
     "asyncio: async tests",
     "integration: integration tests (may require external services)",
