@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from .test_database_base import BaseDatabaseTestsWithLimit, DatabaseTestConfig
+from .test_database_base import BaseDatabaseTests, DatabaseTestConfig
 
 
-class TestFirebirdIntegration(BaseDatabaseTestsWithLimit):
+class TestFirebirdIntegration(BaseDatabaseTests):
     """Integration tests for Firebird database operations via CLI.
 
     These tests require a running Firebird instance (via Docker).

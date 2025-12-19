@@ -568,7 +568,18 @@ def firebird_db(firebird_server_ready: bool) -> str:
             user=FIREBIRD_USER,
             password=FIREBIRD_PASSWORD,
         )
-        cursor = conn.cursor()
+    except Exception as e:
+        pytest.skip(f"cannot connect to database: {e}")
+
+    cursor = conn.cursor()
+    try:
+        # In case we need to recreate things, this needs to be done first.
+        try:
+            cursor.execute("DROP VIEW test_user_emails")
+        except:  # noqa: E722
+            pass
+        finally:
+            conn.commit()
 
         cursor.execute("""
             RECREATE TABLE test_users (
@@ -588,23 +599,28 @@ def firebird_db(firebird_server_ready: bool) -> str:
         """)
 
         cursor.execute("""
-            RECREATE VIEW test_user_emails AS
+            CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
+        conn.commit()
+
         # Firebird doesn't support bulk inserts with VALUES
-        cursor.execute("INSERT INTO test_users (id, name, email) VALUES (1, 'Alice', 'alice@example.com')")
-        cursor.execute("INSERT INTO test_users (id, name, email) VALUES (2, 'Bob', 'bob@example.com')")
-        cursor.execute("INSERT INTO test_users (id, name, email) VALUES (3, 'Charlie', 'charlie@example.com')")
+        for insert in [
+            "INSERT INTO test_users (id, name, email) VALUES (1, 'Alice', 'alice@example.com')",
+            "INSERT INTO test_users (id, name, email) VALUES (2, 'Bob', 'bob@example.com')",
+            "INSERT INTO test_users (id, name, email) VALUES (3, 'Charlie', 'charlie@example.com')",
+            "INSERT INTO test_products (id, name, price, stock) VALUES (1, 'Widget', 9.99, 100)",
+            "INSERT INTO test_products (id, name, price, stock) VALUES (2, 'Gadget', 19.99, 50)",
+            "INSERT INTO test_products (id, name, price, stock) VALUES (3, 'Gizmo', 29.99, 25)",
+        ]:
+            cursor.execute(insert)
 
-        cursor.execute("INSERT INTO test_products (id, name, price, stock) VALUES (1, 'Widget', 9.99, 100)")
-        cursor.execute("INSERT INTO test_products (id, name, price, stock) VALUES (2, 'Gadget', 19.99, 50)")
-        cursor.execute("INSERT INTO test_products (id, name, price, stock) VALUES (3, 'Gizmo', 29.99, 25)")
-
-        conn.close()
-
+        conn.commit()
     except Exception as e:
         pytest.skip(f"Failed to setup Firebird database: {e}")
+    finally:
+        conn.close()
 
     yield FIREBIRD_DATABASE
 
@@ -616,13 +632,20 @@ def firebird_db(firebird_server_ready: bool) -> str:
             user=FIREBIRD_USER,
             password=FIREBIRD_PASSWORD,
         )
-        cursor = conn.cursor()
+    except Exception as e:
+        pytest.skip(f"Failed to connect to Firebird database for teardown: {e}")
+
+    cursor = conn.cursor()
+    try:
         cursor.execute("DROP VIEW test_user_emails")
         cursor.execute("DROP TABLE test_users")
         cursor.execute("DROP TABLE test_products")
+    except Exception as e:
+        pytest.skip(f"Failed to tear down Firebird database: {e}")
+    finally:
+        cursor.close()
+        conn.commit()
         conn.close()
-    except Exception:
-        pass
 
 
 @pytest.fixture(scope="function")

@@ -121,3 +121,10 @@ class FirebirdAdapter(CursorBasedAdapter):
     ) -> str:
         """Build SELECT LIMIT query."""
         return f'SELECT * FROM "{table}" ROWS {limit}'
+
+    def execute_non_query(self, conn: Any, query: str) -> int:
+        # Firebird has no autocommit mode, so we need to guarantee it ourselves.
+        try:
+            return super().execute_non_query(conn, query)
+        finally:
+            conn.commit()
