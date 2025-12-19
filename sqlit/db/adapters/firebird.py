@@ -85,13 +85,26 @@ class FirebirdAdapter(CursorBasedAdapter):
     ) -> list[ColumnInfo]:
         """List the fields of a given table and their types."""
         cursor = conn.cursor()
+
+        # Find the fields that form part of the primary key
+        cursor.execute(
+            "SELECT    sg.rdb$field_name "
+            "FROM      rdb$indices AS ix "
+            "JOIN      rdb$index_segments AS sg USING (rdb$index_name) "
+            "LEFT JOIN rdb$relation_constraints AS rc USING (rdb$index_name) "
+            "WHERE     rc.rdb$constraint_type = 'PRIMARY KEY' AND rc.rdb$relation_name = ?",
+            (table.upper(),),
+        )
+        pk_fields = set(row[0].rstrip() for row in cursor.fetchall())
+
+        # Find the fields themselves.
         cursor.execute(
             "SELECT rf.rdb$field_name, f.rdb$field_type, f.rdb$character_length "
             "FROM   rdb$relation_fields AS rf "
             "JOIN   rdb$fields AS f ON f.rdb$field_name = rf.rdb$field_source "
             "WHERE  rdb$relation_name = ? "
             "ORDER BY rdb$field_position ASC",
-            (table,),
+            (table.upper(),),
         )
         columns = []
         for row in cursor.fetchall():
@@ -99,7 +112,8 @@ class FirebirdAdapter(CursorBasedAdapter):
                 data_type = f"{self._types[row[1]]}({row[2]})"
             else:
                 data_type = self._types[row[1]]
-            columns.append(ColumnInfo(name=row[0].rstrip(), data_type=data_type))
+            name = row[0].rstrip()
+            columns.append(ColumnInfo(name=name, data_type=data_type, is_primary_key=name in pk_fields))
         return columns
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
