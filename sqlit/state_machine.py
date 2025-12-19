@@ -450,7 +450,7 @@ class TreeFocusedState(State):
         self.allows("collapse_tree", help="Collapse all", help_key="z")
         self.allows("tree_cursor_down")  # vim j
         self.allows("tree_cursor_up")  # vim k
-        self.allows("tree_filter", help="Filter tree", help_key="/")
+        self.allows("tree_filter")  # Help documented in General section
 
     def is_active(self, app: SSMSTUI) -> bool:
         if not app.object_tree.has_focus:
@@ -881,6 +881,13 @@ class UIStateMachine:
         entries_by_category["Commands (<space>)"] = [
             HelpEntry(f"<space>+{cmd.key}", cmd.label, "Commands (<space>)") for cmd in get_leader_commands()
         ]
+
+        # Add manual General entries for modal dialogs
+        if "General" not in entries_by_category:
+            entries_by_category["General"] = []
+        entries_by_category["General"].append(
+            HelpEntry("/", "Search/filter (Explorer, Connection picker)", "General")
+        )
 
         category_order = [
             "Explorer",

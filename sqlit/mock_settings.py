@@ -9,6 +9,21 @@ from typing import Any
 from .config import ConnectionConfig
 from .db.adapters.base import ColumnInfo
 from .mocks import MockDatabaseAdapter, MockProfile, get_mock_profile
+from .services.docker_detector import ContainerStatus, DetectedContainer
+
+# Global storage for mock docker containers
+_mock_docker_containers: list[DetectedContainer] | None = None
+
+
+def set_mock_docker_containers(containers: list[DetectedContainer] | None) -> None:
+    """Set mock Docker containers for testing/demo purposes."""
+    global _mock_docker_containers
+    _mock_docker_containers = containers
+
+
+def get_mock_docker_containers() -> list[DetectedContainer] | None:
+    """Get mock Docker containers if set."""
+    return _mock_docker_containers
 
 
 def apply_mock_environment(settings: dict[str, Any]) -> None:
@@ -38,6 +53,12 @@ def apply_mock_environment(settings: dict[str, Any]) -> None:
             os.environ["SQLIT_MOCK_PIPX"] = pipx
         elif pipx == "auto":
             os.environ.pop("SQLIT_MOCK_PIPX", None)
+
+    # Parse and set mock Docker containers
+    docker_containers = mock_settings.get("docker_containers")
+    if isinstance(docker_containers, list):
+        containers = _parse_docker_containers(docker_containers)
+        set_mock_docker_containers(containers)
 
 
 def build_mock_profile_from_settings(settings: dict[str, Any]) -> MockProfile | None:
@@ -273,3 +294,52 @@ def _add_table_query_results(
     ]
     for pattern in patterns:
         query_results.setdefault(pattern, (columns, rows))
+
+
+def _parse_docker_containers(raw: Any) -> list[DetectedContainer]:
+    """Parse mock Docker containers from settings JSON."""
+    if not isinstance(raw, list):
+        return []
+
+    containers: list[DetectedContainer] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+
+        container_id = str(item.get("container_id") or item.get("id") or "mock")
+        container_name = str(item.get("container_name") or item.get("name") or "")
+        if not container_name:
+            continue
+
+        db_type = str(item.get("db_type") or "")
+        if not db_type:
+            continue
+
+        # Parse status
+        status_str = str(item.get("status") or "running").lower()
+        status = ContainerStatus.RUNNING if status_str == "running" else ContainerStatus.EXITED
+
+        # Parse port
+        port = item.get("port")
+        if isinstance(port, int):
+            port_val = port
+        elif isinstance(port, str) and port.isdigit():
+            port_val = int(port)
+        else:
+            port_val = None
+
+        containers.append(
+            DetectedContainer(
+                container_id=container_id,
+                container_name=container_name,
+                db_type=db_type,
+                host=str(item.get("host") or "localhost"),
+                port=port_val,
+                username=item.get("username") or item.get("user"),
+                password=item.get("password"),
+                database=item.get("database"),
+                status=status,
+            )
+        )
+
+    return containers

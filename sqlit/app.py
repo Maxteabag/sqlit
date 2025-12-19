@@ -535,13 +535,12 @@ class SSMSTUI(
 
         self._apply_mock_settings(settings)
 
-        if self._startup_connection:
-            # Only show the explicit startup connection, not saved ones
-            self._setup_startup_connection(self._startup_connection)
-        elif self._mock_profile:
+        if self._mock_profile:
             self.connections = self._mock_profile.connections.copy()
         else:
             self.connections = load_connections(load_credentials=False)
+        if self._startup_connection:
+            self._setup_startup_connection(self._startup_connection)
         self._startup_stamp("connections_loaded")
 
         self.refresh_tree()
@@ -574,10 +573,9 @@ class SSMSTUI(
             self._session_factory = self._create_mock_session_factory(mock_profile)
 
     def _setup_startup_connection(self, config: ConnectionConfig) -> None:
-        """Set up a startup connection as the only visible connection."""
+        """Set up a startup connection to auto-connect after mount."""
         if not config.name:
             config.name = "Temp Connection"
-        self.connections = [config]
         self._startup_connect_config = config
 
     def _startup_stamp(self, name: str) -> None:

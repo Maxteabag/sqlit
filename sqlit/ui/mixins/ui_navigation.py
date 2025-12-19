@@ -103,6 +103,14 @@ class UINavigationMixin:
         dialog_open = bool(getattr(self, "_dialog_open", False))
         active_pane = getattr(self, "_last_active_pane", None)
 
+        direct_config = getattr(self, "_direct_connection_config", None)
+        direct_active = (
+            direct_config is not None
+            and self.current_config is not None
+            and direct_config.name == self.current_config.name
+        )
+        explorer_label = "Direct connection" if direct_active else "Explorer"
+
         def set_title(pane: Any, key: str, label: str, *, active: bool) -> None:
             if active and dialog_open:
                 # Active pane with dialog: key matches border (disabled), title stays primary
@@ -115,7 +123,7 @@ class UINavigationMixin:
                 # Inactive pane: key and title match border color via CSS
                 pane.border_title = f"\\[{key}] {label}"
 
-        set_title(pane_explorer, "e", "Explorer", active=active_pane == "explorer")
+        set_title(pane_explorer, "e", explorer_label, active=active_pane == "explorer")
         set_title(pane_query, "q", "Query", active=active_pane == "query")
         set_title(pane_results, "r", "Results", active=active_pane == "results")
 
@@ -184,13 +192,30 @@ class UINavigationMixin:
         except Exception:
             return
         # Hide connection info while query is executing
+        direct_config = getattr(self, "_direct_connection_config", None)
+        direct_active = (
+            direct_config is not None
+            and self.current_config is not None
+            and direct_config.name == self.current_config.name
+        )
+
+        connecting_config = getattr(self, "_connecting_config", None)
+
         if getattr(self, "_query_executing", False):
             conn_info = ""
+        elif connecting_config is not None:
+            spinner_idx = getattr(self, "_connect_spinner_index", 0)
+            spinner = SPINNER_FRAMES[spinner_idx % len(SPINNER_FRAMES)]
+            source_emoji = connecting_config.get_source_emoji()
+            conn_info = f"[#FBBF24]{spinner} Connecting to {source_emoji}{connecting_config.name}[/]"
         elif getattr(self, "_connection_failed", False):
             conn_info = "[#ff6b6b]Connection failed[/]"
         elif self.current_config:
             display_info = self.current_config.get_display_info()
-            conn_info = f"[#4ADE80]Connected to {self.current_config.name}[/] ({display_info})"
+            source_emoji = self.current_config.get_source_emoji()
+            conn_info = f"[#4ADE80]Connected to {source_emoji}{self.current_config.name}[/] ({display_info})"
+            if direct_active:
+                conn_info += " [dim](direct, not saved)[/]"
         else:
             conn_info = "Not connected"
 

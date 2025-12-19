@@ -155,6 +155,8 @@ class ConnectionConfig:
     # Supabase specific fields
     supabase_region: str = ""
     supabase_project_id: str = ""
+    # Source tracking (e.g., "docker" for auto-detected containers)
+    source: str | None = None
 
     def __post_init__(self) -> None:
         """Handle backwards compatibility with old configs."""
@@ -245,3 +247,27 @@ class ConnectionConfig:
 
         db_part = f"@{self.database}" if self.database else ""
         return f"{self.name}{db_part}"
+
+    def get_source_emoji(self) -> str:
+        """Get emoji indicator for connection source (e.g., '🐳 ' for docker)."""
+        return get_source_emoji(self.source)
+
+
+# Source emoji mapping
+SOURCE_EMOJIS: dict[str, str] = {
+    "docker": "🐳 ",
+}
+
+
+def get_source_emoji(source: str | None) -> str:
+    """Get emoji for a connection source.
+
+    Args:
+        source: The source type (e.g., "docker") or None.
+
+    Returns:
+        Emoji string with trailing space, or empty string if no emoji.
+    """
+    if source is None:
+        return ""
+    return SOURCE_EMOJIS.get(source, "")

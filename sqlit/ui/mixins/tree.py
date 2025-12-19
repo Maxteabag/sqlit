@@ -8,6 +8,7 @@ from rich.markup import escape as escape_markup
 from textual.widgets import Tree
 
 from ..protocols import AppProtocol
+from .query import SPINNER_FRAMES
 from ..tree_nodes import (
     ColumnNode,
     ConnectionNode,
@@ -42,27 +43,74 @@ class TreeMixin:
         }
         return badge_map.get(db_type, db_type.upper() if db_type else "DB")
 
+    def _format_connection_label(self, conn: Any, status: str, spinner: str | None = None) -> str:
+        display_info = escape_markup(conn.get_display_info())
+        db_type_label = self._db_type_badge(conn.db_type)
+        escaped_name = escape_markup(conn.name)
+        source_emoji = conn.get_source_emoji()
+
+        if status == "connected":
+            return f"[#4ADE80]* {source_emoji}{escaped_name}[/] [{db_type_label}] ({display_info})"
+        if status == "connecting":
+            frame = spinner or SPINNER_FRAMES[0]
+            return (
+                f"[#FBBF24]{frame}[/] {source_emoji}{escaped_name} [dim italic]Connecting...[/]"
+            )
+        return f"{source_emoji}[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})"
+
+    def _connect_spinner_frame(self) -> str:
+        idx = getattr(self, "_connect_spinner_index", 0)
+        return SPINNER_FRAMES[idx % len(SPINNER_FRAMES)]
+
+    def _update_connecting_indicator(self: AppProtocol) -> None:
+        connecting_config = getattr(self, "_connecting_config", None)
+        if not connecting_config:
+            return
+
+        spinner = self._connect_spinner_frame()
+        label = self._format_connection_label(connecting_config, "connecting", spinner=spinner)
+
+        for node in self.object_tree.root.children:
+            if isinstance(node.data, ConnectionNode) and node.data.config.name == connecting_config.name:
+                node.set_label(label)
+                node.allow_expand = False
+                break
+
     def refresh_tree(self: AppProtocol) -> None:
         """Refresh the explorer tree."""
         self.object_tree.clear()
         self.object_tree.root.expand()
 
-        for conn in self.connections:
-            display_info = escape_markup(conn.get_display_info())
-            db_type_label = self._db_type_badge(conn.db_type)
-            escaped_name = escape_markup(conn.name)
+        connecting_config = getattr(self, "_connecting_config", None)
+        connecting_name = connecting_config.name if connecting_config else None
+        connecting_spinner = self._connect_spinner_frame() if connecting_config else None
+
+        direct_config = getattr(self, "_direct_connection_config", None)
+        direct_active = (
+            direct_config is not None
+            and self.current_config is not None
+            and direct_config.name == self.current_config.name
+        )
+        connections = [self.current_config] if direct_active else self.connections
+        if connecting_config and not any(c.name == connecting_config.name for c in connections):
+            connections = connections + [connecting_config]
+
+        for conn in connections:
             # Check if this is the connected server
             is_connected = (
                 self.current_config is not None
                 and conn.name == self.current_config.name
             )
+            is_connecting = connecting_name == conn.name and not is_connected
             if is_connected:
-                label = f"[#4ADE80]* {escaped_name}[/] [{db_type_label}] ({display_info})"
+                label = self._format_connection_label(conn, "connected")
+            elif is_connecting:
+                label = self._format_connection_label(conn, "connecting", spinner=connecting_spinner)
             else:
-                label = f"[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})"
+                label = self._format_connection_label(conn, "idle")
             node = self.object_tree.root.add(label)
             node.data = ConnectionNode(config=conn)
-            node.allow_expand = True
+            node.allow_expand = is_connected
 
         if self.current_connection and self.current_config:
             self.populate_connected_tree()
@@ -78,10 +126,11 @@ class TreeMixin:
             display_info = escape_markup(config.get_display_info())
             db_type_label = self._db_type_badge(config.db_type)
             escaped_name = escape_markup(config.name)
+            source_emoji = config.get_source_emoji() if hasattr(config, "get_source_emoji") else ""
             if connected:
-                name = f"[#4ADE80]* {escaped_name}[/]"
+                name = f"[#4ADE80]* {source_emoji}{escaped_name}[/]"
             else:
-                name = escaped_name
+                name = f"{source_emoji}{escaped_name}"
             return f"{name} [{db_type_label}] ({display_info})"
 
         active_node = None
@@ -95,6 +144,7 @@ class TreeMixin:
         if not active_node:
             active_node = self.object_tree.root.add(get_conn_label(self.current_config, connected=True))
             active_node.data = ConnectionNode(config=self.current_config)
+            active_node.allow_expand = True
 
         active_node.remove_children()
 
@@ -409,8 +459,7 @@ class TreeMixin:
             config = data.config
             if self.current_config and self.current_config.name == config.name:
                 return
-            if self.current_connection:
-                self._disconnect_silent()
+            # _disconnect_silent handles refresh_tree internally
             self.connect_to_server(config)
 
     def on_tree_node_highlighted(self: AppProtocol, event: Tree.NodeHighlighted) -> None:

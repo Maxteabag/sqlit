@@ -32,6 +32,7 @@ dependencies = [
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",  # sshtunnel requires paramiko<4.0.0 (DSSKey removed in 4.0)
     "keyring>=24.0.0",
+    "docker>=7.0.0",  # Docker container auto-detection (lazy loaded)
 ]
 
 [project.optional-dependencies]
@@ -103,6 +104,7 @@ markers = [
     "mysql: MySQL database tests",
     "oracle: Oracle database tests",
     "asyncio: async tests",
+    "integration: integration tests (may require external services)",
 ]
 
 [tool.coverage.run]
@@ -134,7 +136,9 @@ module = [
     "oracledb",
     "duckdb",
     "libsql_client",
-    "sshtunnel"
+    "sshtunnel",
+    "docker",
+    "docker.errors"
 ]
 ignore_missing_imports = true
 

@@ -171,11 +171,11 @@ class Dialog(Container):
             self.border_subtitle = subtitle
 
 
-class TreeFilterInput(Static):
-    """Filter input widget for the explorer tree."""
+class FilterInput(Static):
+    """Filter input widget for search/filter functionality."""
 
     DEFAULT_CSS = """
-    TreeFilterInput {
+    FilterInput {
         width: 100%;
         height: 1;
         background: $surface;
@@ -183,7 +183,7 @@ class TreeFilterInput(Static):
         padding: 0 1;
     }
 
-    TreeFilterInput.visible {
+    FilterInput.visible {
         display: block;
     }
     """
@@ -229,6 +229,10 @@ class TreeFilterInput(Static):
     def is_visible(self) -> bool:
         """Check if filter is visible."""
         return "visible" in self.classes
+
+
+# Backwards compatibility alias
+TreeFilterInput = FilterInput
 
 
 class AutocompleteDropdown(Static):

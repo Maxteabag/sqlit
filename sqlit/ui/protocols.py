@@ -187,6 +187,10 @@ class AppProtocol(Protocol):
     current_config: ConnectionConfig | None
     current_adapter: DatabaseAdapter | None
     current_ssh_tunnel: Any
+    _direct_connection_config: ConnectionConfig | None
+    _connecting_config: ConnectionConfig | None
+    _connect_spinner_index: int
+    _connect_spinner_timer: Timer | None
 
     # === Session state ===
 

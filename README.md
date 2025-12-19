@@ -196,6 +196,85 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 
 **Note:** SQL Server also requires the platform-specific ODBC driver. On your first connection attempt, `sqlit` can help you install it if it's missing.
 
+## Vision
+The core purpose of this application is to read Read&Write to a SQL database.
+The core elements to achieve this purpose is: CEQR: 
+C: Connecting
+E: Exploring
+Q: Querying
+R: Viewing results
+
+Connecting: Connecting to a server
+Exploring: Understanding the structure and content of the databases
+Querying: Executing SQL queries
+D: Viewing the results of SQL queries
+
+Additionally, we have requirements 'EAFF':
+E: Easy
+A: Aesthetically pleasing
+F: Fun
+F: Fast
+
+If an idea or feature does *not* achieve any of the 'CBQV' elements adhering to all of the 'EAFF' requirements. It does not belong to sqlit. 
+
+
+[E]asy:
+Sqlit should not require any external documentation at all. It must prioritize intuitiveness above all.
+
+[A]esthetically pleasing:
+Sqlit should not render one unnecessary pixel. It should prioritize beauty above anything. Minimalism over bloat.
+
+Fun:
+Sqlit aims make fulfilling its core purpose be an enjoyable experience for the user, even a source of pleasure.
+
+Fast:
+Sqlit aims to fulfill its core purpose for the user, with intention to giving the user the results they want with as few actions as possible.
+
+
+Essentially, sqlit aims to do CRUD on SQL really well.
+
+This implies this tool is more suited for developer's daily use than an database administrator. 
+Every feature in sqlit should have a target audience in which they will use it every time they use sqlit. 
+If nobody is going to a feature every day. It does not belong to sqlit.
+E.g.
+1) advanced query performance debugging -> rarely used -> does not belong in sqlit
+2) edit cell key-binding -> a audience who will use this every day -> belongs to sqlit
+
+On complexity:
+Minimalism: sqlit aims to abstract away as much complexity as possible from the user, while giving them enough control to achieve CBQV. sqlit should never do anything under the hood that the user might have interest in understanding. Universal state problems deem for magical fixes. Conditional state problems, explicit user awareness. User should never ask "wait, how did it know?" "why is this here?" "why did it work then, but not now?"
+
+Voluntary advanced usage: Anything beyond most essentials to achieve CEQR should be voluntary to be exposed to. Minimal cogntive overhead. Always assume by default our user just wants to perform CRUD with SQL.
+
+The idea is the user is exposed to an interface that's minimalistic and easy, but if they want to become 'power users' they may dig into command menu or see help and memorize.
+
+Advances features should not be advertised on the main tool bar or anywhere else where the user has no say in whether it's rendered, as they take up space and distract from the most essential features for crud. 
+
+One state: There should be no settings or preferences with important exception of interface (aesthetics, keyboard bindings). No settings to enable or disable features for conditional behaviour. Do not include a feature that a user finds annoying. Settings to disable a feature is a symptom of this. Anything beyond essential must be sought after if needed, not disabled if unwanted.
+
+
+
+Keybindings philosophy:
+To make sqlit as fast' as possible, sqlit has a large focus on keybindings.
+To make sqlit as 'easy' as possible, all necessary keybindings to do 'CEQR' well, must be visible at all times.
+To make sqlit as 'aesthetically pleasing' any keybinding not strictly necessary to perform 'CEQR' in a 'easy' and 'fast' way will be hidden behind help <?> or command menu <space>
+Keybindings will favour 'vim' traditions as the core audience is developers who enjoy working in terminals.
+We shy away from ^+ commands and will only use them where it is not natural to have a "insert/normal" mode and where input is crucial. (Typical is pop up modals)
+
+Ideal: 
+It should be easy to use for someone who just started using sqlit.
+sqlit should provide fun and a feeling of mastery and satisfaction for those who want to achieve it, by becoming a sql-manipulating wizard with creative keybinding combos.
+
+Designing keybindings decision hierarchy:
+1. Intuitive to learn
+2. Harmony (we should think about which keybindings are used in sequence, in typical to flow and maximize user mastery satisfaction and opportunity to combine them fast)
+3. Traditions (vim, specifically)
+
+Example: 
+<e> = explorer pane, <q> = query pane, <r> = results pane.
+Rationale: E;Q;R satisfies both intuitiveness (each binding is the first letter of the pane), harmony (proximity: qwerty speaks for itself)
+
+
+
 ## License
 
 MIT
