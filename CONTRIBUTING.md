@@ -27,7 +27,7 @@ pytest tests/ -v -k sqlite
 
 ### Full Test Suite (Requires Docker)
 
-To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB, Oracle, DuckDB, and CockroachDB tests:
+To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB, FirebirdSQL, Oracle, DuckDB, and CockroachDB tests:
 
 1. Start the test database containers:
    ```bash
@@ -53,6 +53,7 @@ pytest tests/ -v -k mssql       # SQL Server only
 pytest tests/ -v -k PostgreSQL  # PostgreSQL only
 pytest tests/ -v -k MySQL       # MySQL only
 pytest tests/ -v -k cockroach   # CockroachDB only
+pytest tests/ -v -k firebird    # FirebirdSQL only
 ```
 
 ### Environment Variables
@@ -93,6 +94,15 @@ The database tests can be configured with these environment variables:
 | `COCKROACHDB_USER` | `root` | CockroachDB username |
 | `COCKROACHDB_PASSWORD` | `` | CockroachDB password (empty for the included Docker container) |
 | `COCKROACHDB_DATABASE` | `test_sqlit` | CockroachDB database |
+
+**FirebirdSQL:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FIREBIRD_HOST` | `localhost` | Firebird hostname |
+| `FIREBIRD_PORT` | `3050` | Firebird port |
+| `FIREBIRD_USER` | `testuser` | Firebird username |
+| `FIREBIRD_PASSWORD` | `TestPassword123!` | Firebird password |
+| `FIREBIRD_DATABASE` | `/var/lib/firebird/data/test_sqlit.fdb` | Firebird database path or alias | 
 
 ### CockroachDB Quickstart (Docker)
 
@@ -204,6 +214,7 @@ Rationale: E;Q;R satisfies both intuitiveness (each binding is the first letter 
 
 - **PostgreSQL Tests**: Runs PostgreSQL integration tests with Docker service
 - **MySQL Tests**: Runs MySQL integration tests with Docker service
+- **Firebird Tests**: Runs Firebird integration tests with Docker service
 - **MariaDB/Oracle/DuckDB/CockroachDB Tests**: Runs the remaining database integration tests with Docker service where applicable
 - **Full Test Suite**: Runs all tests across every supported database
 

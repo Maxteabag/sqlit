@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "sqlit-tui"
 version = "0.5.1"
-description = "A terminal UI for SQL Server, PostgreSQL, MySQL, SQLite, and Oracle"
+description = "A terminal UI for SQL Server, PostgreSQL, MySQL, SQLite, Oracle, and more"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
     { name = "Peter" }
 ]
-keywords = ["sql", "server", "tui", "database", "mssql", "postgresql", "mysql", "sqlite", "oracle", "terminal"]
+keywords = ["sql", "server", "tui", "database", "mssql", "postgresql", "mysql", "sqlite", "oracle", "firebird", "terminal"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

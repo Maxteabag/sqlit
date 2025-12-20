@@ -1,6 +1,6 @@
 # sqlit
 
-**The lazygit of SQL databases.** Connect to Postgres, MySQL, SQL Server, SQLite, ClickHouse, Supabase, Turso, and more from your terminal in seconds.
+**The lazygit of SQL databases.** Connect to Postgres, MySQL, SQL Server, SQLite, ClickHouse, FirebirdSQL, Supabase, Turso, and more from your terminal in seconds.
 
 A lightweight TUI for people who just want to run some queries fast.
 
@@ -23,7 +23,7 @@ A lightweight TUI for people who just want to run some queries fast.
 
 - **Connection manager UI** - Save connections, switch between databases without CLI args
 - **Just run `sqlit`** - No CLI config needed, pick a connection and go
-- **Multi-database out of the box** - SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, Oracle, DuckDB, CockroachDB, ClickHouse, Supabase, Turso - no adapters to install
+- **Multi-database out of the box** - SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Supabase, Turso - no adapters to install
 - Connect directly to database docker container
 - **SSH tunnels built-in** - Connect to remote databases securely with password or key auth
 - **Vim-style editing** - Modal editing for terminal purists
@@ -48,7 +48,7 @@ The problem got severely worse when I switched to Linux and had to rely on VS CO
 
 I tried to use some existing TUI's for SQL, but they were not intuitive for me and I missed the immediate ease of use that other TUI's such as Lazygit provides.
 
-sqlit is a lightweight database TUI that is easy to use and beautiful to look at, just connect and query. It's for you that just wants to run queries toward your database without launching applications that eats your ram and takes time to load up. Sqlit supports SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, Oracle, DuckDB, CockroachDB, ClickHouse, Supabase, and Turso, and is designed to make it easy and enjoyable to access your data, not painful.
+sqlit is a lightweight database TUI that is easy to use and beautiful to look at, just connect and query. It's for you that just wants to run queries toward your database without launching applications that eats your ram and takes time to load up. Sqlit supports SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Supabase, and Turso, and is designed to make it easy and enjoyable to access your data, not painful.
 
 
 ## Installation
@@ -103,6 +103,7 @@ sqlit connections add mysql --name "MyMySQL" --server "localhost" --username "us
 sqlit connections add cockroachdb --name "MyCockroach" --server "localhost" --port "26257" --database "defaultdb" --username "root"
 sqlit connections add sqlite --name "MyLocalDB" --file-path "/path/to/database.db"
 sqlit connections add turso --name "MyTurso" --server "libsql://your-db.turso.io" --password "your-auth-token"
+sqlit connections add firebird --name "MyFirebird" --server "localhost" --username "user" --password "pass" --database "employee"
 
 # Connect via SSH tunnel
 sqlit connections add postgresql --name "RemoteDB" --server "db-host" --username "dbuser" --password "dbpass" \
