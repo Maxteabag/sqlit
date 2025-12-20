@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING, Any
 
+from sqlit.db.adapters.base import IndexInfo, SequenceInfo, TriggerInfo
+
 from .base import ColumnInfo, CursorBasedAdapter, TableInfo
 
 if TYPE_CHECKING:
@@ -16,12 +18,37 @@ class FirebirdAdapter(CursorBasedAdapter):
         return "Firebird"
 
     @property
+    def install_extra(self) -> str | None:
+        return "firebird"
+
+    @property
+    def install_package(self) -> str | None:
+        return "firebirdsql"
+
+    @property
+    def driver_import_names(self) -> tuple[str, ...]:
+        return ("firebirdsql",)
+
+    @property
     def supports_multiple_databases(self) -> bool:
         # Firebird provides no mechanism to list databases or aliases.
         return False
 
     @property
     def supports_stored_procedures(self) -> bool:
+        return True
+
+    @property
+    def supports_indexes(self) -> bool:
+        return True
+
+    @property
+    def supports_sequences(self) -> bool:
+        # NOTE: Firebird refers to sequences as 'generators'
+        return True
+
+    @property
+    def supports_triggers(self) -> bool:
         return True
 
     def connect(self, config: "ConnectionConfig") -> Any:
@@ -60,6 +87,15 @@ class FirebirdAdapter(CursorBasedAdapter):
             "WHERE  rdb$view_blr IS NOT NULL AND (rdb$system_flag IS NULL OR rdb$system_flag = 0)"
         )
         return [("", row[0].rstrip()) for row in cursor.fetchall()]
+
+    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
+        return []
+
+    def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
+        return []
+
+    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
+        return []
 
     # Map type IDs to type names
     _types = {
