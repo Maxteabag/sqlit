@@ -9,8 +9,9 @@ if TYPE_CHECKING:
     from textual.screen import Screen
     from textual.timer import Timer
     from textual.widget import Widget
-    from textual.widgets import DataTable, Static, TextArea, Tree
+    from textual.widgets import Static, TextArea, Tree
     from textual.worker import Worker
+    from textual_fastdatatable import DataTable
 
     from ..config import ConnectionConfig
     from ..db import DatabaseAdapter
@@ -249,6 +250,7 @@ class AppProtocol(Protocol):
     _last_result_row_count: int
     _internal_clipboard: str
     _last_query_table: dict[str, Any] | None
+    _results_table_counter: int
 
     # === UI state ===
 

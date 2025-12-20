@@ -118,10 +118,46 @@ def cmd_connection_list(args: Any) -> int:
 
 def cmd_connection_create(args: Any) -> int:
     """Create a new connection."""
+    from .url_parser import is_connection_url, parse_connection_url
+
     connections = load_connections()
 
+    # Handle URL-based connection creation
+    url = getattr(args, "url", None)
+    if url:
+        if not is_connection_url(url):
+            print(f"Error: Invalid connection URL: {url}")
+            return 1
+
+        url_name = getattr(args, "url_name", None)
+        if not url_name:
+            print("Error: --name is required when using --url")
+            return 1
+
+        if any(c.name == url_name for c in connections):
+            print(f"Error: Connection '{url_name}' already exists. Use 'edit' to modify it.")
+            return 1
+
+        try:
+            config = parse_connection_url(url, name=url_name)
+        except ValueError as exc:
+            print(f"Error: {exc}")
+            return 1
+
+        connections.append(config)
+        if (config.password or config.ssh_password) and not is_keyring_usable():
+            if not _maybe_prompt_plaintext_credentials():
+                _clear_passwords_if_not_persisted(config)
+        save_connections(connections)
+        print(f"Connection '{url_name}' created successfully.")
+        return 0
+
+    # Handle provider-based connection creation (existing behavior)
     if not getattr(args, "provider", None):
-        print("Error: provider is required (e.g. 'sqlit connection create supabase').")
+        print("Error: provider or --url is required.")
+        print("Examples:")
+        print("  sqlit connections add postgresql --name MyDB --server localhost ...")
+        print("  sqlit connections add --url postgresql://user:pass@host/db --name MyDB")
         return 1
 
     if any(c.name == args.name for c in connections):

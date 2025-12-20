@@ -9,6 +9,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.events import Key
 from textual.screen import ModalScreen
+from textual.worker import Worker
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
@@ -17,7 +18,7 @@ from ...widgets import Dialog, FilterInput
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
-    from ...services.docker_detector import DetectedContainer
+    from ...services.docker_detector import DetectedContainer, DockerStatus
 
 
 @dataclass
@@ -103,6 +104,7 @@ class ConnectionPickerScreen(ModalScreen):
         self._filter_active = False
         self._docker_containers: list[DetectedContainer] = []
         self._docker_status_message: str | None = None
+        self._loading_docker = False
 
     def compose(self) -> ComposeResult:
         with Dialog(id="picker-dialog", title="Connect"):
@@ -111,8 +113,8 @@ class ConnectionPickerScreen(ModalScreen):
 
     def on_mount(self) -> None:
         """Load Docker containers when screen mounts."""
-        self._detect_docker_containers()
         self._rebuild_list()
+        self._load_containers_async()
         self._update_shortcuts()
 
     def _update_shortcuts(self) -> None:
@@ -142,12 +144,27 @@ class ConnectionPickerScreen(ModalScreen):
         if event.option_list.id == "picker-list":
             self._update_shortcuts()
 
-    def _detect_docker_containers(self) -> None:
-        """Detect Docker database containers."""
-        from ...services.docker_detector import DockerStatus, detect_database_containers
+    def _load_containers_async(self) -> None:
+        """Start async loading of Docker containers."""
+        self._loading_docker = True
+        self._rebuild_list()
+        self.run_worker(self._detect_docker_worker, thread=True)
 
+    def _detect_docker_worker(self) -> None:
+        """Worker function to detect containers off-thread."""
+        from ...services.docker_detector import detect_database_containers
+
+        # Add a small delay for visual feedback if desired, or just run
         status, containers = detect_database_containers()
+        self.call_from_thread(self._on_containers_loaded, status, containers)
 
+    def _on_containers_loaded(
+        self, status: DockerStatus, containers: list[DetectedContainer]
+    ) -> None:
+        """Callback when containers are loaded."""
+        from ...services.docker_detector import DockerStatus
+
+        self._loading_docker = False
         self._docker_containers = containers
 
         # Set status message based on Docker state
@@ -160,8 +177,10 @@ class ConnectionPickerScreen(ModalScreen):
         elif status == DockerStatus.AVAILABLE and not containers:
             self._docker_status_message = "(no database containers found)"
         else:
-            # We have containers - status message not needed
             self._docker_status_message = None
+
+        self._rebuild_list()
+        self._update_shortcuts()
 
     def _is_container_saved(self, container: DetectedContainer) -> bool:
         """Check if a Docker container matches a saved connection."""
@@ -247,7 +266,9 @@ class ConnectionPickerScreen(ModalScreen):
         options.append(Option("", id="_spacer", disabled=True))
         options.append(Option("[bold]Docker[/]", id="_header_docker", disabled=True))
 
-        if running_options:
+        if self._loading_docker:
+            options.append(Option("[dim italic]Loading...[/]", id="_docker_loading", disabled=True))
+        elif running_options:
             options.extend(running_options)
         elif self._docker_status_message:
             options.append(
@@ -537,9 +558,7 @@ class ConnectionPickerScreen(ModalScreen):
 
     def action_refresh(self) -> None:
         """Refresh Docker containers list."""
-        self._detect_docker_containers()
-        self._rebuild_list()
-        self._update_shortcuts()
+        self._load_containers_async()
         self.notify("Refreshed")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:

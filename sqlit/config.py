@@ -155,8 +155,14 @@ class ConnectionConfig:
     # Supabase specific fields
     supabase_region: str = ""
     supabase_project_id: str = ""
+    # Oracle specific fields
+    oracle_role: str = "normal"  # "normal", "sysdba", "sysoper"
     # Source tracking (e.g., "docker" for auto-detected containers)
     source: str | None = None
+    # Original connection URL if created from URL
+    connection_url: str | None = None
+    # Extra options from URL query parameters (e.g., sslmode=require)
+    extra_options: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Handle backwards compatibility with old configs."""

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from textual.widgets import DataTable
+from textual_fastdatatable import DataTable
 
 from ..protocols import AppProtocol
 
@@ -147,8 +147,7 @@ class ResultsMixin:
 
     def action_clear_results(self: AppProtocol) -> None:
         """Clear the results table."""
-        self.results_table.clear(columns=True)
-        self.results_table.show_header = False
+        self._replace_results_table([], [])  # type: ignore[attr-defined]
         self._last_result_columns = []
         self._last_result_rows = []
         self._last_result_row_count = 0

@@ -311,6 +311,14 @@ MARIADB_SCHEMA = ConnectionSchema(
     default_port="3306",
 )
 
+def _get_oracle_role_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("normal", "Normal"),
+        SelectOption("sysdba", "SYSDBA"),
+        SelectOption("sysoper", "SYSOPER"),
+    )
+
+
 ORACLE_SCHEMA = ConnectionSchema(
     db_type="oracle",
     display_name="Oracle",
@@ -331,6 +339,13 @@ ORACLE_SCHEMA = ConnectionSchema(
         ),
         _username_field(),
         _password_field(),
+        SchemaField(
+            name="oracle_role",
+            label="Role",
+            field_type=FieldType.DROPDOWN,
+            options=_get_oracle_role_options(),
+            default="normal",
+        ),
     )
     + SSH_FIELDS,
     default_port="1521",

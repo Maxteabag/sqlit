@@ -103,6 +103,14 @@ sqlit connections add postgresql --name "RemoteDB" --server "db-host" --username
 # Temporary (not saved) connection
 sqlit connect sqlite --file-path "/path/to/database.db"
 
+# Connect via URL - scheme determines database type (postgresql://, mysql://, sqlite://, etc.)
+sqlit postgresql://user:pass@localhost:5432/mydb
+sqlit mysql://root@localhost/testdb
+sqlit sqlite:///path/to/database.db
+
+# Save a connection via URL
+sqlit connections add --url dbtype://user:pass@host/db --name "MyDB"
+
 # Provider-specific CLI help
 sqlit connect -h
 sqlit connect supabase -h

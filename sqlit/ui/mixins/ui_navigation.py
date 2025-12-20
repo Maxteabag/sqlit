@@ -370,10 +370,7 @@ class UINavigationMixin:
         self._last_result_rows = [(wrapped,)]
         self._last_result_row_count = 1
 
-        self.results_table.clear(columns=True)
-        self.results_table.show_header = True
-        self.results_table.add_column("Error")
-        self.results_table.add_row(wrapped)
+        self._replace_results_table(["Error"], [(wrapped,)])  # type: ignore[attr-defined]
         self._update_footer_bindings()
 
     def action_toggle_explorer(self: AppProtocol) -> None:

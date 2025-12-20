@@ -13,11 +13,74 @@ from .config import AuthType, ConnectionConfig, DatabaseType
 from .db.providers import get_connection_schema, get_supported_db_types
 
 
+def _extract_connection_url(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Extract a connection URL from argv if present.
+
+    Looks for the first non-flag argument that looks like a connection URL.
+    Returns (url, remaining_argv) where url is None if not found.
+    """
+    from .url_parser import is_connection_url
+
+    subcommands = {"connections", "connection", "connect", "query"}
+    result_argv = []
+    url = None
+
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        # Skip the program name
+        if i == 0:
+            result_argv.append(arg)
+            i += 1
+            continue
+
+        # If it's a flag, include it (and its value if applicable)
+        if arg.startswith("-"):
+            result_argv.append(arg)
+            # Check if this flag takes a value (simple heuristic: next arg doesn't start with -)
+            if i + 1 < len(argv) and not argv[i + 1].startswith("-") and "=" not in arg:
+                # Flags that take values
+                value_flags = {
+                    "--mock", "--db-type", "--name", "--server", "--host", "--port",
+                    "--database", "--username", "--password", "--file-path", "--auth-type",
+                    "--supabase-region", "--supabase-project-id", "--settings",
+                    "--mock-missing-drivers", "--mock-install", "--mock-pipx",
+                    "--mock-query-delay", "--demo-rows", "--max-rows",
+                }
+                if arg in value_flags:
+                    i += 1
+                    result_argv.append(argv[i])
+            i += 1
+            continue
+
+        # If it's a subcommand, include it and everything after
+        if arg in subcommands:
+            result_argv.extend(argv[i:])
+            break
+
+        # If it looks like a URL, extract it
+        if url is None and is_connection_url(arg):
+            url = arg
+            i += 1
+            continue
+
+        # Otherwise include it
+        result_argv.append(arg)
+        i += 1
+
+    return url, result_argv
+
+
 def main() -> int:
     """Entry point for the CLI."""
+    # Extract connection URL before argparse (URLs conflict with subcommands)
+    connection_url, filtered_argv = _extract_connection_url(sys.argv)
+
     parser = argparse.ArgumentParser(
         prog="sqlit",
         description="A terminal UI for SQL databases",
+        epilog="Connect via URL: sqlit mysql://user:pass@host/db, sqlit sqlite:///path/to/db.sqlite",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
@@ -75,6 +138,20 @@ def main() -> int:
         help="Add artificial delay to mock query execution (e.g. 3.0 for 3 seconds).",
     )
     parser.add_argument(
+        "--demo-rows",
+        type=int,
+        default=0,
+        metavar="COUNT",
+        help="Generate fake data with COUNT rows for mock queries (requires --mock, uses Faker if installed).",
+    )
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=0,
+        metavar="COUNT",
+        help="Maximum rows to fetch and render (default: 10000). Use for performance testing.",
+    )
+    parser.add_argument(
         "--profile-startup",
         action="store_true",
         help="Log startup timing diagnostics to stderr.",
@@ -100,6 +177,17 @@ def main() -> int:
         "add",
         help="Add a new connection",
         aliases=["create"],
+    )
+    add_parser.add_argument(
+        "--url",
+        metavar="URL",
+        help="Connection URL (e.g., postgresql://user:pass@host:5432/db). Requires --name.",
+    )
+    add_parser.add_argument(
+        "--name",
+        "-n",
+        dest="url_name",
+        help="Connection name (required when using --url)",
     )
     add_provider_parsers = add_parser.add_subparsers(dest="provider", metavar="PROVIDER")
     for db_type in get_supported_db_types():
@@ -163,7 +251,7 @@ def main() -> int:
     )
 
     startup_mark = time.perf_counter()
-    args = parser.parse_args()
+    args = parser.parse_args(filtered_argv[1:])  # Skip program name
     if args.settings:
         os.environ["SQLIT_SETTINGS_PATH"] = str(args.settings)
     if args.mock_missing_drivers:
@@ -180,6 +268,14 @@ def main() -> int:
         os.environ["SQLIT_MOCK_QUERY_DELAY"] = str(args.mock_query_delay)
     else:
         os.environ.pop("SQLIT_MOCK_QUERY_DELAY", None)
+    if args.demo_rows and args.demo_rows > 0:
+        os.environ["SQLIT_DEMO_ROWS"] = str(args.demo_rows)
+    else:
+        os.environ.pop("SQLIT_DEMO_ROWS", None)
+    if args.max_rows and args.max_rows > 0:
+        os.environ["SQLIT_MAX_ROWS"] = str(args.max_rows)
+    else:
+        os.environ.pop("SQLIT_MAX_ROWS", None)
     if args.profile_startup:
         os.environ["SQLIT_PROFILE_STARTUP"] = "1"
     else:
@@ -194,6 +290,7 @@ def main() -> int:
         os.environ.pop("SQLIT_STARTUP_MARK", None)
     if args.command is None:
         from .app import SSMSTUI
+        from .url_parser import parse_connection_url
 
         mock_profile = None
         if args.mock:
@@ -207,7 +304,14 @@ def main() -> int:
 
         temp_config = None
         try:
-            temp_config = _build_temp_connection(args)
+            # Check for connection URL first (extracted before argparse)
+            if connection_url:
+                temp_config = parse_connection_url(
+                    connection_url,
+                    name=getattr(args, "name", None),
+                )
+            else:
+                temp_config = _build_temp_connection(args)
         except ValueError as exc:
             print(f"Error: {exc}")
             return 1

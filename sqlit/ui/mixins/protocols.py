@@ -12,7 +12,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from textual.widgets import DataTable, TextArea, Tree
+    from textual.widgets import TextArea, Tree
+    from textual_fastdatatable import DataTable
 
     from ...config import ConnectionConfig
     from ...services import ConnectionSession

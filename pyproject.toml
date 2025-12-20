@@ -28,6 +28,7 @@ classifiers = [
 ]
 dependencies = [
     "textual[syntax]>=6.10.0",
+    "textual-fastdatatable>=0.14.0",
     "pyperclip>=1.8.2",
     "sshtunnel>=0.4.0",
     "paramiko>=2.10.1,<4.0.0",  # sshtunnel requires paramiko<4.0.0; min avoids known CVEs
@@ -66,6 +67,8 @@ dev = [
     "pytest-timeout>=2.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.0",
+    "pytest-benchmark>=4.0",
+    "Faker>=28.0",
     "build",
     "ruff>=0.8.0",
     "mypy>=1.0",
@@ -138,7 +141,9 @@ module = [
     "libsql_client",
     "sshtunnel",
     "docker",
-    "docker.errors"
+    "docker.errors",
+    "pyarrow",
+    "textual_fastdatatable"
 ]
 ignore_missing_imports = true
 

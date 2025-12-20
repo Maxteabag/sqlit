@@ -62,11 +62,24 @@ class OracleAdapter(DatabaseAdapter):
         port = int(config.port or get_default_port("oracle"))
         # Use Easy Connect string format: host:port/service_name
         dsn = f"{config.server}:{port}/{config.database}"
-        return oracledb.connect(
-            user=config.username,
-            password=config.password,
-            dsn=dsn,
-        )
+
+        # Determine connection mode based on oracle_role
+        oracle_role = getattr(config, "oracle_role", "normal")
+        mode = None
+        if oracle_role == "sysdba":
+            mode = oracledb.AUTH_MODE_SYSDBA
+        elif oracle_role == "sysoper":
+            mode = oracledb.AUTH_MODE_SYSOPER
+
+        connect_kwargs: dict[str, Any] = {
+            "user": config.username,
+            "password": config.password,
+            "dsn": dsn,
+        }
+        if mode is not None:
+            connect_kwargs["mode"] = mode
+
+        return oracledb.connect(**connect_kwargs)
 
     def get_databases(self, conn: Any) -> list[str]:
         """Oracle doesn't support multiple databases - return empty list."""

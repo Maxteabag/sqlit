@@ -12,7 +12,41 @@ from textual.widgets import Static
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from textual.events import Key
     from textual.widget import Widget
+
+
+class ResultsTableContainer(Container):
+    """A focusable container for the results DataTable.
+
+    This container holds focus when its child DataTable is replaced,
+    preventing focus from jumping to another widget during table updates.
+    Key events are forwarded to the child DataTable.
+    """
+
+    can_focus = True
+
+    def on_key(self, event: Key) -> None:
+        """Forward key events to the child DataTable."""
+        # Find the DataTable child
+        try:
+            from textual_fastdatatable import DataTable
+            table = self.query_one(DataTable)
+            # Let the table handle navigation keys
+            if event.key in ("up", "down", "left", "right", "pageup", "pagedown", "home", "end"):
+                # Simulate the key on the table
+                table.post_message(event)
+                event.stop()
+        except Exception:
+            pass
+
+    def on_focus(self, event: Any) -> None:
+        """When container gets focus, style it as active."""
+        self.add_class("container-focused")
+
+    def on_blur(self, event: Any) -> None:
+        """When container loses focus, remove active styling."""
+        self.remove_class("container-focused")
 
 
 def flash_widget(
@@ -194,11 +228,12 @@ class FilterInput(Static):
         self.match_count: int = 0
         self.total_count: int = 0
 
-    def set_filter(self, text: str, match_count: int = 0, total_count: int = 0) -> None:
+    def set_filter(self, text: str, match_count: int = 0, total_count: int = 0, truncated: bool = False) -> None:
         """Set the filter text and match count."""
         self.filter_text = text
         self.match_count = match_count
         self.total_count = total_count
+        self.truncated = truncated
         self._rebuild()
 
     def clear(self) -> None:
@@ -206,6 +241,7 @@ class FilterInput(Static):
         self.filter_text = ""
         self.match_count = 0
         self.total_count = 0
+        self.truncated = False
         self._rebuild()
 
     def _rebuild(self) -> None:
@@ -213,7 +249,9 @@ class FilterInput(Static):
         if not self.filter_text:
             self.update("[dim]/[/] ")
         else:
-            count_text = f"[dim]{self.match_count}/{self.total_count}[/]"
+            # Show "5000+" if results were truncated
+            count_display = f"{self.match_count}+" if self.truncated else str(self.match_count)
+            count_text = f"[dim]{count_display}/{self.total_count}[/]"
             self.update(f"[dim]/[/] {self.filter_text} {count_text}")
 
     def show(self) -> None:

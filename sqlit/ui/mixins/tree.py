@@ -646,7 +646,7 @@ class TreeMixin:
     def _display_object_info(self: AppProtocol, object_type: str, info: dict) -> None:
         """Display object info in the results table as a Property/Value view."""
         # Build rows for display
-        rows = []
+        rows: list[tuple[str, str]] = []
         for key, value in info.items():
             if value is not None:
                 # Format the key nicely
@@ -661,13 +661,8 @@ class TreeMixin:
                     display_value = str(value)
                 rows.append((display_key, display_value))
 
-        # Update the results table
-        self.results_table.clear(columns=True)
-        self.results_table.show_header = True
-        self.results_table.add_columns("Property", "Value")
-
-        for prop, val in rows:
-            self.results_table.add_row(escape_markup(prop), escape_markup(val))
+        # Update the results table using the helper method
+        self._replace_results_table(["Property", "Value"], rows)  # type: ignore[attr-defined]
 
         # Store for copy/export functionality
         self._last_result_columns = ["Property", "Value"]
