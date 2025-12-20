@@ -573,13 +573,14 @@ def firebird_db(firebird_server_ready: bool) -> str:
 
     cursor = conn.cursor()
     try:
-        # In case we need to recreate things, this needs to be done first.
-        try:
-            cursor.execute("DROP VIEW test_user_emails")
-        except:  # noqa: E722
-            pass
-        finally:
-            conn.commit()
+        for cleanup in [
+            "DROP VIEW test_user_emails",
+        ]:
+            try:
+                cursor.execute(cleanup)
+            except firebirdsql.DatabaseError:
+                pass
+        conn.commit()
 
         cursor.execute("""
             RECREATE TABLE test_users (
@@ -602,6 +603,19 @@ def firebird_db(firebird_server_ready: bool) -> str:
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
+
+        cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+        cursor.execute("""
+            RECREATE TRIGGER trg_test_users_audit FOR test_users
+            BEFORE INSERT
+            AS
+            BEGIN
+                NEW.email = LOWER(NEW.email);
+            END
+        """)
+
+        cursor.execute("RECREATE GENERATOR test_sequence START WITH 1 INCREMENT 1")
 
         conn.commit()
 
@@ -637,13 +651,18 @@ def firebird_db(firebird_server_ready: bool) -> str:
 
     cursor = conn.cursor()
     try:
-        cursor.execute("DROP VIEW test_user_emails")
-        cursor.execute("DROP TABLE test_users")
-        cursor.execute("DROP TABLE test_products")
-    except Exception as e:
-        pytest.skip(f"Failed to tear down Firebird database: {e}")
+        for cleanup in [
+            "DROP VIEW test_user_emails",
+            "DROP TABLE test_users",
+            "DROP TABLE test_products",
+            "DROP TRIGGER trg_test_users_audit",
+            "DROP SEQUENCE test_sequence",
+        ]:
+            try:
+                cursor.execute(cleanup)
+            except firebirdsql.DatabaseError:
+                pass
     finally:
-        cursor.close()
         conn.commit()
         conn.close()
 
