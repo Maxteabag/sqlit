@@ -89,13 +89,125 @@ class FirebirdAdapter(CursorBasedAdapter):
         return [("", row[0].rstrip()) for row in cursor.fetchall()]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
-        return []
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT rdb$index_name, rdb$relation_name, rdb$unique_flag FROM rdb$indices WHERE rdb$system_flag = 0"
+        )
+        return [
+            IndexInfo(
+                name=row[0].rstrip(),
+                table_name=row[1].rstrip(),
+                is_unique=row[2] == 1,
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_index_definition(
+        self,
+        conn: Any,
+        index_name: str,
+        table_name: str,
+        database: str | None = None,
+    ) -> dict[str, Any]:
+        return super().get_index_definition(conn, index_name, table_name, database)
 
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
-        return []
+        cursor = conn.cursor()
+        cursor.execute("SELECT rdb$generator_name FROM rdb$generators WHERE rdb$system_flag = 0")
+        return [SequenceInfo(name=row[0].rstrip()) for row in cursor.fetchall()]
+
+    def get_sequence_definition(
+        self,
+        conn: Any,
+        sequence_name: str,
+        database: str | None = None,
+    ) -> dict[str, Any]:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT  rdb$initial_value, rdb$generator_increment"
+            "FROM    rdb$generators "
+            "WHERE   rdb$system_flag = 0 AND rdb$generator_name = ?",
+            (sequence_name.upper(),),
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "name": sequence_name.upper(),
+                "start_value": row[0],
+                "increment": row[1],
+                "min_value": None,
+                "max_value": None,
+                "cycle": None,
+            }
+        return {
+            "name": sequence_name.upper(),
+            "start_value": None,
+            "increment": None,
+            "min_value": None,
+            "max_value": None,
+            "cycle": None,
+        }
 
     def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
-        return []
+        cursor = conn.cursor()
+        cursor.execute("SELECT rdb$trigger_name, rdb$relation_name FROM rdb$triggers WHERE rdb$system_flag = 0")
+        return [TriggerInfo(name=row[0].rstrip(), table_name=row[1].rstrip()) for row in cursor.fetchall()]
+
+    _trigger_types = {
+        1: "BEFORE INSERT",
+        2: "AFTER INSERT",
+        3: "BEFORE UPDATE",
+        4: "AFTER UPDATE",
+        5: "BEFORE DELETE",
+        6: "AFTER DELETE",
+        17: "BEFORE INSERT OR UPDATE",
+        18: "AFTER INSERT OR UPDATE",
+        25: "BEFORE INSERT OR DELETE",
+        26: "AFTER INSERT OR DELETE",
+        27: "BEFORE UPDATE OR DELETE",
+        28: "AFTER UPDATE OR DELETE",
+        113: "BEFORE INSERT OR UPDATE OR DELETE",
+        114: "AFTER INSERT OR UPDATE OR DELETE",
+        8192: "ON CONNECT",
+        8193: "ON DISCONNECT",
+        8194: "ON TRANSACTION START",
+        8195: "ON TRANSACTION COMMIT",
+        8196: "ON TRANSACTION ROLLBACK",
+    }
+
+    def get_trigger_definition(
+        self,
+        conn: Any,
+        trigger_name: str,
+        table_name: str,
+        database: str | None = None,
+    ) -> dict[str, Any]:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT rdb$trigger_type, rdb$trigger_source FROM rdb$triggers WHERE rdb$trigger_name = ?",
+            (trigger_name.upper(),),
+        )
+        row = cursor.execute()
+        if row:
+            event = self._trigger_types[row[0]]
+            if row[0].startswith(("BEFORE ", "AFTER")):
+                timing, event = event.split(" ", maxsplit=1)
+            else:
+                timing = None
+            return {
+                "name": trigger_name.upper(),
+                "table_name": table_name.upper(),
+                "timing": timing,
+                "event": event,
+                "definition": row[1],
+            }
+        return {
+            "name": trigger_name.upper(),
+            "table_name": table_name.upper(),
+            "timing": None,
+            "event": None,
+            "definition": None,
+        }
 
     # Map type IDs to type names
     _types = {
@@ -155,7 +267,7 @@ class FirebirdAdapter(CursorBasedAdapter):
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """List any stored procedures in the database."""
         cursor = conn.cursor()
-        cursor.execute("SELECT rdb$procedure_name FROM rdb$procedures")
+        cursor.execute("SELECT rdb$procedure_name FROM rdb$procedures WHERE rdb$system_flag = 0")
         return [row[0] for row in cursor.fetchall()]
 
     def quote_identifier(self, name: str) -> str:
