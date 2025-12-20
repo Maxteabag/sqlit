@@ -1082,7 +1082,11 @@ class ConnectionScreen(ModalScreen):
         values = self._get_current_form_values()
 
         for name, field_def in self._field_definitions.items():
-            container = self.query_one(f"#container-{name}", Container)
+            try:
+                container = self.query_one(f"#container-{name}", Container)
+            except Exception:
+                # Container may not be mounted yet after dynamic field rebuild
+                continue
             should_show = True
             if field_def.visible_when:
                 should_show = bool(field_def.visible_when(values))

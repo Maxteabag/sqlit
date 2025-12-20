@@ -6,7 +6,7 @@ Only activates when Omarchy is detected on the system.
 Theme matching strategy:
 1. Get the current Omarchy theme name from the symlink
 2. Try to match it to a built-in Textual theme
-3. If no match, fall back to the default "sqlit" theme
+3. If no match, fall back to the default "rose-pine" theme
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ OMARCHY_CONFIG_DIR = Path.home() / ".config" / "omarchy"
 OMARCHY_CURRENT_THEME = OMARCHY_CONFIG_DIR / "current" / "theme"
 
 # Default theme when no Omarchy match is found
-DEFAULT_THEME = "sqlit"
+DEFAULT_THEME = "rose-pine"
 
 # Mapping from Omarchy theme names to Textual theme names
 # Only needed when names don't match exactly

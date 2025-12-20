@@ -23,6 +23,7 @@ from .stores.base import CONFIG_DIR
 CONFIG_PATH = CONFIG_DIR / "connections.json"
 SETTINGS_PATH = CONFIG_DIR / "settings.json"
 HISTORY_PATH = CONFIG_DIR / "query_history.json"
+STARRED_PATH = CONFIG_DIR / "starred_queries.json"
 
 
 # Module-level convenience functions for backward compatibility.
@@ -74,6 +75,27 @@ def delete_query_from_history(connection_name: str, timestamp: str) -> bool:
     from .stores.history import delete_query_from_history as _delete_query_from_history
 
     return _delete_query_from_history(connection_name, timestamp)
+
+
+def load_starred_queries(connection_name: str) -> set[str]:
+    """Load starred queries for a specific connection."""
+    from .stores.starred import load_starred_queries as _load_starred
+
+    return _load_starred(connection_name)
+
+
+def is_query_starred(connection_name: str, query: str) -> bool:
+    """Check if a query is starred."""
+    from .stores.starred import is_query_starred as _is_starred
+
+    return _is_starred(connection_name, query)
+
+
+def toggle_query_star(connection_name: str, query: str) -> bool:
+    """Toggle star status. Returns True if now starred."""
+    from .stores.starred import toggle_query_star as _toggle
+
+    return _toggle(connection_name, query)
 
 
 if TYPE_CHECKING:

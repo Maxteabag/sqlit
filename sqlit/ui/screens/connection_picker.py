@@ -156,7 +156,7 @@ class ConnectionPickerScreen(ModalScreen):
 
         # Add a small delay for visual feedback if desired, or just run
         status, containers = detect_database_containers()
-        self.call_from_thread(self._on_containers_loaded, status, containers)
+        self.app.call_from_thread(self._on_containers_loaded, status, containers)
 
     def _on_containers_loaded(
         self, status: DockerStatus, containers: list[DetectedContainer]
