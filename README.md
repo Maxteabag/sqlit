@@ -204,6 +204,18 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 
 **Note:** SQL Server also requires the platform-specific ODBC driver. On your first connection attempt, `sqlit` can help you install it if it's missing.
 
+### SSH Tunnel Support
+
+SSH tunnel functionality requires additional dependencies. Install with the `ssh` extra:
+
+| Method | Command |
+| :--- | :--- |
+| pipx | `pipx install 'sqlit-tui[ssh]'` |
+| uv | `uv tool install 'sqlit-tui[ssh]'` |
+| pip | `pip install 'sqlit-tui[ssh]'` |
+
+If you try to create an SSH connection without these dependencies, sqlit will detect this and show you the exact command to install them for your environment.
+
 ## Vision
 The core purpose of this application is to read Read&Write to a SQL database.
 The core elements to achieve this purpose is: CEQR:
@@ -280,7 +292,6 @@ Designing keybindings decision hierarchy:
 Example:
 <e> = explorer pane, <q> = query pane, <r> = results pane.
 Rationale: E;Q;R satisfies both intuitiveness (each binding is the first letter of the pane), harmony (proximity: qwerty speaks for itself)
-
 
 
 ## License

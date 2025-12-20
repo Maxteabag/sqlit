@@ -10,6 +10,23 @@ if TYPE_CHECKING:
     from ..config import ConnectionConfig
 
 
+def ensure_ssh_tunnel_available() -> None:
+    """Ensure SSH tunnel dependencies are installed."""
+    forced_missing = os.environ.get("SQLIT_MOCK_MISSING_DRIVERS", "").strip()
+    if forced_missing:
+        forced = {s.strip() for s in forced_missing.split(",") if s.strip()}
+        if "ssh" in forced:
+            from .exceptions import MissingDriverError
+
+            raise MissingDriverError("SSH tunnel", "ssh", "sshtunnel")
+    try:
+        import sshtunnel  # noqa: F401
+    except Exception as e:
+        from .exceptions import MissingDriverError
+
+        raise MissingDriverError("SSH tunnel", "ssh", "sshtunnel") from e
+
+
 def create_ssh_tunnel(config: ConnectionConfig) -> tuple[Any, str, int]:
     """Create an SSH tunnel for the connection if SSH is enabled.
 
@@ -20,6 +37,8 @@ def create_ssh_tunnel(config: ConnectionConfig) -> tuple[Any, str, int]:
     if not config.ssh_enabled:
         port = int(config.port) if config.port else 0
         return None, config.server, port
+
+    ensure_ssh_tunnel_available()
 
     from sshtunnel import SSHTunnelForwarder
 

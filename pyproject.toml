@@ -30,8 +30,6 @@ dependencies = [
     "textual[syntax]>=6.10.0",
     "textual-fastdatatable>=0.14.0",
     "pyperclip>=1.8.2",
-    "sshtunnel>=0.4.0",
-    "paramiko>=2.10.1,<4.0.0",  # sshtunnel requires paramiko<4.0.0; min avoids known CVEs
     "keyring>=24.0.0",
     "docker>=7.0.0",  # Docker container auto-detection (lazy loaded)
 ]
@@ -46,6 +44,8 @@ all = [
     "duckdb>=1.1.0",  # min avoids known CVEs
     "requests>=2.32.4",  # min avoids known CVEs
     "libsql-client>=0.1.0",
+    "sshtunnel>=0.4.0",
+    "paramiko>=2.0.0,<4.0.0",
 ]
 postgres = ["psycopg2-binary>=2.9.0"]
 cockroachdb = ["psycopg2-binary>=2.9.0"]
@@ -56,6 +56,10 @@ oracle = ["oracledb>=2.0.0"]
 duckdb = ["duckdb>=1.1.0"]  # min avoids known CVEs
 d1 = ["requests>=2.32.4"]  # min avoids known CVEs
 turso = ["libsql-client>=0.1.0"]
+ssh = [
+    "sshtunnel>=0.4.0",
+    "paramiko>=2.0.0,<4.0.0",
+]
 test = [
     "pytest>=7.0",
     "pytest-timeout>=2.0",
