@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from textual.widget import Widget
     from textual.widgets import Static, TextArea, Tree
     from textual.worker import Worker
-    from textual_fastdatatable import DataTable
+    from ..widgets import SqlitDataTable
 
     from ..config import ConnectionConfig
     from ..db import DatabaseAdapter
@@ -167,7 +167,7 @@ class AppProtocol(Protocol):
         ...
 
     @property
-    def results_table(self) -> DataTable:
+    def results_table(self) -> SqlitDataTable:
         """The results table widget."""
         ...
 

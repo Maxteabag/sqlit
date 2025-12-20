@@ -19,7 +19,6 @@ from textual.screen import ModalScreen
 from textual.theme import Theme
 from textual.timer import Timer
 from textual.widgets import Static, TextArea, Tree
-from textual_fastdatatable import DataTable
 from textual.worker import Worker
 
 from .config import (
@@ -51,7 +50,14 @@ from .ui.mixins import (
     TreeMixin,
     UINavigationMixin,
 )
-from .widgets import AutocompleteDropdown, ContextFooter, ResultsFilterInput, TreeFilterInput, VimMode
+from .widgets import (
+    AutocompleteDropdown,
+    ContextFooter,
+    ResultsFilterInput,
+    SqlitDataTable,
+    TreeFilterInput,
+    VimMode,
+)
 
 
 class SSMSTUI(
@@ -405,7 +411,7 @@ class SSMSTUI(
         return self.query_one("#query-input", TextArea)
 
     @property
-    def results_table(self) -> DataTable:
+    def results_table(self) -> SqlitDataTable:
         # The results table ID changes when replaced (results-table, results-table-1, etc.)
         # Query for any DataTable within the results-area container
         return self.query_one("#results-area DataTable")  # type: ignore[return-value]
@@ -533,7 +539,7 @@ class SSMSTUI(
 
                     with Container(id="results-area"):
                         yield ResultsFilterInput(id="results-filter")
-                        yield Lazy(DataTable(id="results-table", zebra_stripes=True, show_header=False))
+                        yield Lazy(SqlitDataTable(id="results-table", zebra_stripes=True, show_header=False))
 
             yield Static("Not connected", id="status-bar")
 

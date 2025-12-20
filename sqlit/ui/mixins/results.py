@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from textual_fastdatatable import DataTable
+from ...widgets import SqlitDataTable
 
 from ..protocols import AppProtocol
 
@@ -30,7 +30,7 @@ class ResultsMixin:
         except Exception:
             return False
 
-    def _flash_table_yank(self: AppProtocol, table: DataTable, scope: str) -> None:
+    def _flash_table_yank(self: AppProtocol, table: SqlitDataTable, scope: str) -> None:
         """Briefly flash the yanked cell(s) to confirm a copy action."""
         from ...widgets import flash_widget
 

@@ -8,9 +8,10 @@ import pyarrow as pa
 from rich.markup import escape as escape_markup
 from textual.timer import Timer
 from textual.worker import Worker
-from textual_fastdatatable import ArrowBackend, DataTable
+from textual_fastdatatable import ArrowBackend
 
 from ..protocols import AppProtocol
+from ...widgets import SqlitDataTable
 from ...utils import format_duration_ms
 
 if TYPE_CHECKING:
@@ -204,7 +205,7 @@ class QueryMixin:
 
         if not columns or not rows:
             # Create empty table
-            new_table = DataTable(id=new_id, zebra_stripes=True, show_header=False)
+            new_table = SqlitDataTable(id=new_id, zebra_stripes=True, show_header=False)
             container.mount(new_table, after=old_table)
             old_table.remove()
             return
@@ -225,7 +226,7 @@ class QueryMixin:
         backend = ArrowBackend(arrow_table)
 
         # Create and mount new table, then remove old
-        new_table = DataTable(id=new_id, zebra_stripes=True, backend=backend)
+        new_table = SqlitDataTable(id=new_id, zebra_stripes=True, backend=backend)
         container.mount(new_table, after=old_table)
         old_table.remove()
 
@@ -243,7 +244,7 @@ class QueryMixin:
 
         if not columns or not rows:
             # Create empty table
-            new_table = DataTable(id=new_id, zebra_stripes=True, show_header=False)
+            new_table = SqlitDataTable(id=new_id, zebra_stripes=True, show_header=False)
             container.mount(new_table, after=old_table)
             old_table.remove()
             return
@@ -256,7 +257,7 @@ class QueryMixin:
         backend = ArrowBackend(arrow_table)
 
         # Create and mount new table, then remove old
-        new_table = DataTable(id=new_id, zebra_stripes=True, backend=backend)
+        new_table = SqlitDataTable(id=new_id, zebra_stripes=True, backend=backend)
         container.mount(new_table, after=old_table)
         old_table.remove()
 

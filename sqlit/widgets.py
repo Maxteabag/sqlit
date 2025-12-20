@@ -7,13 +7,36 @@ from typing import TYPE_CHECKING, Any
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
+from textual.strip import Strip
 from textual.widgets import Static
+from textual_fastdatatable import DataTable as FastDataTable
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from textual.events import Key
     from textual.widget import Widget
+
+
+class SqlitDataTable(FastDataTable):
+    """FastDataTable with correct header behavior when show_header is False."""
+
+    def render_line(self, y: int) -> Strip:
+        width, _ = self.size
+        scroll_x, scroll_y = self.scroll_offset
+
+        fixed_rows_height = self.fixed_rows
+        if self.show_header:
+            fixed_rows_height += self.header_height
+
+        if y >= fixed_rows_height:
+            y += scroll_y
+
+        if not self.show_header:
+            # FastDataTable still renders the header row at y=0; offset by 1 when hidden.
+            y += 1
+
+        return self._render_line(y, scroll_x, scroll_x + width, self.rich_style)
 
 
 class ResultsTableContainer(Container):
@@ -30,8 +53,7 @@ class ResultsTableContainer(Container):
         """Forward key events to the child DataTable."""
         # Find the DataTable child
         try:
-            from textual_fastdatatable import DataTable
-            table = self.query_one(DataTable)
+            table = self.query_one(SqlitDataTable)
             # Let the table handle navigation keys
             if event.key in ("up", "down", "left", "right", "pageup", "pagedown", "home", "end"):
                 # Simulate the key on the table

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from textual.widgets import TextArea, Tree
-    from textual_fastdatatable import DataTable
+    from ...widgets import SqlitDataTable
 
     from ...config import ConnectionConfig
     from ...services import ConnectionSession
@@ -25,7 +25,7 @@ class AppProtocol(Protocol):
     # Widget attributes (from Textual App)
     object_tree: Tree
     query_input: TextArea
-    results_table: DataTable
+    results_table: SqlitDataTable
     autocomplete_dropdown: Any  # AutocompleteDropdown widget
 
     # Connection state
