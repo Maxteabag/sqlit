@@ -418,6 +418,20 @@ D1_SCHEMA = ConnectionSchema(
     supports_ssh=False,
 )
 
+CLICKHOUSE_SCHEMA = ConnectionSchema(
+    db_type="clickhouse",
+    display_name="ClickHouse",
+    fields=(
+        _server_field(),
+        _port_field("8123"),
+        _database_field(placeholder="default"),
+        _username_field(required=False),
+        _password_field(),
+    )
+    + SSH_FIELDS,
+    default_port="8123",
+)
+
 
 def _get_supabase_region_options() -> tuple[SelectOption, ...]:
     regions = (

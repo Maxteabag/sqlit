@@ -19,6 +19,7 @@ __all__ = [
     "DatabaseAdapter",
     "TableInfo",
     # Adapter classes (lazy via __getattr__)
+    "ClickHouseAdapter",
     "CockroachDBAdapter",
     "DuckDBAdapter",
     "MariaDBAdapter",
@@ -35,6 +36,7 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
+    from .clickhouse import ClickHouseAdapter
     from .cockroachdb import CockroachDBAdapter
     from .duckdb import DuckDBAdapter
     from .mariadb import MariaDBAdapter

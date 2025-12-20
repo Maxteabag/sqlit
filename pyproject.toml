@@ -40,6 +40,7 @@ all = [
     "mariadb>=1.1.0",
     "oracledb>=2.0.0",
     "duckdb>=0.9.0",
+    "clickhouse-connect>=0.7.0",
     "requests>=2.0.0",
     "libsql-client>=0.1.0",
     "sshtunnel>=0.4.0",
@@ -52,6 +53,7 @@ mysql = ["mysql-connector-python>=8.0.0"]
 mariadb = ["mariadb>=1.1.0"]
 oracle = ["oracledb>=2.0.0"]
 duckdb = ["duckdb>=0.9.0"]
+clickhouse = ["clickhouse-connect>=0.7.0"]
 d1 = ["requests>=2.0.0"]
 turso = ["libsql-client>=0.1.0"]
 ssh = [
@@ -106,6 +108,7 @@ markers = [
     "postgresql: PostgreSQL database tests",
     "mysql: MySQL database tests",
     "oracle: Oracle database tests",
+    "clickhouse: ClickHouse database tests",
     "asyncio: async tests",
 ]
 
@@ -137,6 +140,7 @@ module = [
     "mariadb",
     "oracledb",
     "duckdb",
+    "clickhouse_connect",
     "libsql_client",
     "sshtunnel"
 ]

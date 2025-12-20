@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 # Pre-import all schemas (no external dependencies)
 from .schema import (
+    CLICKHOUSE_SCHEMA,
     COCKROACHDB_SCHEMA,
     D1_SCHEMA,
     DUCKDB_SCHEMA,
@@ -29,6 +30,7 @@ from .schema import (
 )
 
 # Pre-import all adapter classes (they lazy-load their dependencies internally)
+from .adapters.clickhouse import ClickHouseAdapter
 from .adapters.cockroachdb import CockroachDBAdapter
 from .adapters.d1 import D1Adapter
 from .adapters.duckdb import DuckDBAdapter
@@ -63,6 +65,7 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "turso": ProviderSpec(schema=TURSO_SCHEMA, adapter_class=TursoAdapter),
     "supabase": ProviderSpec(schema=SUPABASE_SCHEMA, adapter_class=SupabaseAdapter),
     "d1": ProviderSpec(schema=D1_SCHEMA, adapter_class=D1Adapter),
+    "clickhouse": ProviderSpec(schema=CLICKHOUSE_SCHEMA, adapter_class=ClickHouseAdapter),
 }
 
 
