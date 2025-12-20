@@ -113,7 +113,7 @@ class FirebirdAdapter(CursorBasedAdapter):
         cursor.execute(
             "SELECT rdb$unique_flag, rdb$index_type, rdb$segment_count, rdb$expression_source "
             "FROM   rdb$indices "
-            "WHERE rdb$index_name = ?",
+            "WHERE  rdb$index_name = ? AND rdb$system_flag = 0",
             (index_name.upper(),),
         )
         meta = cursor.fetchone()
