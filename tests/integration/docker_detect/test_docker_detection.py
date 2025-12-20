@@ -123,6 +123,8 @@ class TestContainerDetectionIntegration:
                 "mssql",
                 "clickhouse",
                 "cockroachdb",
+                "oracle",
+                "turso",
             ]
             assert container.host == "localhost"
 
@@ -216,6 +218,7 @@ class TestWithTemporaryContainer:
         assert test_container.username == "testuser"
         assert test_container.password == "testpass"
         assert test_container.database == "testdb"
+        assert test_container.connectable is True
 
     def test_container_to_connection_config(self, postgres_container):
         """Test converting detected container to ConnectionConfig."""

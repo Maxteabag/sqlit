@@ -206,13 +206,22 @@ class ConnectionPickerScreen(ModalScreen):
 
                 is_saved = self._is_container_saved(container)
                 if container.is_running:
-                    saved_indicator = "✓ saved" if is_saved else "[dim]not saved[/]"
-                    running_options.append(
-                        Option(
-                            f"🐳 {display} [{db_label}] [dim](localhost{port_info})[/] {saved_indicator}",
-                            id=f"{self.DOCKER_PREFIX}{container.container_id}",
+                    if container.connectable:
+                        saved_indicator = "✓ saved" if is_saved else "[dim]not saved[/]"
+                        running_options.append(
+                            Option(
+                                f"🐳 {display} [{db_label}] [dim](localhost{port_info})[/] {saved_indicator}",
+                                id=f"{self.DOCKER_PREFIX}{container.container_id}",
+                            )
                         )
-                    )
+                    else:
+                        running_options.append(
+                            Option(
+                                f"🐳 {display} [{db_label}] [dim](not exposed)[/]",
+                                id=f"{self.DOCKER_PREFIX}{container.container_id}",
+                                disabled=True,
+                            )
+                        )
                 else:
                     # Exited containers - muted gold styling, selectable but not connectable
                     saved_indicator = "[#CEBB91]✓ saved[/]" if is_saved else ""

@@ -339,6 +339,7 @@ def _parse_docker_containers(raw: Any) -> list[DetectedContainer]:
                 password=item.get("password"),
                 database=item.get("database"),
                 status=status,
+                connectable=bool(status == ContainerStatus.RUNNING and port_val is not None),
             )
         )
 

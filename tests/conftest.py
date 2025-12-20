@@ -20,6 +20,16 @@ _settings_file = _TEST_CONFIG_DIR / "settings.json"
 _settings_file.write_text('{"allow_plaintext_credentials": true}')
 
 
+@pytest.fixture(autouse=True)
+def _reset_mock_docker_containers():
+    """Ensure mock Docker containers do not leak between tests."""
+    from sqlit.mock_settings import set_mock_docker_containers
+
+    set_mock_docker_containers(None)
+    yield
+    set_mock_docker_containers(None)
+
+
 def is_port_open(host: str, port: int, timeout: float = 1.0) -> bool:
     """Check if a TCP port is open."""
     try:

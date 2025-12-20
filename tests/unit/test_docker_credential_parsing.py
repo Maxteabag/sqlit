@@ -63,6 +63,12 @@ class TestImagePatternMatching:
             ("cockroachdb/cockroach", "cockroachdb"),
             ("cockroachdb/cockroach:latest", "cockroachdb"),
             ("cockroachdb/cockroach:v23.1.0", "cockroachdb"),
+            # Oracle
+            ("gvenzl/oracle-free:23-slim", "oracle"),
+            ("oracle/database:19.3.0-ee", "oracle"),
+            # Turso/libSQL server
+            ("ghcr.io/tursodatabase/libsql-server:latest", "turso"),
+            ("tursodatabase/libsql-server:latest", "turso"),
             # Non-database images (should return None)
             ("nginx", None),
             ("nginx:latest", None),
@@ -233,6 +239,41 @@ class TestMariaDBCredentials:
         creds = _get_container_credentials("mariadb", env)
         assert creds["user"] == "root"
         assert creds["password"] == "rootpass"
+
+
+class TestOracleCredentials:
+    """Test Oracle credential extraction with app and system users."""
+
+    def test_oracle_app_user(self):
+        """Test Oracle APP_USER credentials."""
+        env = {
+            "APP_USER": "appuser",
+            "APP_USER_PASSWORD": "apppass",
+            "ORACLE_PASSWORD": "systempass",
+            "ORACLE_DATABASE": "APPDB",
+        }
+        creds = _get_container_credentials("oracle", env)
+        assert creds["user"] == "appuser"
+        assert creds["password"] == "apppass"
+        assert creds["database"] == "APPDB"
+
+    def test_oracle_defaults(self):
+        """Test Oracle defaults when no app user is set."""
+        env = {"ORACLE_PASSWORD": "systempass"}
+        creds = _get_container_credentials("oracle", env)
+        assert creds["user"] == "SYSTEM"
+        assert creds["password"] == "systempass"
+        assert creds["database"] == "FREEPDB1"
+
+    def test_oracle_app_user_missing_password(self):
+        """Test fallback to SYSTEM when APP_USER has no password."""
+        env = {
+            "APP_USER": "appuser",
+            "ORACLE_PASSWORD": "systempass",
+        }
+        creds = _get_container_credentials("oracle", env)
+        assert creds["user"] == "SYSTEM"
+        assert creds["password"] == "systempass"
 
 
 class TestSQLServerCredentials:

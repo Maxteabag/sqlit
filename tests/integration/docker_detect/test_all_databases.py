@@ -225,6 +225,34 @@ DATABASE_CONFIGS = [
         expected_database="defaultdb",
         startup_time=10,
     ),
+    # Oracle Free
+    DatabaseTestConfig(
+        name="oracle_free",
+        image="gvenzl/oracle-free:23-slim",
+        db_type="oracle",
+        env_vars={
+            "ORACLE_PASSWORD": "OraclePass123!",
+            "APP_USER": "appuser",
+            "APP_USER_PASSWORD": "apppass",
+        },
+        internal_port=1521,
+        expected_user="appuser",
+        expected_password="apppass",
+        expected_database="FREEPDB1",
+        startup_time=60,
+    ),
+    # Turso (libSQL server)
+    DatabaseTestConfig(
+        name="turso_libsql",
+        image="ghcr.io/tursodatabase/libsql-server:latest",
+        db_type="turso",
+        env_vars={},
+        internal_port=8080,
+        expected_user="",
+        expected_password=None,
+        expected_database="",
+        startup_time=5,
+    ),
 ]
 
 
@@ -324,6 +352,7 @@ class TestAllDatabases:
         )
         assert test_container.host == "localhost"
         assert test_container.port is not None, "Port should be detected"
+        assert test_container.connectable is True
 
         # Verify credentials
         assert test_container.username == config.expected_user, (
@@ -365,9 +394,16 @@ class TestAllDatabases:
         # Verify ConnectionConfig properties
         assert conn_config.name == f"sqlit-test-{config.name}"
         assert conn_config.db_type == config.db_type
-        assert conn_config.server == "localhost"
-        assert conn_config.port  # Should have a port string
-        assert int(conn_config.port) > 0  # Should be a valid port number
+        if config.db_type == "turso":
+            assert conn_config.server.startswith("http://localhost:")
+        else:
+            assert conn_config.server == "localhost"
+        if config.db_type == "turso":
+            assert conn_config.port == ""
+            assert conn_config.server.startswith("http://")
+        else:
+            assert conn_config.port  # Should have a port string
+            assert int(conn_config.port) > 0  # Should be a valid port number
 
 
 class TestEdgeCases:
@@ -418,6 +454,7 @@ class TestEdgeCases:
             # Container should be detected but port should be None
             assert test_container is not None
             assert test_container.port is None, "Port should be None when not mapped"
+            assert test_container.connectable is False
             assert test_container.db_type == "postgresql"
             assert test_container.password == "testpass"
 

@@ -43,11 +43,16 @@ class DetectedContainer:
     password: str | None
     database: str | None
     status: ContainerStatus = ContainerStatus.RUNNING
+    connectable: bool | None = None
 
     @property
     def is_running(self) -> bool:
         """Check if the container is running."""
         return self.status == ContainerStatus.RUNNING
+
+    def __post_init__(self) -> None:
+        if self.connectable is None:
+            self.connectable = self.is_running and self.port is not None
 
     def get_display_name(self) -> str:
         """Get a display name for the container."""
@@ -58,6 +63,8 @@ class DetectedContainer:
             "mssql": "SQL Server",
             "clickhouse": "ClickHouse",
             "cockroachdb": "CockroachDB",
+            "oracle": "Oracle",
+            "turso": "Turso",
         }
         label = db_labels.get(self.db_type, self.db_type.upper())
         return f"{self.container_name} ({label})"
@@ -72,6 +79,10 @@ IMAGE_PATTERNS: dict[str, str] = {
     "mcr.microsoft.com/azure-sql-edge": "mssql",  # ARM64-compatible SQL Server
     "clickhouse": "clickhouse",
     "cockroachdb": "cockroachdb",
+    "gvenzl/oracle-free": "oracle",
+    "oracle/database": "oracle",
+    "ghcr.io/tursodatabase/libsql-server": "turso",
+    "tursodatabase/libsql-server": "turso",
 }
 
 # Environment variable mappings for credential extraction
@@ -107,7 +118,7 @@ CREDENTIAL_ENV_VARS: dict[str, dict[str, str | list[str]]] = {
     "clickhouse": {
         "user": ["CLICKHOUSE_USER"],
         "password": ["CLICKHOUSE_PASSWORD"],
-        "database": ["CLICKHOUSE_DB", "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT"],
+        "database": ["CLICKHOUSE_DB"],
         "default_user": "default",
         "default_database": "default",
     },
@@ -117,6 +128,20 @@ CREDENTIAL_ENV_VARS: dict[str, dict[str, str | list[str]]] = {
         "database": ["COCKROACH_DATABASE"],
         "default_user": "root",
         "default_database": "defaultdb",
+    },
+    "oracle": {
+        "user": ["APP_USER"],
+        "password": ["APP_USER_PASSWORD", "ORACLE_PASSWORD"],
+        "database": ["ORACLE_DATABASE"],
+        "default_user": "SYSTEM",
+        "default_database": "FREEPDB1",
+    },
+    "turso": {
+        "user": [],
+        "password": [],
+        "database": [],
+        "default_user": "",
+        "default_database": "",
     },
 }
 
@@ -128,6 +153,8 @@ DEFAULT_PORTS: dict[str, int] = {
     "mssql": 1433,
     "clickhouse": 9000,
     "cockroachdb": 26257,
+    "oracle": 1521,
+    "turso": 8080,
 }
 
 
@@ -183,7 +210,7 @@ def _get_host_port(container: Any, container_port: int) -> int | None:
     Returns:
         Host port number or None if not mapped.
     """
-    ports = container.attrs.get("NetworkSettings", {}).get("Ports", {})
+    ports = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
 
     # Try TCP port first
     port_key = f"{container_port}/tcp"
@@ -195,6 +222,55 @@ def _get_host_port(container: Any, container_port: int) -> int | None:
             return int(host_port)
 
     return None
+
+
+def _get_single_mapped_host_port(container: Any) -> int | None:
+    """Return a host port when only one TCP port mapping exists."""
+    ports = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
+    mapped_ports: set[int] = set()
+    for port_key, bindings in ports.items():
+        if not port_key.endswith("/tcp") or not bindings:
+            continue
+        for binding in bindings:
+            host_port = binding.get("HostPort")
+            if host_port:
+                mapped_ports.add(int(host_port))
+    if len(mapped_ports) == 1:
+        return mapped_ports.pop()
+    return None
+
+
+def _get_exposed_tcp_ports(container: Any) -> list[int]:
+    """Return exposed TCP ports declared in the container config."""
+    exposed = container.attrs.get("Config", {}).get("ExposedPorts") or {}
+    exposed_ports = []
+    for port_key in exposed.keys():
+        if not port_key.endswith("/tcp"):
+            continue
+        port_str = port_key.split("/")[0]
+        if port_str.isdigit():
+            exposed_ports.append(int(port_str))
+    return exposed_ports
+
+
+def _get_container_image_name(container: Any) -> str | None:
+    """Best-effort image name for tagless or digest-based images."""
+    try:
+        image_tags = container.image.tags
+        if image_tags:
+            return image_tags[0]
+    except Exception:
+        pass
+    try:
+        config_image = container.attrs.get("Config", {}).get("Image")
+        if config_image:
+            return config_image
+    except Exception:
+        pass
+    try:
+        return container.image.short_id
+    except Exception:
+        return None
 
 
 def _get_container_env_vars(container: Any) -> dict[str, str]:
@@ -247,6 +323,15 @@ def _get_container_credentials(db_type: str, env_vars: dict[str, str]) -> dict[s
     if not database:
         database = config.get("default_database")
 
+    if db_type == "oracle":
+        app_user = env_vars.get("APP_USER")
+        app_password = env_vars.get("APP_USER_PASSWORD")
+        if app_user and not app_password:
+            user = config.get("default_user")
+            password = env_vars.get("ORACLE_PASSWORD")
+        if isinstance(database, str) and "," in database:
+            database = database.split(",", 1)[0]
+
     # Special case: MySQL/MariaDB with root password but no user
     if db_type in ("mysql", "mariadb") and not user and password:
         user = "root"
@@ -280,10 +365,8 @@ def _detect_containers_with_status(
 
     for container in containers:
         # Get image name
-        try:
-            image_tags = container.image.tags
-            image_name = image_tags[0] if image_tags else container.image.short_id
-        except Exception:
+        image_name = _get_container_image_name(container)
+        if not image_name:
             continue
 
         # Determine database type
@@ -293,11 +376,22 @@ def _detect_containers_with_status(
 
         # Get the default port for this database type
         default_port = DEFAULT_PORTS.get(db_type)
-        if not default_port:
-            continue
 
         # Get host-mapped port (only available for running containers)
-        host_port = _get_host_port(container, default_port) if container_status == ContainerStatus.RUNNING else None
+        host_port = None
+        if container_status == ContainerStatus.RUNNING:
+            if default_port:
+                host_port = _get_host_port(container, default_port)
+            if host_port is None:
+                host_port = _get_single_mapped_host_port(container)
+
+            network_mode = container.attrs.get("HostConfig", {}).get("NetworkMode")
+            if host_port is None and network_mode == "host" and default_port:
+                exposed_ports = _get_exposed_tcp_ports(container)
+                if len(exposed_ports) == 1:
+                    host_port = exposed_ports[0]
+                else:
+                    host_port = default_port
 
         # Get credentials from environment variables
         env_vars = _get_container_env_vars(container)
@@ -319,6 +413,7 @@ def _detect_containers_with_status(
                 password=credentials.get("password"),
                 database=credentials.get("database"),
                 status=container_status,
+                connectable=container_status == ContainerStatus.RUNNING and host_port is not None,
             )
         )
 
@@ -336,7 +431,7 @@ def detect_database_containers() -> tuple[DockerStatus, list[DetectedContainer]]
     from ..mock_settings import get_mock_docker_containers
 
     mock_containers = get_mock_docker_containers()
-    if mock_containers is not None:
+    if mock_containers is not None and mock_containers:
         # Sort: running first, then exited
         running = [c for c in mock_containers if c.status == ContainerStatus.RUNNING]
         exited = [c for c in mock_containers if c.status == ContainerStatus.EXITED]
@@ -374,11 +469,19 @@ def container_to_connection_config(container: DetectedContainer) -> ConnectionCo
     """
     from ..config import ConnectionConfig
 
+    server = container.host
+    port = str(container.port) if container.port else ""
+
+    if container.db_type == "turso":
+        if container.port and not server.startswith(("http://", "https://", "libsql://")):
+            server = f"http://{container.host}:{container.port}"
+        port = ""
+
     return ConnectionConfig(
         name=container.container_name,
         db_type=container.db_type,
-        server=container.host,
-        port=str(container.port) if container.port else "",
+        server=server,
+        port=port,
         database=container.database or "",
         username=container.username or "",
         password=container.password,

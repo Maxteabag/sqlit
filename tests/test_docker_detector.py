@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from sqlit.mock_settings import set_mock_docker_containers
 from sqlit.services.docker_detector import (
     DEFAULT_PORTS,
     DetectedContainer,
@@ -22,24 +23,16 @@ from sqlit.services.docker_detector import (
 class TestDockerStatus:
     def test_docker_not_installed(self):
         """Test detection when docker SDK is not installed."""
-        with patch.dict("sys.modules", {"docker": None}):
-            # Force reimport to get NOT_INSTALLED status
-            import importlib
+        import builtins
+        original_import = builtins.__import__
 
-            import sqlit.services.docker_detector as dd
+        def mock_import(name, *args, **kwargs):
+            if name == "docker":
+                raise ImportError("No module named 'docker'")
+            return original_import(name, *args, **kwargs)
 
-            # Temporarily remove docker from modules to simulate not installed
-            original_docker = __builtins__.__dict__.get("__import__")
-
-            def mock_import(name, *args, **kwargs):
-                if name == "docker":
-                    raise ImportError("No module named 'docker'")
-                return original_docker(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
-                importlib.reload(dd)
-                # The status check happens at runtime, so we just verify the enum exists
-                assert DockerStatus.NOT_INSTALLED.value == "not_installed"
+        with patch("builtins.__import__", side_effect=mock_import):
+            assert get_docker_status() == DockerStatus.NOT_INSTALLED
 
     def test_docker_status_enum_values(self):
         """Test DockerStatus enum has all expected values."""
@@ -62,6 +55,8 @@ class TestImagePatternDetection:
             ("mcr.microsoft.com/mssql/server:2022-latest", "mssql"),
             ("clickhouse/clickhouse-server:latest", "clickhouse"),
             ("cockroachdb/cockroach:latest", "cockroachdb"),
+            ("gvenzl/oracle-free:23-slim", "oracle"),
+            ("ghcr.io/tursodatabase/libsql-server:latest", "turso"),
             ("nginx:latest", None),
             ("redis:7", None),
             ("unknown-image", None),
@@ -230,13 +225,38 @@ class TestContainerToConnectionConfig:
         config = container_to_connection_config(container)
 
         assert config.name == "my-mysql"
-        assert config.port == ""
+        assert config.port == "3306"
         assert config.username == ""
         assert config.password is None
         assert config.database == ""
 
+    def test_convert_turso_container_to_url(self):
+        """Test Turso containers convert to URL-based server."""
+        container = DetectedContainer(
+            container_id="abc123",
+            container_name="my-turso",
+            db_type="turso",
+            host="localhost",
+            port=8080,
+            username=None,
+            password=None,
+            database=None,
+        )
+        config = container_to_connection_config(container)
+
+        assert config.name == "my-turso"
+        assert config.db_type == "turso"
+        assert config.server == "http://localhost:8080"
+        assert config.port == ""
+
 
 class TestDetectDatabaseContainers:
+    @pytest.fixture(autouse=True)
+    def _clear_mock_docker_containers(self):
+        set_mock_docker_containers(None)
+        yield
+        set_mock_docker_containers(None)
+
     def test_detect_containers_docker_not_installed(self):
         """Test detection when docker SDK is not installed."""
         with patch(
@@ -271,6 +291,7 @@ class TestDetectDatabaseContainers:
                     "POSTGRES_DB=testdb",
                 ]
             },
+            "HostConfig": {"NetworkMode": "bridge"},
             "NetworkSettings": {
                 "Ports": {
                     "5432/tcp": [{"HostIp": "0.0.0.0", "HostPort": "5432"}],
@@ -279,7 +300,7 @@ class TestDetectDatabaseContainers:
         }
 
         mock_client = MagicMock()
-        mock_client.containers.list.return_value = [mock_container]
+        mock_client.containers.list.side_effect = [[mock_container], []]
         mock_client.ping.return_value = True
 
         with (
@@ -299,6 +320,110 @@ class TestDetectDatabaseContainers:
             assert containers[0].username == "testuser"
             assert containers[0].password == "testpass"
             assert containers[0].database == "testdb"
+            assert containers[0].connectable is True
+
+    def test_detect_container_tagless_image(self):
+        """Test detection when image tags are missing."""
+        mock_container = MagicMock()
+        mock_container.name = "test-postgres"
+        mock_container.short_id = "abc123"
+        mock_container.image.tags = []
+        mock_container.attrs = {
+            "Config": {
+                "Image": "postgres:15",
+                "Env": [
+                    "POSTGRES_PASSWORD=testpass",
+                ],
+            },
+            "HostConfig": {"NetworkMode": "bridge"},
+            "NetworkSettings": {
+                "Ports": {
+                    "5432/tcp": [{"HostIp": "0.0.0.0", "HostPort": "15432"}],
+                }
+            },
+        }
+
+        mock_client = MagicMock()
+        mock_client.containers.list.side_effect = [[mock_container], []]
+        mock_client.ping.return_value = True
+
+        with (
+            patch(
+                "sqlit.services.docker_detector.get_docker_status",
+                return_value=DockerStatus.AVAILABLE,
+            ),
+            patch("docker.from_env", return_value=mock_client),
+        ):
+            _, containers = detect_database_containers()
+            assert containers
+            assert containers[0].db_type == "postgresql"
+            assert containers[0].port == 15432
+
+    def test_detect_container_host_network(self):
+        """Test host-network containers use exposed/default port."""
+        mock_container = MagicMock()
+        mock_container.name = "test-postgres"
+        mock_container.short_id = "abc123"
+        mock_container.image.tags = ["postgres:15"]
+        mock_container.attrs = {
+            "Config": {
+                "Env": [
+                    "POSTGRES_PASSWORD=testpass",
+                ],
+                "ExposedPorts": {"5432/tcp": {}},
+            },
+            "HostConfig": {"NetworkMode": "host"},
+            "NetworkSettings": {"Ports": {}},
+        }
+
+        mock_client = MagicMock()
+        mock_client.containers.list.side_effect = [[mock_container], []]
+        mock_client.ping.return_value = True
+
+        with (
+            patch(
+                "sqlit.services.docker_detector.get_docker_status",
+                return_value=DockerStatus.AVAILABLE,
+            ),
+            patch("docker.from_env", return_value=mock_client),
+        ):
+            _, containers = detect_database_containers()
+            assert containers
+            assert containers[0].port == 5432
+            assert containers[0].connectable is True
+
+    def test_detect_container_not_exposed(self):
+        """Test running containers without host mapping are marked not connectable."""
+        mock_container = MagicMock()
+        mock_container.name = "test-postgres"
+        mock_container.short_id = "abc123"
+        mock_container.image.tags = ["postgres:15"]
+        mock_container.attrs = {
+            "Config": {
+                "Env": [
+                    "POSTGRES_PASSWORD=testpass",
+                ],
+                "ExposedPorts": {"5432/tcp": {}},
+            },
+            "HostConfig": {"NetworkMode": "bridge"},
+            "NetworkSettings": {"Ports": {}},
+        }
+
+        mock_client = MagicMock()
+        mock_client.containers.list.side_effect = [[mock_container], []]
+        mock_client.ping.return_value = True
+
+        with (
+            patch(
+                "sqlit.services.docker_detector.get_docker_status",
+                return_value=DockerStatus.AVAILABLE,
+            ),
+            patch("docker.from_env", return_value=mock_client),
+        ):
+            _, containers = detect_database_containers()
+            assert containers
+            assert containers[0].port is None
+            assert containers[0].connectable is False
 
 
 class TestDefaultPorts:
@@ -310,3 +435,5 @@ class TestDefaultPorts:
         assert DEFAULT_PORTS["mssql"] == 1433
         assert DEFAULT_PORTS["clickhouse"] == 9000
         assert DEFAULT_PORTS["cockroachdb"] == 26257
+        assert DEFAULT_PORTS["oracle"] == 1521
+        assert DEFAULT_PORTS["turso"] == 8080
