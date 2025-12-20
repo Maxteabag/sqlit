@@ -109,7 +109,43 @@ class FirebirdAdapter(CursorBasedAdapter):
         table_name: str,
         database: str | None = None,
     ) -> dict[str, Any]:
-        return super().get_index_definition(conn, index_name, table_name, database)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT rdb$unique_flag, rdb$index_type, rdb$segment_count, rdb$expression_source "
+            "FROM   rdb$indices "
+            "WHERE rdb$index_name = ?",
+            (index_name.upper(),),
+        )
+        meta = cursor.fetchone()
+        is_unique = meta[0] == 1
+        descending = meta[1] == 1
+
+        if meta[2] > 0:
+            cursor.execute(
+                "SELECT rdb$field_name FROM rdb$index_segments WHERE rdb$index_name = ? ORDER BY rdb$field_position",
+                (index_name.upper(),),
+            )
+            columns = [row[0] for row in cursor.fetchall()]
+        else:
+            columns = []
+
+        definition_parts = ["CREATE"]
+        definition_parts.append("DESCENDING" if descending else "ASCENDING")
+        if is_unique:
+            definition_parts.append("UNIQUE")
+        definition_parts += ["INDEX", index_name.upper(), "ON", table_name.upper()]
+        if columns:
+            definition_parts.append(f"({', '.join(columns)})")
+        else:
+            definition_parts.append(f"COMPUTED BY ({meta[3]})")
+
+        return {
+            "name": index_name.upper(),
+            "table_name": table_name.upper(),
+            "columns": columns,
+            "is_unique": is_unique,
+            "definition": " ".join(definition_parts),
+        }
 
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         cursor = conn.cursor()
