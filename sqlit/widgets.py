@@ -231,8 +231,9 @@ class FilterInput(Static):
         return "visible" in self.classes
 
 
-# Backwards compatibility alias
+# Aliases for filter inputs in different contexts
 TreeFilterInput = FilterInput
+ResultsFilterInput = FilterInput
 
 
 class AutocompleteDropdown(Static):

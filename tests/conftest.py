@@ -110,6 +110,18 @@ def sqlite_db(sqlite_db_path: Path) -> Path:
         SELECT id, name, email FROM test_users WHERE email IS NOT NULL
     """)
 
+    # Create test index for integration tests
+    cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+    # Create test trigger for integration tests
+    cursor.execute("""
+        CREATE TRIGGER trg_test_users_audit
+        AFTER INSERT ON test_users
+        BEGIN
+            SELECT 1;
+        END
+    """)
+
     cursor.executemany(
         "INSERT INTO test_users (id, name, email) VALUES (?, ?, ?)",
         [
@@ -260,6 +272,23 @@ def mssql_db(mssql_server_ready: bool) -> str:
             END
         """)
 
+        # Create test index for integration tests
+        cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+        # Create test trigger for integration tests
+        cursor.execute("""
+            CREATE TRIGGER trg_test_users_audit
+            ON test_users
+            AFTER INSERT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+            END
+        """)
+
+        # Create test sequence for integration tests
+        cursor.execute("CREATE SEQUENCE test_sequence START WITH 1 INCREMENT BY 1")
+
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -406,6 +435,26 @@ def postgres_db(postgres_server_ready: bool) -> str:
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
+        # Create test index for integration tests
+        cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+        # Create test trigger for integration tests
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION test_audit_func() RETURNS TRIGGER AS $$
+            BEGIN
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+        """)
+        cursor.execute("""
+            CREATE TRIGGER trg_test_users_audit
+            AFTER INSERT ON test_users
+            FOR EACH ROW EXECUTE FUNCTION test_audit_func()
+        """)
+
+        # Create test sequence for integration tests
+        cursor.execute("CREATE SEQUENCE test_sequence START 1")
+
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -441,6 +490,8 @@ def postgres_db(postgres_server_ready: bool) -> str:
         cursor.execute("DROP TABLE IF EXISTS test_users CASCADE")
         cursor.execute("DROP TABLE IF EXISTS test_products CASCADE")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")
+        cursor.execute("DROP SEQUENCE IF EXISTS test_sequence")
+        cursor.execute("DROP FUNCTION IF EXISTS test_audit_func")
         conn.close()
     except Exception:
         pass
@@ -547,6 +598,19 @@ def mysql_db(mysql_server_ready: bool) -> str:
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
+        # Create test index for integration tests
+        cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+        # Create test trigger for integration tests
+        cursor.execute("""
+            CREATE TRIGGER trg_test_users_audit
+            AFTER INSERT ON test_users
+            FOR EACH ROW
+            BEGIN
+                SET @dummy = 1;
+            END
+        """)
+
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -579,6 +643,7 @@ def mysql_db(mysql_server_ready: bool) -> str:
             connection_timeout=10,
         )
         cursor = conn.cursor()
+        cursor.execute("DROP TRIGGER IF EXISTS trg_test_users_audit")
         cursor.execute("DROP TABLE IF EXISTS test_users")
         cursor.execute("DROP TABLE IF EXISTS test_products")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")
@@ -699,6 +764,22 @@ def oracle_db(oracle_server_ready: bool) -> str:
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
+        # Create test index for integration tests
+        cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+        # Create test trigger for integration tests
+        cursor.execute("""
+            CREATE OR REPLACE TRIGGER trg_test_users_audit
+            AFTER INSERT ON test_users
+            FOR EACH ROW
+            BEGIN
+                NULL;
+            END;
+        """)
+
+        # Create test sequence for integration tests
+        cursor.execute("CREATE SEQUENCE test_sequence START WITH 1 INCREMENT BY 1")
+
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES (1, 'Alice', 'alice@example.com')
         """)
@@ -741,6 +822,10 @@ def oracle_db(oracle_server_ready: bool) -> str:
                 pass
         try:
             cursor.execute("DROP VIEW test_user_emails")
+        except oracledb.DatabaseError:
+            pass
+        try:
+            cursor.execute("DROP SEQUENCE test_sequence")
         except oracledb.DatabaseError:
             pass
         conn.commit()
@@ -831,6 +916,7 @@ def mariadb_db(mariadb_server_ready: bool) -> str:
         cursor.execute("DROP TABLE IF EXISTS test_users")
         cursor.execute("DROP TABLE IF EXISTS test_products")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")
+        cursor.execute("DROP SEQUENCE IF EXISTS test_sequence")
 
         cursor.execute("""
             CREATE TABLE test_users (
@@ -853,6 +939,22 @@ def mariadb_db(mariadb_server_ready: bool) -> str:
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
+
+        # Create test index for integration tests
+        cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+        # Create test trigger for integration tests
+        cursor.execute("""
+            CREATE TRIGGER trg_test_users_audit
+            AFTER INSERT ON test_users
+            FOR EACH ROW
+            BEGIN
+                SET @dummy = 1;
+            END
+        """)
+
+        # Create test sequence for integration tests (MariaDB 10.3+)
+        cursor.execute("CREATE SEQUENCE test_sequence START WITH 1 INCREMENT BY 1")
 
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
@@ -886,9 +988,11 @@ def mariadb_db(mariadb_server_ready: bool) -> str:
             connect_timeout=10,
         )
         cursor = conn.cursor()
+        cursor.execute("DROP TRIGGER IF EXISTS trg_test_users_audit")
         cursor.execute("DROP TABLE IF EXISTS test_users")
         cursor.execute("DROP TABLE IF EXISTS test_products")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")
+        cursor.execute("DROP SEQUENCE IF EXISTS test_sequence")
         conn.commit()
         conn.close()
     except Exception:
@@ -967,6 +1071,14 @@ def duckdb_db(duckdb_db_path: Path) -> Path:
         CREATE VIEW test_user_emails AS
         SELECT id, name, email FROM test_users WHERE email IS NOT NULL
     """)
+
+    # Create test index for integration tests
+    conn.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+    # Create test sequence for integration tests
+    conn.execute("CREATE SEQUENCE test_sequence START 1")
+
+    # Note: DuckDB doesn't support triggers
 
     conn.execute("""
         INSERT INTO test_users (id, name, email) VALUES
@@ -1096,6 +1208,30 @@ def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
+
+        # Create test index for integration tests
+        cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+        # Create test sequence for integration tests
+        cursor.execute("CREATE SEQUENCE test_sequence START 1")
+
+        # Create test trigger for integration tests (CockroachDB 24.3+)
+        # Note: CockroachDB has limited trigger support, using simple AFTER trigger
+        try:
+            cursor.execute("""
+                CREATE OR REPLACE FUNCTION test_audit_func() RETURNS TRIGGER AS $$
+                BEGIN
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql
+            """)
+            cursor.execute("""
+                CREATE TRIGGER trg_test_users_audit
+                AFTER INSERT ON test_users
+                FOR EACH ROW EXECUTE FUNCTION test_audit_func()
+            """)
+        except Exception:
+            pass  # Triggers may not be supported in older CockroachDB versions
 
         cursor.execute("""
             INSERT INTO test_users (id, name, email) VALUES
@@ -1235,6 +1371,20 @@ def turso_db(turso_server_ready: bool) -> str:
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
+        # Create test index for integration tests
+        client.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
+
+        # Create test trigger for integration tests
+        client.execute("""
+            CREATE TRIGGER trg_test_users_audit
+            AFTER INSERT ON test_users
+            BEGIN
+                SELECT 1;
+            END
+        """)
+
+        # Note: Turso (libSQL/SQLite) doesn't support sequences
+
         client.execute("""
             INSERT INTO test_users (id, name, email) VALUES
             (1, 'Alice', 'alice@example.com'),
@@ -1258,6 +1408,8 @@ def turso_db(turso_server_ready: bool) -> str:
 
     try:
         client = create_client_sync(turso_url)
+        client.execute("DROP TRIGGER IF EXISTS trg_test_users_audit")
+        client.execute("DROP INDEX IF EXISTS idx_test_users_email")
         client.execute("DROP TABLE IF EXISTS test_users")
         client.execute("DROP TABLE IF EXISTS test_products")
         client.execute("DROP VIEW IF EXISTS test_user_emails")
@@ -1371,6 +1523,24 @@ def d1_db(d1_server_ready: bool) -> str:
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """,
         )
+
+        # Create test index for integration tests
+        adapter.execute_non_query(conn, "CREATE INDEX idx_test_users_email ON test_users(email)")
+
+        # Create test trigger for integration tests
+        adapter.execute_non_query(
+            conn,
+            """
+            CREATE TRIGGER trg_test_users_audit
+            AFTER INSERT ON test_users
+            BEGIN
+                SELECT 1;
+            END
+        """,
+        )
+
+        # Note: D1 (SQLite-based) doesn't support sequences
+
         adapter.execute_non_query(
             conn,
             "INSERT INTO test_users (id, name, email) VALUES (1, 'Alice', 'alice@example.com')",

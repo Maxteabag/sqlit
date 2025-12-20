@@ -767,31 +767,36 @@ class ConnectionScreen(ModalScreen):
         self.call_after_refresh(self._ensure_initial_tab)
 
         if debug:
-            print(f"[DEBUG] _ensure_initial_tab scheduled: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t0) * 1000
+            print(f"[DEBUG] _ensure_initial_tab scheduled: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._set_initial_select_values()
 
         if debug:
-            print(f"[DEBUG] _set_initial_select_values: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _set_initial_select_values: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._apply_prefill_values()
 
         if debug:
-            print(f"[DEBUG] _apply_prefill_values: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _apply_prefill_values: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._update_field_visibility()
 
         if debug:
-            print(f"[DEBUG] _update_field_visibility: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _update_field_visibility: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._validate_name_unique()
 
         if debug:
-            print(f"[DEBUG] _validate_name_unique: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _validate_name_unique: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         field_groups = self._get_field_groups_for_type(self._current_db_type, tab="general")
@@ -799,20 +804,24 @@ class ConnectionScreen(ModalScreen):
         self._set_advanced_tab_enabled(bool(advanced))
 
         if debug:
-            print(f"[DEBUG] field_groups + advanced tab: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] field_groups + advanced tab: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._update_ssh_tab_enabled(self._current_db_type)
 
         if debug:
-            print(f"[DEBUG] _update_ssh_tab_enabled: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _update_ssh_tab_enabled: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._update_mssql_driver_setup_visibility(self._current_db_type)
 
         if debug:
-            print(f"[DEBUG] _update_mssql_driver_setup_visibility: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
-            print(f"[DEBUG] on_mount total: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _update_mssql_driver_setup_visibility: {elapsed:.1f}ms", file=sys.stderr)
+            total = (time.perf_counter() - t0) * 1000
+            print(f"[DEBUG] on_mount total: {total:.1f}ms", file=sys.stderr)
 
         # Defer driver check to after screen is rendered to avoid blocking UI
         self.call_after_refresh(self._deferred_driver_check)
@@ -830,10 +839,13 @@ class ConnectionScreen(ModalScreen):
         self._check_driver_availability(self._current_db_type)
 
         if debug:
-            print(f"[DEBUG] _check_driver_availability: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t0) * 1000
+            print(f"[DEBUG] _check_driver_availability: {elapsed:.1f}ms", file=sys.stderr)
 
         if self._post_install_message and not self._missing_driver_error:
             self._update_driver_status_ui()
+
+
 
     def _ensure_initial_tab(self) -> None:
         try:

@@ -25,9 +25,9 @@ class DatabaseNode:
 
 @dataclass(frozen=True)
 class FolderNode:
-    """Node representing a folder (databases, tables, views, procedures)."""
+    """Node representing a folder (databases, tables, views, indexes, triggers, sequences, procedures)."""
 
-    folder_type: str  # "databases", "tables", "views", "procedures"
+    folder_type: str  # "databases", "tables", "views", "indexes", "triggers", "sequences", "procedures"
     database: str | None = None
 
 
@@ -67,6 +67,32 @@ class ProcedureNode:
 
 
 @dataclass(frozen=True)
+class IndexNode:
+    """Node representing a database index."""
+
+    database: str | None
+    name: str
+    table_name: str
+
+
+@dataclass(frozen=True)
+class TriggerNode:
+    """Node representing a database trigger."""
+
+    database: str | None
+    name: str
+    table_name: str
+
+
+@dataclass(frozen=True)
+class SequenceNode:
+    """Node representing a database sequence."""
+
+    database: str | None
+    name: str
+
+
+@dataclass(frozen=True)
 class ColumnNode:
     """Node representing a table/view column."""
 
@@ -92,6 +118,9 @@ NodeData = (
     | TableNode
     | ViewNode
     | ProcedureNode
+    | IndexNode
+    | TriggerNode
+    | SequenceNode
     | ColumnNode
     | LoadingNode
 )

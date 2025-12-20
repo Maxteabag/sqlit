@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .base import ColumnInfo, DatabaseAdapter, TableInfo, resolve_file_path
+from .base import ColumnInfo, DatabaseAdapter, IndexInfo, SequenceInfo, TableInfo, TriggerInfo, resolve_file_path
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -36,6 +36,16 @@ class DuckDBAdapter(DatabaseAdapter):
     @property
     def supports_stored_procedures(self) -> bool:
         return False
+
+    @property
+    def supports_triggers(self) -> bool:
+        """DuckDB doesn't support triggers (columnar/OLAP database)."""
+        return False
+
+    @property
+    def supports_sequences(self) -> bool:
+        """DuckDB supports sequences."""
+        return True
 
     @property
     def default_schema(self) -> str:
@@ -116,6 +126,82 @@ class DuckDBAdapter(DatabaseAdapter):
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """DuckDB doesn't support stored procedures - return empty list."""
         return []
+
+    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
+        """Get indexes from DuckDB using duckdb_indexes() function."""
+        result = conn.execute(
+            "SELECT index_name, table_name, is_unique "
+            "FROM duckdb_indexes() "
+            "ORDER BY table_name, index_name"
+        )
+        return [
+            IndexInfo(name=row[0], table_name=row[1], is_unique=row[2])
+            for row in result.fetchall()
+        ]
+
+    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
+        """DuckDB doesn't support triggers - return empty list."""
+        return []
+
+    def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
+        """Get sequences from DuckDB using duckdb_sequences() function."""
+        result = conn.execute(
+            "SELECT sequence_name FROM duckdb_sequences() ORDER BY sequence_name"
+        )
+        return [SequenceInfo(name=row[0]) for row in result.fetchall()]
+
+    def get_index_definition(
+        self, conn: Any, index_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a DuckDB index."""
+        result = conn.execute(
+            "SELECT is_unique, sql FROM duckdb_indexes() WHERE index_name = ?",
+            (index_name,),
+        )
+        row = result.fetchone()
+        if row:
+            return {
+                "name": index_name,
+                "table_name": table_name,
+                "columns": [],  # Would need to parse sql to extract
+                "is_unique": row[0],
+                "definition": row[1],
+            }
+        return {
+            "name": index_name,
+            "table_name": table_name,
+            "columns": [],
+            "is_unique": False,
+            "definition": None,
+        }
+
+    def get_sequence_definition(
+        self, conn: Any, sequence_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a DuckDB sequence."""
+        result = conn.execute(
+            "SELECT start_value, increment_by, min_value, max_value, cycle "
+            "FROM duckdb_sequences() WHERE sequence_name = ?",
+            (sequence_name,),
+        )
+        row = result.fetchone()
+        if row:
+            return {
+                "name": sequence_name,
+                "start_value": row[0],
+                "increment": row[1],
+                "min_value": row[2],
+                "max_value": row[3],
+                "cycle": row[4],
+            }
+        return {
+            "name": sequence_name,
+            "start_value": None,
+            "increment": None,
+            "min_value": None,
+            "max_value": None,
+            "cycle": None,
+        }
 
     def quote_identifier(self, name: str) -> str:
         """Quote identifier using double quotes for DuckDB.

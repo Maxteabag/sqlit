@@ -38,12 +38,13 @@ from .ui.mixins import (
     AutocompleteMixin,
     ConnectionMixin,
     QueryMixin,
+    ResultsFilterMixin,
     ResultsMixin,
     TreeFilterMixin,
     TreeMixin,
     UINavigationMixin,
 )
-from .widgets import AutocompleteDropdown, ContextFooter, TreeFilterInput, VimMode
+from .widgets import AutocompleteDropdown, ContextFooter, ResultsFilterInput, TreeFilterInput, VimMode
 
 
 class SSMSTUI(
@@ -53,6 +54,7 @@ class SSMSTUI(
     QueryMixin,
     AutocompleteMixin,
     ResultsMixin,
+    ResultsFilterMixin,
     UINavigationMixin,
     App,
 ):
@@ -281,6 +283,12 @@ class SSMSTUI(
         Binding("enter", "tree_filter_accept", "Select", show=False),
         Binding("n", "tree_filter_next", "Next match", show=False),
         Binding("N", "tree_filter_prev", "Prev match", show=False),
+        # Results filter bindings
+        Binding("slash", "results_filter", "Filter results", show=False),
+        Binding("escape", "results_filter_close", "Close filter", show=False),
+        Binding("enter", "results_filter_accept", "Select", show=False),
+        Binding("n", "results_filter_next", "Next match", show=False),
+        Binding("N", "results_filter_prev", "Prev match", show=False),
     ]
 
     def __init__(
@@ -417,6 +425,10 @@ class SSMSTUI(
     def tree_filter_input(self) -> TreeFilterInput:
         return self.query_one("#tree-filter", TreeFilterInput)
 
+    @property
+    def results_filter_input(self) -> ResultsFilterInput:
+        return self.query_one("#results-filter", ResultsFilterInput)
+
     def push_screen(
         self,
         screen: Any,
@@ -505,6 +517,7 @@ class SSMSTUI(
                         yield Lazy(AutocompleteDropdown(id="autocomplete-dropdown"))
 
                     with Container(id="results-area"):
+                        yield ResultsFilterInput(id="results-filter")
                         yield Lazy(DataTable(id="results-table", zebra_stripes=True, show_header=False))
 
             yield Static("Not connected", id="status-bar")

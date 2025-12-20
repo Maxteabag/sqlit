@@ -9,6 +9,7 @@
     "use_default_adapters": true,
     "connections": [],
     "drivers": {
+      "missing_all": false,
       "missing": [],
       "install_result": "real",
       "pipx": "auto"

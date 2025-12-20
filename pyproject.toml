@@ -30,7 +30,7 @@ dependencies = [
     "textual[syntax]>=6.10.0",
     "pyperclip>=1.8.2",
     "sshtunnel>=0.4.0",
-    "paramiko>=2.0.0,<4.0.0",  # sshtunnel requires paramiko<4.0.0 (DSSKey removed in 4.0)
+    "paramiko>=2.10.1,<4.0.0",  # sshtunnel requires paramiko<4.0.0; min avoids known CVEs
     "keyring>=24.0.0",
     "docker>=7.0.0",  # Docker container auto-detection (lazy loaded)
 ]
@@ -39,21 +39,21 @@ dependencies = [
 all = [
     "psycopg2-binary>=2.9.0",
     "pyodbc>=5.0.0",
-    "mysql-connector-python>=8.0.0",
+    "mysql-connector-python>=9.1.0",  # min avoids known CVEs
     "mariadb>=1.1.0",
     "oracledb>=2.0.0",
-    "duckdb>=0.9.0",
-    "requests>=2.0.0",
+    "duckdb>=1.1.0",  # min avoids known CVEs
+    "requests>=2.32.4",  # min avoids known CVEs
     "libsql-client>=0.1.0",
 ]
 postgres = ["psycopg2-binary>=2.9.0"]
 cockroachdb = ["psycopg2-binary>=2.9.0"]
 mssql = ["pyodbc>=5.0.0"]
-mysql = ["mysql-connector-python>=8.0.0"]
+mysql = ["mysql-connector-python>=9.1.0"]  # min avoids known CVEs
 mariadb = ["mariadb>=1.1.0"]
 oracle = ["oracledb>=2.0.0"]
-duckdb = ["duckdb>=0.9.0"]
-d1 = ["requests>=2.0.0"]
+duckdb = ["duckdb>=1.1.0"]  # min avoids known CVEs
+d1 = ["requests>=2.32.4"]  # min avoids known CVEs
 turso = ["libsql-client>=0.1.0"]
 test = [
     "pytest>=7.0",

@@ -34,6 +34,11 @@ class CockroachDBAdapter(PostgresBaseAdapter):
     def supports_stored_procedures(self) -> bool:
         return False  # CockroachDB has limited stored procedure support
 
+    @property
+    def supports_triggers(self) -> bool:
+        """Triggers are preview-only in CockroachDB; treat as unsupported by default."""
+        return False
+
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to CockroachDB database."""
         try:

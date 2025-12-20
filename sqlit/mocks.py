@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .config import ConnectionConfig
-from .db.adapters.base import ColumnInfo, DatabaseAdapter
+from .db.adapters.base import ColumnInfo, DatabaseAdapter, IndexInfo, SequenceInfo, TriggerInfo
 
 
 class MockConnection:
@@ -61,6 +61,9 @@ class MockDatabaseAdapter(DatabaseAdapter):
         tables: list[tuple[str, str]] | None = None,
         views: list[tuple[str, str]] | None = None,
         columns: dict[str, list[ColumnInfo]] | None = None,
+        indexes: list[IndexInfo] | None = None,
+        triggers: list[TriggerInfo] | None = None,
+        sequences: list[SequenceInfo] | None = None,
         query_results: dict[str, tuple[list[str], list[tuple]]] | None = None,
         default_schema: str = "",
         default_query_result: tuple[list[str], list[tuple]] | None = None,
@@ -75,6 +78,9 @@ class MockDatabaseAdapter(DatabaseAdapter):
         self._tables = tables or []
         self._views = views or []
         self._columns = columns or {}
+        self._indexes = indexes or []
+        self._triggers = triggers or []
+        self._sequences = sequences or []
         self._query_results = query_results or {}
         self._default_schema = default_schema
         self._default_query_result = default_query_result or (
@@ -146,6 +152,80 @@ class MockDatabaseAdapter(DatabaseAdapter):
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         return []
+
+    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
+        return self._indexes
+
+    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
+        return self._triggers
+
+    def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
+        return self._sequences
+
+    def get_index_definition(
+        self, conn: Any, index_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get mock index definition."""
+        for idx in self._indexes:
+            if idx.name == index_name:
+                return {
+                    "name": idx.name,
+                    "table_name": idx.table_name,
+                    "columns": [],
+                    "is_unique": idx.is_unique,
+                    "definition": f"CREATE INDEX {idx.name} ON {idx.table_name} (...)",
+                }
+        return {
+            "name": index_name,
+            "table_name": table_name,
+            "columns": [],
+            "is_unique": False,
+            "definition": None,
+        }
+
+    def get_trigger_definition(
+        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get mock trigger definition."""
+        for trg in self._triggers:
+            if trg.name == trigger_name:
+                return {
+                    "name": trg.name,
+                    "table_name": trg.table_name,
+                    "timing": "AFTER",
+                    "event": "INSERT",
+                    "definition": f"CREATE TRIGGER {trg.name} AFTER INSERT ON {trg.table_name} ...",
+                }
+        return {
+            "name": trigger_name,
+            "table_name": table_name,
+            "timing": None,
+            "event": None,
+            "definition": None,
+        }
+
+    def get_sequence_definition(
+        self, conn: Any, sequence_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get mock sequence definition."""
+        for seq in self._sequences:
+            if seq.name == sequence_name:
+                return {
+                    "name": seq.name,
+                    "start_value": 1,
+                    "increment": 1,
+                    "min_value": 1,
+                    "max_value": 9223372036854775807,
+                    "cycle": False,
+                }
+        return {
+            "name": sequence_name,
+            "start_value": None,
+            "increment": None,
+            "min_value": None,
+            "max_value": None,
+            "cycle": None,
+        }
 
     def quote_identifier(self, name: str) -> str:
         return f'"{name}"'

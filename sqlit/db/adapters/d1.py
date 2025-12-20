@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from .base import ColumnInfo, DatabaseAdapter, TableInfo
+from .base import ColumnInfo, DatabaseAdapter, IndexInfo, SequenceInfo, TableInfo, TriggerInfo
 
 if TYPE_CHECKING:
     import requests
@@ -167,6 +167,78 @@ class D1Adapter(DatabaseAdapter):
 
     def get_procedures(self, conn: D1Connection, database: str | None = None) -> list[str]:
         """Returns an empty list as D1 does not support stored procedures."""
+        return []
+
+    def get_indexes(self, conn: D1Connection, database: str | None = None) -> list[IndexInfo]:
+        """Get indexes from D1 (SQLite-compatible)."""
+        # Query sqlite_master for all indexes
+        result = self._execute(
+            conn,
+            "SELECT name, tbl_name FROM sqlite_master "
+            "WHERE type='index' "
+            "AND name NOT LIKE 'sqlite_%' "
+            "AND name NOT LIKE 'd1_%' "
+            "AND name NOT LIKE '_cf_%' "
+            "AND tbl_name NOT LIKE 'sqlite_%' "
+            "AND tbl_name NOT LIKE 'd1_%' "
+            "AND tbl_name NOT LIKE '_cf_%' "
+            "ORDER BY tbl_name, name"
+        )
+        rows = result.get("results", [])
+        if not isinstance(rows, list):
+            return []
+
+        results: list[IndexInfo] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            name = row.get("name")
+            tbl_name = row.get("tbl_name")
+            if not isinstance(name, str) or not isinstance(tbl_name, str):
+                continue
+            # Check if index is unique using PRAGMA
+            idx_result = self._execute(conn, f"PRAGMA index_list({self.quote_identifier(tbl_name)});")
+            idx_rows = idx_result.get("results", [])
+            is_unique = False
+            if isinstance(idx_rows, list):
+                for idx_info in idx_rows:
+                    if isinstance(idx_info, dict) and idx_info.get("name") == name:
+                        unique_val = idx_info.get("unique", 0)
+                        is_unique = isinstance(unique_val, int) and unique_val == 1
+                        break
+            results.append(IndexInfo(name=name, table_name=tbl_name, is_unique=is_unique))
+        return results
+
+    def get_triggers(self, conn: D1Connection, database: str | None = None) -> list[TriggerInfo]:
+        """Get triggers from D1 (SQLite-compatible)."""
+        result = self._execute(
+            conn,
+            "SELECT name, tbl_name FROM sqlite_master "
+            "WHERE type='trigger' "
+            "AND name NOT LIKE 'sqlite_%' "
+            "AND name NOT LIKE 'd1_%' "
+            "AND name NOT LIKE '_cf_%' "
+            "AND tbl_name NOT LIKE 'sqlite_%' "
+            "AND tbl_name NOT LIKE 'd1_%' "
+            "AND tbl_name NOT LIKE '_cf_%' "
+            "ORDER BY tbl_name, name"
+        )
+        rows = result.get("results", [])
+        if not isinstance(rows, list):
+            return []
+
+        results: list[TriggerInfo] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            name = row.get("name")
+            tbl_name = row.get("tbl_name")
+            if isinstance(name, str) and isinstance(tbl_name, str):
+                results.append(TriggerInfo(name=name, table_name=tbl_name))
+        return results
+
+    def get_sequences(self, conn: D1Connection, database: str | None = None) -> list[SequenceInfo]:
+        """D1/SQLite doesn't support sequences - return empty list."""
         return []
 
     def quote_identifier(self, name: str) -> str:

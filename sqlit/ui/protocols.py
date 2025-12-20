@@ -180,6 +180,16 @@ class AppProtocol(Protocol):
         """The autocomplete dropdown widget."""
         ...
 
+    @property
+    def tree_filter_input(self) -> Any:
+        """The tree filter input widget."""
+        ...
+
+    @property
+    def results_filter_input(self) -> Any:
+        """The results filter input widget."""
+        ...
+
     # === Connection state ===
 
     connections: list[ConnectionConfig]

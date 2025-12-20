@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import pytest
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -388,6 +390,135 @@ class BaseDatabaseTests(ABC):
             non_pk_columns = [col for col in columns if col.name.lower() != "id"]
             for col in non_pk_columns:
                 assert not col.is_primary_key, f"Column '{col.name}' should NOT be marked as primary key"
+
+    def test_get_indexes(self, request):
+        """Test that adapter correctly retrieves indexes.
+
+        This tests that get_indexes returns IndexInfo objects for indexes
+        created on the test tables. The test fixture should create an index
+        named 'idx_test_users_email' on the test_users table.
+        """
+        from sqlit.config import load_connections
+        from sqlit.db.adapters import get_adapter
+        from sqlit.db.adapters.base import IndexInfo
+        from sqlit.services.session import ConnectionSession
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            if not session.adapter.supports_indexes:
+                pytest.skip(f"{self.config.display_name} does not support indexes")
+
+            indexes = session.adapter.get_indexes(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(indexes, list), "get_indexes should return a list"
+            # All items should be IndexInfo
+            for idx in indexes:
+                assert isinstance(idx, IndexInfo), f"Expected IndexInfo, got {type(idx)}"
+
+            # Find our test index (case-insensitive for Oracle)
+            test_index = next(
+                (idx for idx in indexes if "test_users_email" in idx.name.lower()),
+                None,
+            )
+            assert test_index is not None, (
+                f"Index 'idx_test_users_email' not found. "
+                f"Found indexes: {[idx.name for idx in indexes]}"
+            )
+            assert "test_users" in test_index.table_name.lower(), (
+                f"Index should be on test_users table, got {test_index.table_name}"
+            )
+
+    def test_get_triggers(self, request):
+        """Test that adapter correctly retrieves triggers.
+
+        This tests that get_triggers returns TriggerInfo objects for triggers
+        created on the test tables. The test fixture should create a trigger
+        named 'trg_test_users_audit' on the test_users table.
+        """
+        from sqlit.config import load_connections
+        from sqlit.db.adapters import get_adapter
+        from sqlit.db.adapters.base import TriggerInfo
+        from sqlit.services.session import ConnectionSession
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            if not session.adapter.supports_triggers:
+                pytest.skip(f"{self.config.display_name} does not support triggers")
+
+            triggers = session.adapter.get_triggers(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(triggers, list), "get_triggers should return a list"
+            # All items should be TriggerInfo
+            for trg in triggers:
+                assert isinstance(trg, TriggerInfo), f"Expected TriggerInfo, got {type(trg)}"
+
+            # Find our test trigger (case-insensitive for Oracle)
+            test_trigger = next(
+                (trg for trg in triggers if "test_users_audit" in trg.name.lower()),
+                None,
+            )
+            assert test_trigger is not None, (
+                f"Trigger 'trg_test_users_audit' not found. "
+                f"Found triggers: {[trg.name for trg in triggers]}"
+            )
+            assert "test_users" in test_trigger.table_name.lower(), (
+                f"Trigger should be on test_users table, got {test_trigger.table_name}"
+            )
+
+    def test_get_sequences(self, request):
+        """Test that adapter correctly retrieves sequences.
+
+        This tests that get_sequences returns SequenceInfo objects for sequences
+        created in the database. The test fixture should create a sequence
+        named 'test_sequence' (for databases that support sequences).
+        """
+        from sqlit.config import load_connections
+        from sqlit.db.adapters import get_adapter
+        from sqlit.db.adapters.base import SequenceInfo
+        from sqlit.services.session import ConnectionSession
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            if not session.adapter.supports_sequences:
+                pytest.skip(f"{self.config.display_name} does not support sequences")
+
+            sequences = session.adapter.get_sequences(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(sequences, list), "get_sequences should return a list"
+            # All items should be SequenceInfo
+            for seq in sequences:
+                assert isinstance(seq, SequenceInfo), f"Expected SequenceInfo, got {type(seq)}"
+
+            # Find our test sequence (case-insensitive for Oracle)
+            test_sequence = next(
+                (seq for seq in sequences if "test_sequence" in seq.name.lower()),
+                None,
+            )
+            assert test_sequence is not None, (
+                f"Sequence 'test_sequence' not found. "
+                f"Found sequences: {[seq.name for seq in sequences]}"
+            )
 
 
 class BaseDatabaseTestsWithLimit(BaseDatabaseTests):

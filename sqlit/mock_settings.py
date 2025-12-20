@@ -34,13 +34,21 @@ def apply_mock_environment(settings: dict[str, Any]) -> None:
 
     drivers = mock_settings.get("drivers", {})
     if isinstance(drivers, dict):
-        missing = drivers.get("missing")
-        if isinstance(missing, list):
-            os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = ",".join(str(item).strip() for item in missing if str(item).strip())
-        elif isinstance(missing, str) and missing.strip():
-            os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = missing.strip()
-        elif missing == []:
-            os.environ.pop("SQLIT_MOCK_MISSING_DRIVERS", None)
+        missing_all = drivers.get("missing_all")
+        if missing_all is True:
+            from .db.providers import get_supported_db_types
+
+            os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = ",".join(get_supported_db_types())
+        else:
+            missing = drivers.get("missing")
+            if isinstance(missing, list):
+                os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = ",".join(
+                    str(item).strip() for item in missing if str(item).strip()
+                )
+            elif isinstance(missing, str) and missing.strip():
+                os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = missing.strip()
+            elif missing == []:
+                os.environ.pop("SQLIT_MOCK_MISSING_DRIVERS", None)
 
         install_result = str(drivers.get("install_result", "")).strip().lower()
         if install_result in {"success", "fail"}:
