@@ -205,10 +205,17 @@ class ConnectionMixin:
             self._direct_connection_config = None if is_saved else config
 
             self.refresh_tree()
-            self._select_connected_node()
+            self.call_after_refresh(self._select_connected_node)
             self._load_schema_cache()
             self._update_status_bar()
             self._update_section_labels()
+            if config.db_type == "mariadb" and self.current_adapter and not self.current_adapter.supports_sequences:
+                version = getattr(self.current_adapter, "_server_version_str", None)
+                if isinstance(version, str) and version:
+                    message = f"MariaDB {version} does not support sequences (requires 10.3+)"
+                else:
+                    message = "MariaDB does not support sequences (requires 10.3+)"
+                self.notify(message, severity="warning")
 
         def on_error(error: Exception) -> None:
             # Ignore if a newer connection attempt was started
@@ -322,12 +329,12 @@ class ConnectionMixin:
         self._update_section_labels()
 
     def _select_connected_node(self: AppProtocol) -> None:
-        """Select the currently connected node in the tree."""
+        """Move cursor to the connected node without toggling expansion."""
         if not self.current_config:
             return
         for node in self.object_tree.root.children:
             if isinstance(node.data, ConnectionNode) and node.data.config.name == self.current_config.name:
-                self.object_tree.select_node(node)
+                self.object_tree.move_cursor(node)
                 break
 
     def action_disconnect(self: AppProtocol) -> None:

@@ -76,6 +76,7 @@ class MariaDBAdapter(MySQLBaseAdapter):
         if not row or not isinstance(row[0], str):
             return True
 
+        self._server_version_str = row[0]
         match = re.match(r"^(\\d+)\\.(\\d+)(?:\\.(\\d+))?", row[0])
         if not match:
             return True
