@@ -51,6 +51,10 @@ class FirebirdAdapter(CursorBasedAdapter):
     def supports_triggers(self) -> bool:
         return True
 
+    @property
+    def test_query(self) -> str:
+        return "SELECT 1 FROM rdb$database"
+
     def connect(self, config: "ConnectionConfig") -> Any:
         """Connect to a Firebird database."""
         import firebirdsql

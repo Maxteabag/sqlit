@@ -65,6 +65,7 @@ class DetectedContainer:
             "cockroachdb": "CockroachDB",
             "oracle": "Oracle",
             "turso": "Turso",
+            "firebird": "Firebird",
         }
         label = db_labels.get(self.db_type, self.db_type.upper())
         return f"{self.container_name} ({label})"
@@ -83,6 +84,7 @@ IMAGE_PATTERNS: dict[str, str] = {
     "oracle/database": "oracle",
     "ghcr.io/tursodatabase/libsql-server": "turso",
     "tursodatabase/libsql-server": "turso",
+    "firebirdsql/firebird": "firebird",
 }
 
 # Environment variable mappings for credential extraction
@@ -136,6 +138,12 @@ CREDENTIAL_ENV_VARS: dict[str, dict[str, str | list[str]]] = {
         "database": [],
         "default_user": "",
     },
+    "firebird": {
+        "user": ["FIREBIRD_USER"],
+        "password": ["FIREBIRD_PASSWORD"],
+        "database": ["FIREBIRD_DATABASE"],
+        "default_user": "SYSDBA",
+    },
 }
 
 # Default ports for database types
@@ -148,6 +156,7 @@ DEFAULT_PORTS: dict[str, int] = {
     "cockroachdb": 26257,
     "oracle": 1521,
     "turso": 8080,
+    "firebird": 3050,
 }
 
 
