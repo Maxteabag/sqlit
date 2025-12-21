@@ -47,7 +47,10 @@ sqlit-notifications/
 # Integration test artifacts
 tests/integration/python_packages/artifacts/
 
-# Local assets
-assets/
+# Local assets (except logo for README)
+assets/*
+!assets/favorites/
+assets/favorites/*
+!assets/favorites/logo.png
 .worktrees/
 .obsidian/
