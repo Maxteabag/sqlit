@@ -448,6 +448,7 @@ CLICKHOUSE_SCHEMA = ConnectionSchema(
     )
     + SSH_FIELDS,
     default_port="8123",
+    requires_auth=False,  # ClickHouse allows passwordless access with "default" user
 )
 
 

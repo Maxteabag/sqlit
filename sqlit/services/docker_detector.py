@@ -92,56 +92,48 @@ CREDENTIAL_ENV_VARS: dict[str, dict[str, str | list[str]]] = {
         "password": ["POSTGRES_PASSWORD"],
         "database": ["POSTGRES_DB"],
         "default_user": "postgres",
-        "default_database": "postgres",
     },
     "mysql": {
         "user": ["MYSQL_USER"],
         "password": ["MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD"],
         "database": ["MYSQL_DATABASE"],
         "default_user": "root",
-        "default_database": "",
     },
     "mariadb": {
         "user": ["MARIADB_USER", "MYSQL_USER"],
         "password": ["MARIADB_PASSWORD", "MARIADB_ROOT_PASSWORD", "MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD"],
         "database": ["MARIADB_DATABASE", "MYSQL_DATABASE"],
         "default_user": "root",
-        "default_database": "",
     },
     "mssql": {
         "user": [],  # Always 'sa' for SQL Server
         "password": ["SA_PASSWORD", "MSSQL_SA_PASSWORD"],
         "database": [],
         "default_user": "sa",
-        "default_database": "master",
     },
     "clickhouse": {
         "user": ["CLICKHOUSE_USER"],
         "password": ["CLICKHOUSE_PASSWORD"],
         "database": ["CLICKHOUSE_DB"],
         "default_user": "default",
-        "default_database": "default",
     },
     "cockroachdb": {
         "user": ["COCKROACH_USER"],
         "password": ["COCKROACH_PASSWORD"],
         "database": ["COCKROACH_DATABASE"],
         "default_user": "root",
-        "default_database": "defaultdb",
     },
     "oracle": {
         "user": ["APP_USER"],
         "password": ["APP_USER_PASSWORD", "ORACLE_PASSWORD"],
         "database": ["ORACLE_DATABASE"],
         "default_user": "SYSTEM",
-        "default_database": "FREEPDB1",
     },
     "turso": {
         "user": [],
         "password": [],
         "database": [],
         "default_user": "",
-        "default_database": "",
     },
 }
 
@@ -151,7 +143,7 @@ DEFAULT_PORTS: dict[str, int] = {
     "mysql": 3306,
     "mariadb": 3306,
     "mssql": 1433,
-    "clickhouse": 9000,
+    "clickhouse": 8123,  # HTTP interface (clickhouse-connect uses HTTP, not native 9000)
     "cockroachdb": 26257,
     "oracle": 1521,
     "turso": 8080,

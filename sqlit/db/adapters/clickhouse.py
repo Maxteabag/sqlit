@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .base import ColumnInfo, DatabaseAdapter, TableInfo
+from .base import ColumnInfo, DatabaseAdapter, IndexInfo, SequenceInfo, TableInfo, TriggerInfo
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -45,6 +45,24 @@ class ClickHouseAdapter(DatabaseAdapter):
     def supports_stored_procedures(self) -> bool:
         # ClickHouse doesn't have traditional stored procedures
         return False
+
+    @property
+    def supports_triggers(self) -> bool:
+        # ClickHouse doesn't support triggers
+        return False
+
+    @property
+    def supports_indexes(self) -> bool:
+        # ClickHouse has data skipping indexes, but they work differently
+        # than traditional indexes - we'll expose them anyway
+        return True
+
+    def execute_test_query(self, conn: Any) -> None:
+        """Execute a simple query to verify the connection works.
+
+        clickhouse-connect uses query() method, not cursors.
+        """
+        conn.query(self.test_query)
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to ClickHouse database.
@@ -171,6 +189,40 @@ class ClickHouseAdapter(DatabaseAdapter):
         """ClickHouse doesn't support stored procedures - return empty list."""
         return []
 
+    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
+        """Get data skipping indexes from ClickHouse.
+
+        ClickHouse uses data skipping indexes (minmax, set, bloom_filter, etc.)
+        rather than traditional B-tree indexes. These are stored in system.data_skipping_indices.
+        """
+        if database:
+            result = conn.query(
+                "SELECT name, table, type "
+                "FROM system.data_skipping_indices "
+                "WHERE database = {db:String} "
+                "ORDER BY table, name",
+                parameters={"db": database},
+            )
+        else:
+            result = conn.query(
+                "SELECT name, table, type "
+                "FROM system.data_skipping_indices "
+                "WHERE database = currentDatabase() "
+                "ORDER BY table, name"
+            )
+        return [
+            IndexInfo(name=row[0], table_name=row[1], is_unique=False)
+            for row in result.result_rows
+        ]
+
+    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
+        """ClickHouse doesn't support triggers - return empty list."""
+        return []
+
+    def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
+        """ClickHouse doesn't support sequences - return empty list."""
+        return []
+
     def quote_identifier(self, name: str) -> str:
         """Quote identifier using backticks for ClickHouse.
 
@@ -189,9 +241,11 @@ class ClickHouseAdapter(DatabaseAdapter):
         """
         # Use schema as database if provided
         db = schema or database
+        quoted_table = self.quote_identifier(table)
         if db:
-            return f"SELECT * FROM `{db}`.`{table}` LIMIT {limit}"
-        return f"SELECT * FROM `{table}` LIMIT {limit}"
+            quoted_db = self.quote_identifier(db)
+            return f"SELECT * FROM {quoted_db}.{quoted_table} LIMIT {limit}"
+        return f"SELECT * FROM {quoted_table} LIMIT {limit}"
 
     def execute_query(
         self, conn: Any, query: str, max_rows: int | None = None
