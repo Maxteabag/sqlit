@@ -35,28 +35,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version from tag
-        id: version
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            # Strip the 'v' prefix from the tag
-            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Update version in pyproject.toml
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          echo "Setting version to $VERSION"
-          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
-          echo "Updated pyproject.toml:"
-          grep "^version" pyproject.toml
 
       - name: Install build tools
         run: python -m pip install --upgrade build
