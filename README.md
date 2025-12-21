@@ -18,7 +18,7 @@
 ---
 
 ### *Connect*
-Sqlit supports all major DBMS's: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Supabase, CloudFlare D1 and Turso.
+Sqlit supports all major DBMS's: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1 and Turso.
 ![Database Providers](demos/demo-providers.gif)
 
 ### **Query**
@@ -38,7 +38,7 @@ Finds running docker sql resources. Connect to your local test servers in second
 
 - **Connection manager** - Save connections, switch between databases without CLI args
 - **Just run `sqlit`** - No CLI config needed, pick a connection and go
-- **Multi-database out of the box** - SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Supabase, Supabase, CloudFlare D1, Turso - no adapters to install
+- **Multi-database out of the box** - SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso - no adapters to install
 - **Docker** Connect directly to database docker container
 - **SSH tunnels built-in** - Connect to remote databases securely with password or key auth
 - Secure credentials - Stores your credentials on your OS's credentials store
@@ -227,6 +227,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | ClickHouse | `clickhouse-connect` | `pipx inject sqlit-tui clickhouse-connect` | `python -m pip install clickhouse-connect` |
 | Turso | `libsql-client` | `pipx inject sqlit-tui libsql-client` | `python -m pip install libsql-client` |
 | Cloudflare D1 | `requests` | `pipx inject sqlit-tui requests` | `python -m pip install requests` |
+| Snowflake | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` |
 | Firebird | `firebirdsql` | `pip install firebirdsql` | `python -m pip install firebirdsql` |
 
 **Note:** SQL Server also requires the platform-specific ODBC driver. On your first connection attempt, `sqlit` can help you install it if it's missing.
