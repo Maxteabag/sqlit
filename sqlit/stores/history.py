@@ -15,6 +15,8 @@ class QueryHistoryEntry:
     query: str
     timestamp: str  # ISO format
     connection_name: str
+    is_starred: bool = False  # Computed at load time, not persisted
+    is_starred_only: bool = False  # True if only in starred store, not in history
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""

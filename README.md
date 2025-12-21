@@ -12,6 +12,11 @@ A lightweight TUI for people who just want to run some queries fast.
 
 ### Query History
 ![Query History](demos/demo-history.gif)
+**Filter results**
+![Filter results](demos/demo-filter/demo-filter.gif)
+
+**Docker discovery**
+![Filter results](demos/demo-docker-picker.gif)
 
 
 ## Features
@@ -19,11 +24,14 @@ A lightweight TUI for people who just want to run some queries fast.
 - **Connection manager UI** - Save connections, switch between databases without CLI args
 - **Just run `sqlit`** - No CLI config needed, pick a connection and go
 - **Multi-database out of the box** - SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, Oracle, DuckDB, CockroachDB, ClickHouse, Supabase, Turso - no adapters to install
+- Connect directly to database docker container
 - **SSH tunnels built-in** - Connect to remote databases securely with password or key auth
 - **Vim-style editing** - Modal editing for terminal purists
 - **Query history** - Automatically saves queries per connection, searchable and sortable
+- Filter results
 - Context-aware help (no need to memorize keybindings)
 - Browse databases, tables, views, and stored procedures
+- Indexes, Triggers and Sequences
 - SQL autocomplete for tables, columns, and procedures
 - Multiple auth methods (Windows, SQL Server, Entra ID)
 - CLI mode for scripting and AI agents
@@ -102,6 +110,14 @@ sqlit connections add postgresql --name "RemoteDB" --server "db-host" --username
 
 # Temporary (not saved) connection
 sqlit connect sqlite --file-path "/path/to/database.db"
+
+# Connect via URL - scheme determines database type (postgresql://, mysql://, sqlite://, etc.)
+sqlit postgresql://user:pass@localhost:5432/mydb
+sqlit mysql://root@localhost/testdb
+sqlit sqlite:///path/to/database.db
+
+# Save a connection via URL
+sqlit connections add --url dbtype://user:pass@host/db --name "MyDB"
 
 # Provider-specific CLI help
 sqlit connect -h

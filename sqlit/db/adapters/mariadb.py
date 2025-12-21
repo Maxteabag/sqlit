@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from ..schema import get_default_port
-from .base import ColumnInfo, MySQLBaseAdapter, TableInfo
+from .base import ColumnInfo, IndexInfo, MySQLBaseAdapter, SequenceInfo, TableInfo, TriggerInfo, import_driver_module
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -34,20 +35,23 @@ class MariaDBAdapter(MySQLBaseAdapter):
     def driver_import_names(self) -> tuple[str, ...]:
         return ("mariadb",)
 
+    @property
+    def supports_sequences(self) -> bool:
+        """MariaDB 10.3+ supports sequences."""
+        return getattr(self, "_supports_sequences", True)
+
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to MariaDB database."""
-        try:
-            import mariadb
-        except ImportError as e:
-            from ...db.exceptions import MissingDriverError
-
-            if not self.install_extra or not self.install_package:
-                raise e
-            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+        mariadb = import_driver_module(
+            "mariadb",
+            driver_name=self.name,
+            extra_name=self.install_extra,
+            package_name=self.install_package,
+        )
 
         port = int(config.port or get_default_port("mariadb"))
         mariadb_any: Any = mariadb
-        return mariadb_any.connect(
+        conn = mariadb_any.connect(
             host=config.server,
             port=port,
             database=config.database or None,
@@ -55,6 +59,30 @@ class MariaDBAdapter(MySQLBaseAdapter):
             password=config.password,
             connect_timeout=10,
         )
+        self._supports_sequences = self._detect_sequences_support(conn)
+        return conn
+
+    def _detect_sequences_support(self, conn: Any) -> bool:
+        """Determine whether the server supports sequences (MariaDB 10.3+)."""
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT VERSION()")
+            row = cursor.fetchone()
+        except Exception:
+            return True
+
+        if not row or not isinstance(row[0], str):
+            return True
+
+        self._server_version_str = row[0]
+        match = re.match(r"^(\\d+)\\.(\\d+)(?:\\.(\\d+))?", row[0])
+        if not match:
+            return True
+
+        major = int(match.group(1))
+        minor = int(match.group(2))
+        patch = int(match.group(3) or 0)
+        return (major, minor, patch) >= (10, 3, 0)
 
     # MariaDB connector uses ? placeholders instead of %s, so override methods with params
 
@@ -141,3 +169,173 @@ class MariaDBAdapter(MySQLBaseAdapter):
                 "ORDER BY routine_name"
             )
         return [row[0] for row in cursor.fetchall()]
+
+    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
+        """Get indexes from MariaDB (uses ? placeholders)."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT DISTINCT index_name, table_name, non_unique "
+                "FROM information_schema.statistics "
+                "WHERE table_schema = ? AND index_name != 'PRIMARY' "
+                "ORDER BY table_name, index_name",
+                (database,),
+            )
+        else:
+            cursor.execute(
+                "SELECT DISTINCT index_name, table_name, non_unique "
+                "FROM information_schema.statistics "
+                "WHERE table_schema = DATABASE() AND index_name != 'PRIMARY' "
+                "ORDER BY table_name, index_name"
+            )
+        return [
+            IndexInfo(name=row[0], table_name=row[1], is_unique=row[2] == 0)
+            for row in cursor.fetchall()
+        ]
+
+    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
+        """Get triggers from MariaDB (uses ? placeholders)."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT trigger_name, event_object_table "
+                "FROM information_schema.triggers "
+                "WHERE trigger_schema = ? "
+                "ORDER BY event_object_table, trigger_name",
+                (database,),
+            )
+        else:
+            cursor.execute(
+                "SELECT trigger_name, event_object_table "
+                "FROM information_schema.triggers "
+                "WHERE trigger_schema = DATABASE() "
+                "ORDER BY event_object_table, trigger_name"
+            )
+        return [TriggerInfo(name=row[0], table_name=row[1]) for row in cursor.fetchall()]
+
+    def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
+        """Get sequences from MariaDB 10.3+."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT sequence_name FROM information_schema.sequences "
+                "WHERE sequence_schema = ? "
+                "ORDER BY sequence_name",
+                (database,),
+            )
+        else:
+            cursor.execute(
+                "SELECT sequence_name FROM information_schema.sequences "
+                "WHERE sequence_schema = DATABASE() "
+                "ORDER BY sequence_name"
+            )
+        return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+
+    def get_index_definition(
+        self, conn: Any, index_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a MariaDB index (uses ? placeholders)."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT column_name, non_unique, index_type "
+                "FROM information_schema.statistics "
+                "WHERE table_schema = ? AND table_name = ? AND index_name = ? "
+                "ORDER BY seq_in_index",
+                (database, table_name, index_name),
+            )
+        else:
+            cursor.execute(
+                "SELECT column_name, non_unique, index_type "
+                "FROM information_schema.statistics "
+                "WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? "
+                "ORDER BY seq_in_index",
+                (table_name, index_name),
+            )
+        rows = cursor.fetchall()
+        columns = [row[0] for row in rows]
+        is_unique = rows[0][1] == 0 if rows else False
+        index_type = rows[0][2] if rows else "BTREE"
+
+        return {
+            "name": index_name,
+            "table_name": table_name,
+            "columns": columns,
+            "is_unique": is_unique,
+            "type": index_type,
+            "definition": f"CREATE {'UNIQUE ' if is_unique else ''}INDEX {index_name} ON {table_name} ({', '.join(columns)})",
+        }
+
+    def get_trigger_definition(
+        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a MariaDB trigger (uses ? placeholders)."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT action_timing, event_manipulation, action_statement "
+                "FROM information_schema.triggers "
+                "WHERE trigger_schema = ? AND trigger_name = ?",
+                (database, trigger_name),
+            )
+        else:
+            cursor.execute(
+                "SELECT action_timing, event_manipulation, action_statement "
+                "FROM information_schema.triggers "
+                "WHERE trigger_schema = DATABASE() AND trigger_name = ?",
+                (trigger_name,),
+            )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "name": trigger_name,
+                "table_name": table_name,
+                "timing": row[0],
+                "event": row[1],
+                "definition": row[2],
+            }
+        return {
+            "name": trigger_name,
+            "table_name": table_name,
+            "timing": None,
+            "event": None,
+            "definition": None,
+        }
+
+    def get_sequence_definition(
+        self, conn: Any, sequence_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a MariaDB sequence (uses ? placeholders)."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT start_value, increment, minimum_value, maximum_value, cycle_option "
+                "FROM information_schema.sequences "
+                "WHERE sequence_schema = ? AND sequence_name = ?",
+                (database, sequence_name),
+            )
+        else:
+            cursor.execute(
+                "SELECT start_value, increment, minimum_value, maximum_value, cycle_option "
+                "FROM information_schema.sequences "
+                "WHERE sequence_schema = DATABASE() AND sequence_name = ?",
+                (sequence_name,),
+            )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "name": sequence_name,
+                "start_value": row[0],
+                "increment": row[1],
+                "min_value": row[2],
+                "max_value": row[3],
+                "cycle": row[4] == 1,
+            }
+        return {
+            "name": sequence_name,
+            "start_value": None,
+            "increment": None,
+            "min_value": None,
+            "max_value": None,
+            "cycle": None,
+        }

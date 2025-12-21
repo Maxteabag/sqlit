@@ -20,8 +20,11 @@ from .ui.tree_nodes import (
     ConnectionNode,
     DatabaseNode,
     FolderNode,
+    IndexNode,
     SchemaNode,
+    SequenceNode,
     TableNode,
+    TriggerNode,
     ViewNode,
 )
 
@@ -289,6 +292,31 @@ class State(ABC):
         pass
 
 
+class BlockingState(State):
+    """State that blocks all actions except those explicitly allowed.
+
+    Use this for states like search/filter modes where most keybindings
+    should be disabled. Only actions registered via `allows()` will be
+    permitted; everything else returns FORBIDDEN.
+
+    This is reusable for any input-capture mode (tree filter, search dialogs, etc.)
+    """
+
+    def check_action(self, app: SSMSTUI, action_name: str) -> ActionResult:
+        """Block all actions except those explicitly allowed."""
+        if action_name in self._forbidden:
+            return ActionResult.FORBIDDEN
+
+        if action_name in self._actions:
+            spec = self._actions[action_name]
+            if spec.is_allowed(app):
+                return ActionResult.ALLOWED
+            return ActionResult.FORBIDDEN
+
+        # Unlike State, we don't delegate to parent - we forbid unhandled actions
+        return ActionResult.FORBIDDEN
+
+
 class RootState(State):
     """Root state - minimal actions available everywhere."""
 
@@ -404,8 +432,12 @@ class LeaderPendingState(State):
         return getattr(app, "_leader_pending", False)
 
 
-class TreeFilterActiveState(State):
-    """State when tree filter is active."""
+class TreeFilterActiveState(BlockingState):
+    """State when tree filter is active.
+
+    Inherits from BlockingState to block all keybindings except those
+    explicitly allowed for filter navigation.
+    """
 
     help_category = "Explorer"
 
@@ -415,14 +447,6 @@ class TreeFilterActiveState(State):
         self.allows("tree_filter_next", help="Next match", help_key="n/j")
         self.allows("tree_filter_prev", help="Previous match", help_key="N/k")
         self.allows("quit")
-        self.forbids(
-            "focus_explorer",
-            "focus_query",
-            "focus_results",
-            "leader_key",
-            "new_connection",
-            "tree_filter",
-        )
 
     def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = [
@@ -450,7 +474,7 @@ class TreeFocusedState(State):
         self.allows("collapse_tree", help="Collapse all", help_key="z")
         self.allows("tree_cursor_down")  # vim j
         self.allows("tree_cursor_up")  # vim k
-        self.allows("tree_filter", help="Filter tree", help_key="/")
+        self.allows("tree_filter", help="Filter items", help_key="/")
 
     def is_active(self, app: SSMSTUI) -> bool:
         if not app.object_tree.has_focus:
@@ -611,6 +635,40 @@ class TreeOnFolderState(State):
         return node is not None and isinstance(node.data, FolderNode | DatabaseNode | SchemaNode)
 
 
+class TreeOnObjectState(State):
+    """Tree focused on index, trigger, or sequence node."""
+
+    help_category = "Explorer"
+
+    def _setup_actions(self) -> None:
+        self.allows("select_table", key="s", label="Show Info", help="Show object definition/info")
+
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+        left: list[DisplayBinding] = []
+        seen: set[str] = set()
+
+        left.append(DisplayBinding(key="s", label="Show Info", action="select_table"))
+        seen.add("select_table")
+        left.append(DisplayBinding(key="f", label="Refresh", action="refresh_tree"))
+        seen.add("refresh_tree")
+
+        right: list[DisplayBinding] = []
+        if self.parent:
+            _, parent_right = self.parent.get_display_bindings(app)
+            for binding in parent_right:
+                if binding.action not in seen:
+                    right.append(binding)
+                    seen.add(binding.action)
+
+        return left, right
+
+    def is_active(self, app: SSMSTUI) -> bool:
+        if not app.object_tree.has_focus:
+            return False
+        node = app.object_tree.cursor_node
+        return node is not None and isinstance(node.data, IndexNode | TriggerNode | SequenceNode)
+
+
 class QueryFocusedState(State):
     """Base state when query editor has focus."""
 
@@ -744,6 +802,39 @@ class AutocompleteActiveState(State):
         )
 
 
+class ResultsFilterActiveState(BlockingState):
+    """State when results filter is active.
+
+    Inherits from BlockingState to block all keybindings except those
+    explicitly allowed for filter navigation.
+    """
+
+    help_category = "Results"
+
+    def _setup_actions(self) -> None:
+        self.allows("results_filter_close", help="Close filter", help_key="esc")
+        self.allows("results_filter_accept", help="Select row", help_key="enter")
+        self.allows("results_filter_next", help="Next match", help_key="n/j")
+        self.allows("results_filter_prev", help="Previous match", help_key="N/k")
+        self.allows("quit")
+
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+        left: list[DisplayBinding] = [
+            DisplayBinding(key="esc", label="Close", action="results_filter_close"),
+            DisplayBinding(key="enter", label="Select", action="results_filter_accept"),
+        ]
+        return left, []
+
+    def is_active(self, app: SSMSTUI) -> bool:
+        try:
+            return (
+                app.results_table.has_focus
+                and getattr(app, "_results_filter_visible", False)
+            )
+        except Exception:
+            return False
+
+
 class ResultsFocusedState(State):
     """Results table has focus."""
 
@@ -756,6 +847,7 @@ class ResultsFocusedState(State):
         self.allows("copy_row", key="Y", label="Copy row", help="Copy selected row")
         self.allows("copy_results", key="a", label="Copy all", help="Copy all results")
         self.allows("clear_results", key="x", label="Clear", help="Clear results")
+        self.allows("results_filter", key="slash", label="Filter", help="Filter rows")
         self.allows("results_cursor_left")  # vim h
         self.allows("results_cursor_down")  # vim j
         self.allows("results_cursor_up")  # vim k
@@ -777,8 +869,9 @@ class ResultsFocusedState(State):
             left.append(DisplayBinding(key="Y", label="Copy row", action="copy_row"))
             left.append(DisplayBinding(key="a", label="Copy all", action="copy_results"))
         left.append(DisplayBinding(key="x", label="Clear", action="clear_results"))
+        left.append(DisplayBinding(key="/", label="Filter", action="results_filter"))
 
-        seen.update(["view_cell", "copy_context", "copy_row", "copy_results", "clear_results"])
+        seen.update(["view_cell", "copy_context", "copy_row", "copy_results", "clear_results", "results_filter"])
 
         right: list[DisplayBinding] = []
         if self.parent:
@@ -817,6 +910,7 @@ class UIStateMachine:
         self.tree_on_connection = TreeOnConnectionState(parent=self.tree_focused)
         self.tree_on_table = TreeOnTableState(parent=self.tree_focused)
         self.tree_on_folder = TreeOnFolderState(parent=self.tree_focused)
+        self.tree_on_object = TreeOnObjectState(parent=self.tree_focused)
 
         self.query_focused = QueryFocusedState(parent=self.main_screen)
         self.query_normal = QueryNormalModeState(parent=self.query_focused)
@@ -824,6 +918,7 @@ class UIStateMachine:
         self.autocomplete_active = AutocompleteActiveState(parent=self.query_focused)
 
         self.results_focused = ResultsFocusedState(parent=self.main_screen)
+        self.results_filter_active = ResultsFilterActiveState(parent=self.main_screen)
 
         self._states = [
             self.modal_active,
@@ -833,11 +928,13 @@ class UIStateMachine:
             self.tree_on_connection,
             self.tree_on_table,
             self.tree_on_folder,
+            self.tree_on_object,  # For index/trigger/sequence nodes
             self.tree_focused,
             self.autocomplete_active,  # Before query_insert (more specific)
             self.query_insert,
             self.query_normal,
             self.query_focused,
+            self.results_filter_active,  # Before results_focused (more specific when filter active)
             self.results_focused,
             self.main_screen,
             self.root,
@@ -882,11 +979,23 @@ class UIStateMachine:
             HelpEntry(f"<space>+{cmd.key}", cmd.label, "Commands (<space>)") for cmd in get_leader_commands()
         ]
 
+        # Add Connection picker section (modal dialog, not state-based)
+        entries_by_category["Connection Picker"] = [
+            HelpEntry("/", "Search connections", "Connection Picker"),
+            HelpEntry("n", "New connection", "Connection Picker"),
+            HelpEntry("e", "Edit connection", "Connection Picker"),
+            HelpEntry("d", "Delete connection", "Connection Picker"),
+            HelpEntry("s", "Save to config", "Connection Picker"),
+            HelpEntry("<enter>", "Connect", "Connection Picker"),
+            HelpEntry("<esc>", "Close", "Connection Picker"),
+        ]
+
         category_order = [
             "Explorer",
             "Query Editor (Normal)",
             "Query Editor (Insert)",
             "Results",
+            "Connection Picker",
             "Navigation",
             "Commands (<space>)",
             "General",

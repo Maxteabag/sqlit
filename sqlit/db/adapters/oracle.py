@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ..schema import get_default_port
-from .base import ColumnInfo, DatabaseAdapter, TableInfo
+from .base import ColumnInfo, DatabaseAdapter, IndexInfo, SequenceInfo, TableInfo, TriggerInfo, import_driver_module
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -43,25 +43,45 @@ class OracleAdapter(DatabaseAdapter):
     def supports_stored_procedures(self) -> bool:
         return True
 
+    @property
+    def supports_sequences(self) -> bool:
+        """Oracle supports sequences."""
+        return True
+
+    @property
+    def test_query(self) -> str:
+        return "SELECT 1 FROM DUAL"
+
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to Oracle database."""
-        try:
-            import oracledb
-        except ImportError as e:
-            from ...db.exceptions import MissingDriverError
-
-            if not self.install_extra or not self.install_package:
-                raise e
-            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+        oracledb = import_driver_module(
+            "oracledb",
+            driver_name=self.name,
+            extra_name=self.install_extra,
+            package_name=self.install_package,
+        )
 
         port = int(config.port or get_default_port("oracle"))
         # Use Easy Connect string format: host:port/service_name
         dsn = f"{config.server}:{port}/{config.database}"
-        return oracledb.connect(
-            user=config.username,
-            password=config.password,
-            dsn=dsn,
-        )
+
+        # Determine connection mode based on oracle_role
+        oracle_role = getattr(config, "oracle_role", "normal")
+        mode = None
+        if oracle_role == "sysdba":
+            mode = oracledb.AUTH_MODE_SYSDBA
+        elif oracle_role == "sysoper":
+            mode = oracledb.AUTH_MODE_SYSOPER
+
+        connect_kwargs: dict[str, Any] = {
+            "user": config.username,
+            "password": config.password,
+            "dsn": dsn,
+        }
+        if mode is not None:
+            connect_kwargs["mode"] = mode
+
+        return oracledb.connect(**connect_kwargs)
 
     def get_databases(self, conn: Any) -> list[str]:
         """Oracle doesn't support multiple databases - return empty list."""
@@ -110,6 +130,137 @@ class OracleAdapter(DatabaseAdapter):
             "SELECT object_name FROM user_procedures " "WHERE object_type = 'PROCEDURE' ORDER BY object_name"
         )
         return [row[0] for row in cursor.fetchall()]
+
+    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
+        """Get indexes from Oracle."""
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT index_name, table_name, uniqueness "
+            "FROM user_indexes "
+            "WHERE index_type != 'LOB' "
+            "ORDER BY table_name, index_name"
+        )
+        return [
+            IndexInfo(name=row[0], table_name=row[1], is_unique=row[2] == "UNIQUE")
+            for row in cursor.fetchall()
+        ]
+
+    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
+        """Get triggers from Oracle."""
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT trigger_name, table_name "
+            "FROM user_triggers "
+            "WHERE base_object_type = 'TABLE' "
+            "ORDER BY table_name, trigger_name"
+        )
+        return [TriggerInfo(name=row[0], table_name=row[1] or "") for row in cursor.fetchall()]
+
+    def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
+        """Get sequences from Oracle."""
+        cursor = conn.cursor()
+        cursor.execute("SELECT sequence_name FROM user_sequences ORDER BY sequence_name")
+        return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+
+    def get_index_definition(
+        self, conn: Any, index_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about an Oracle index."""
+        cursor = conn.cursor()
+        # Get index info
+        cursor.execute(
+            "SELECT uniqueness, index_type FROM user_indexes WHERE index_name = :1",
+            (index_name.upper(),),
+        )
+        row = cursor.fetchone()
+        is_unique = row[0] == "UNIQUE" if row else False
+        index_type = row[1] if row else "NORMAL"
+
+        # Get index columns
+        cursor.execute(
+            "SELECT column_name FROM user_ind_columns "
+            "WHERE index_name = :1 ORDER BY column_position",
+            (index_name.upper(),),
+        )
+        columns = [row[0] for row in cursor.fetchall()]
+
+        # Try to get DDL
+        try:
+            cursor.execute(
+                "SELECT DBMS_METADATA.GET_DDL('INDEX', :1) FROM dual",
+                (index_name.upper(),),
+            )
+            ddl_row = cursor.fetchone()
+            definition = str(ddl_row[0]) if ddl_row else None
+        except Exception:
+            definition = f"CREATE {'UNIQUE ' if is_unique else ''}INDEX {index_name} ON {table_name} ({', '.join(columns)})"
+
+        return {
+            "name": index_name,
+            "table_name": table_name,
+            "columns": columns,
+            "is_unique": is_unique,
+            "type": index_type,
+            "definition": definition,
+        }
+
+    def get_trigger_definition(
+        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about an Oracle trigger."""
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT trigger_type, triggering_event, trigger_body "
+            "FROM user_triggers WHERE trigger_name = :1",
+            (trigger_name.upper(),),
+        )
+        row = cursor.fetchone()
+        if row:
+            # trigger_type is like "BEFORE EACH ROW" or "AFTER STATEMENT"
+            timing = row[0].split()[0] if row[0] else None
+            return {
+                "name": trigger_name,
+                "table_name": table_name,
+                "timing": timing,
+                "event": row[1],
+                "definition": row[2],
+            }
+        return {
+            "name": trigger_name,
+            "table_name": table_name,
+            "timing": None,
+            "event": None,
+            "definition": None,
+        }
+
+    def get_sequence_definition(
+        self, conn: Any, sequence_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about an Oracle sequence."""
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT min_value, max_value, increment_by, cycle_flag, last_number "
+            "FROM user_sequences WHERE sequence_name = :1",
+            (sequence_name.upper(),),
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "name": sequence_name,
+                "start_value": row[4],  # last_number approximates current position
+                "increment": row[2],
+                "min_value": row[0],
+                "max_value": row[1],
+                "cycle": row[3] == "Y",
+            }
+        return {
+            "name": sequence_name,
+            "start_value": None,
+            "increment": None,
+            "min_value": None,
+            "max_value": None,
+            "cycle": None,
+        }
 
     def quote_identifier(self, name: str) -> str:
         """Quote identifier using double quotes for Oracle.

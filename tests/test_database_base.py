@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import pytest
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -48,6 +50,183 @@ class BaseDatabaseTests(ABC):
         assert result.returncode == 0
         assert connection in result.stdout
         assert self.config.display_name in result.stdout
+
+    def test_docker_container_detection(self, request):
+        """Test that docker discovery detects the database container.
+
+        This ensures that the docker auto-discovery feature can find
+        containers for this database type in the connection picker.
+        """
+        # Skip for file-based databases (they don't use Docker containers)
+        from sqlit.db.providers import is_file_based
+
+        if is_file_based(self.config.db_type):
+            pytest.skip(f"{self.config.display_name} is file-based, no Docker container")
+
+        from sqlit.services.docker_detector import (
+            IMAGE_PATTERNS,
+            DockerStatus,
+            detect_database_containers,
+        )
+
+        # Skip if this database type has no Docker image patterns defined
+        has_pattern = any(
+            db_type == self.config.db_type
+            for db_type in IMAGE_PATTERNS.values()
+        )
+        if not has_pattern:
+            pytest.skip(f"{self.config.display_name} has no Docker image patterns")
+
+        status, containers = detect_database_containers()
+
+        if status != DockerStatus.AVAILABLE:
+            pytest.skip("Docker is not available")
+
+        # Find a container matching this database type
+        matching_containers = [
+            c for c in containers if c.db_type == self.config.db_type
+        ]
+
+        assert len(matching_containers) > 0, (
+            f"No Docker container detected for {self.config.display_name}. "
+            f"Found containers: {[(c.container_name, c.db_type) for c in containers]}"
+        )
+
+        # Verify the container has a port detected
+        container = matching_containers[0]
+        assert container.port is not None, (
+            f"Container {container.container_name} has no port detected"
+        )
+
+    def test_docker_container_no_password_prompt_when_not_needed(self, request):
+        """Test that docker discovery doesn't trigger password prompts for no-auth databases.
+
+        Some databases (CockroachDB, Turso) can run without authentication in
+        local/insecure mode. When docker discovery detects these containers,
+        it should return password="" (empty string) rather than password=None.
+
+        - password=None means "not set" -> UI will prompt for password
+        - password="" means "explicitly empty" -> UI will NOT prompt
+
+        This test ensures users aren't asked for passwords for databases
+        that don't need them.
+        """
+        # Skip for file-based databases (they don't use Docker containers)
+        from sqlit.db.providers import is_file_based
+
+        if is_file_based(self.config.db_type):
+            pytest.skip(f"{self.config.display_name} is file-based, no Docker container")
+
+        from sqlit.services.docker_detector import (
+            DockerStatus,
+            container_to_connection_config,
+            detect_database_containers,
+        )
+
+        status, containers = detect_database_containers()
+
+        if status != DockerStatus.AVAILABLE:
+            pytest.skip("Docker is not available")
+
+        # Find a container matching this database type
+        matching_containers = [
+            c for c in containers if c.db_type == self.config.db_type
+        ]
+
+        if not matching_containers:
+            pytest.skip(f"No Docker container found for {self.config.display_name}")
+
+        container = matching_containers[0]
+        config = container_to_connection_config(container)
+
+        # Databases that don't require auth should have password="" not None
+        # This prevents the UI from showing "Password Required" dialog
+        from sqlit.db.providers import requires_auth
+
+        if not requires_auth(self.config.db_type):
+            assert config.password is not None, (
+                f"{self.config.display_name} doesn't require authentication, but "
+                f"password is None. This will cause the UI to prompt for a password. "
+                f"Set password='' (empty string) in docker_detector.py for databases "
+                f"that don't need auth."
+            )
+
+    def test_docker_container_connection(self, request):
+        """Test that docker-discovered credentials actually work.
+
+        This tests the full docker discovery flow:
+        1. Detect the container
+        2. Convert to ConnectionConfig
+        3. Connect using discovered credentials
+        4. Run a simple query
+
+        This catches issues like:
+        - Wrong host (localhost vs 127.0.0.1 for MySQL/MariaDB)
+        - Missing or incorrect credentials
+        - Wrong port mappings
+        """
+        # Skip for file-based databases (they don't use Docker containers)
+        from sqlit.db.providers import is_file_based
+
+        if is_file_based(self.config.db_type):
+            pytest.skip(f"{self.config.display_name} is file-based, no Docker container")
+
+        from sqlit.db.adapters import get_adapter
+        from sqlit.services.docker_detector import (
+            DockerStatus,
+            container_to_connection_config,
+            detect_database_containers,
+        )
+
+        status, containers = detect_database_containers()
+
+        if status != DockerStatus.AVAILABLE:
+            pytest.skip("Docker is not available")
+
+        # Find a container matching this database type
+        matching_containers = [
+            c for c in containers if c.db_type == self.config.db_type
+        ]
+
+        if not matching_containers:
+            pytest.skip(f"No Docker container found for {self.config.display_name}")
+
+        container = matching_containers[0]
+        if not container.connectable:
+            pytest.skip(f"Container {container.container_name} is not connectable")
+
+        # Convert to ConnectionConfig (this is what the UI does)
+        config = container_to_connection_config(container)
+
+        # Get the adapter and try to connect
+        adapter = get_adapter(config.db_type)
+
+        try:
+            conn = adapter.connect(config)
+        except Exception as e:
+            pytest.fail(
+                f"Failed to connect using docker-discovered credentials:\n"
+                f"  Container: {container.container_name}\n"
+                f"  Host: {config.server}\n"
+                f"  Port: {config.port}\n"
+                f"  Username: {config.username}\n"
+                f"  Password: {'***' if config.password else 'None'}\n"
+                f"  Database: {config.database}\n"
+                f"  Error: {e}"
+            )
+
+        # Run a simple query to verify connection works
+        try:
+            adapter.execute_test_query(conn)
+        except Exception as e:
+            pytest.fail(
+                f"Connected but failed to execute query: {e}"
+            )
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def test_query_select(self, request, cli_runner):
         """Test executing SELECT query."""
@@ -389,6 +568,262 @@ class BaseDatabaseTests(ABC):
             for col in non_pk_columns:
                 assert not col.is_primary_key, f"Column '{col.name}' should NOT be marked as primary key"
 
+    def test_get_indexes(self, request):
+        """Test that adapter correctly retrieves indexes.
+
+        This tests that get_indexes returns IndexInfo objects for indexes
+        created on the test tables. The test fixture should create an index
+        named 'idx_test_users_email' on the test_users table.
+        """
+        from sqlit.config import load_connections
+        from sqlit.db.adapters import get_adapter
+        from sqlit.db.adapters.base import IndexInfo
+        from sqlit.services.session import ConnectionSession
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            if not session.adapter.supports_indexes:
+                pytest.skip(f"{self.config.display_name} does not support indexes")
+
+            indexes = session.adapter.get_indexes(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(indexes, list), "get_indexes should return a list"
+            # All items should be IndexInfo
+            for idx in indexes:
+                assert isinstance(idx, IndexInfo), f"Expected IndexInfo, got {type(idx)}"
+
+            # Find our test index (case-insensitive for Oracle)
+            test_index = next(
+                (idx for idx in indexes if "test_users_email" in idx.name.lower()),
+                None,
+            )
+            assert test_index is not None, (
+                f"Index 'idx_test_users_email' not found. "
+                f"Found indexes: {[idx.name for idx in indexes]}"
+            )
+            assert "test_users" in test_index.table_name.lower(), (
+                f"Index should be on test_users table, got {test_index.table_name}"
+            )
+
+    def test_get_triggers(self, request):
+        """Test that adapter correctly retrieves triggers.
+
+        This tests that get_triggers returns TriggerInfo objects for triggers
+        created on the test tables. The test fixture should create a trigger
+        named 'trg_test_users_audit' on the test_users table.
+        """
+        from sqlit.config import load_connections
+        from sqlit.db.adapters import get_adapter
+        from sqlit.db.adapters.base import TriggerInfo
+        from sqlit.services.session import ConnectionSession
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            if not session.adapter.supports_triggers:
+                pytest.skip(f"{self.config.display_name} does not support triggers")
+
+            triggers = session.adapter.get_triggers(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(triggers, list), "get_triggers should return a list"
+            # All items should be TriggerInfo
+            for trg in triggers:
+                assert isinstance(trg, TriggerInfo), f"Expected TriggerInfo, got {type(trg)}"
+
+            # Find our test trigger (case-insensitive for Oracle)
+            test_trigger = next(
+                (trg for trg in triggers if "test_users_audit" in trg.name.lower()),
+                None,
+            )
+            assert test_trigger is not None, (
+                f"Trigger 'trg_test_users_audit' not found. "
+                f"Found triggers: {[trg.name for trg in triggers]}"
+            )
+            assert "test_users" in test_trigger.table_name.lower(), (
+                f"Trigger should be on test_users table, got {test_trigger.table_name}"
+            )
+
+    def test_get_sequences(self, request):
+        """Test that adapter correctly retrieves sequences.
+
+        This tests that get_sequences returns SequenceInfo objects for sequences
+        created in the database. The test fixture should create a sequence
+        named 'test_sequence' (for databases that support sequences).
+        """
+        from sqlit.config import load_connections
+        from sqlit.db.adapters import get_adapter
+        from sqlit.db.adapters.base import SequenceInfo
+        from sqlit.services.session import ConnectionSession
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            if not session.adapter.supports_sequences:
+                pytest.skip(f"{self.config.display_name} does not support sequences")
+
+            sequences = session.adapter.get_sequences(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(sequences, list), "get_sequences should return a list"
+            # All items should be SequenceInfo
+            for seq in sequences:
+                assert isinstance(seq, SequenceInfo), f"Expected SequenceInfo, got {type(seq)}"
+
+            # Find our test sequence (case-insensitive for Oracle)
+            test_sequence = next(
+                (seq for seq in sequences if "test_sequence" in seq.name.lower()),
+                None,
+            )
+            assert test_sequence is not None, (
+                f"Sequence 'test_sequence' not found. "
+                f"Found sequences: {[seq.name for seq in sequences]}"
+            )
+
+    def test_get_trigger_definition(self, request):
+        """Test that adapter correctly retrieves trigger definitions.
+
+        This tests the code path used when a user clicks on a trigger
+        in the TUI tree view to see its details.
+        """
+        from sqlit.config import load_connections
+        from sqlit.db.adapters import get_adapter
+        from sqlit.services.session import ConnectionSession
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            if not session.adapter.supports_triggers:
+                pytest.skip(f"{self.config.display_name} does not support triggers")
+
+            # First get triggers to find one to look up
+            triggers = session.adapter.get_triggers(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            test_trigger = next(
+                (trg for trg in triggers if "test_users_audit" in trg.name.lower()),
+                None,
+            )
+            if test_trigger is None:
+                pytest.skip("Test trigger not found")
+
+            # Now get the definition (simulates user clicking on trigger in TUI)
+            info = session.adapter.get_trigger_definition(
+                session.connection,
+                test_trigger.name,
+                test_trigger.table_name,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(info, dict), "get_trigger_definition should return a dict"
+            assert "name" in info, "Trigger info should contain 'name'"
+
+    def test_get_sequence_definition(self, request):
+        """Test that adapter correctly retrieves sequence definitions.
+
+        This tests the code path used when a user clicks on a sequence
+        in the TUI tree view to see its details.
+        """
+        from sqlit.config import load_connections
+        from sqlit.db.adapters import get_adapter
+        from sqlit.services.session import ConnectionSession
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            if not session.adapter.supports_sequences:
+                pytest.skip(f"{self.config.display_name} does not support sequences")
+
+            # First get sequences to find one to look up
+            sequences = session.adapter.get_sequences(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            test_sequence = next(
+                (seq for seq in sequences if "test_sequence" in seq.name.lower()),
+                None,
+            )
+            if test_sequence is None:
+                pytest.skip("Test sequence not found")
+
+            # Now get the definition (simulates user clicking on sequence in TUI)
+            info = session.adapter.get_sequence_definition(
+                session.connection,
+                test_sequence.name,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(info, dict), "get_sequence_definition should return a dict"
+            assert "name" in info, "Sequence info should contain 'name'"
+
+    def test_get_index_definition(self, request):
+        """Test that adapter correctly retrieves index definitions.
+
+        This tests the code path used when a user clicks on an index
+        in the TUI tree view to see its details.
+        """
+        from sqlit.config import load_connections
+        from sqlit.db.adapters import get_adapter
+        from sqlit.services.session import ConnectionSession
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            if not session.adapter.supports_indexes:
+                pytest.skip(f"{self.config.display_name} does not support indexes")
+
+            # First get indexes to find one to look up
+            indexes = session.adapter.get_indexes(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            test_index = next(
+                (idx for idx in indexes if "test_users_email" in idx.name.lower()),
+                None,
+            )
+            if test_index is None:
+                pytest.skip("Test index not found")
+
+            # Now get the definition (simulates user clicking on index in TUI)
+            info = session.adapter.get_index_definition(
+                session.connection,
+                test_index.name,
+                test_index.table_name,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(info, dict), "get_index_definition should return a dict"
+            assert "name" in info, "Index info should contain 'name'"
 
 class BaseDatabaseTestsWithLimit(BaseDatabaseTests):
     """Base tests for databases that support LIMIT syntax."""

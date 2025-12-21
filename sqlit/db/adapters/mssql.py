@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .base import ColumnInfo, DatabaseAdapter, TableInfo
+from .base import ColumnInfo, DatabaseAdapter, IndexInfo, SequenceInfo, TableInfo, TriggerInfo, import_driver_module
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -40,6 +40,11 @@ class SQLServerAdapter(DatabaseAdapter):
     @property
     def default_schema(self) -> str:
         return "dbo"
+
+    @property
+    def supports_sequences(self) -> bool:
+        """SQL Server 2012+ supports sequences."""
+        return True
 
     def _build_connection_string(self, config: ConnectionConfig) -> str:
         """Build ODBC connection string from config.
@@ -80,14 +85,12 @@ class SQLServerAdapter(DatabaseAdapter):
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to SQL Server using pyodbc."""
-        try:
-            import pyodbc
-        except ImportError as e:
-            from ...db.exceptions import MissingDriverError
-
-            if not self.install_extra or not self.install_package:
-                raise e
-            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+        pyodbc = import_driver_module(
+            "pyodbc",
+            driver_name=self.name,
+            extra_name=self.install_extra,
+            package_name=self.install_package,
+        )
 
         installed = list(pyodbc.drivers())
         if config.driver not in installed:
@@ -194,6 +197,193 @@ class SQLServerAdapter(DatabaseAdapter):
                 "WHERE ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME"
             )
         return [row[0] for row in cursor.fetchall()]
+
+    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
+        """Get indexes from SQL Server."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                f"SELECT i.name, t.name, i.is_unique "
+                f"FROM [{database}].sys.indexes i "
+                f"JOIN [{database}].sys.tables t ON i.object_id = t.object_id "
+                f"WHERE i.name IS NOT NULL AND i.type > 0 AND i.is_primary_key = 0 "
+                f"ORDER BY t.name, i.name"
+            )
+        else:
+            cursor.execute(
+                "SELECT i.name, t.name, i.is_unique "
+                "FROM sys.indexes i "
+                "JOIN sys.tables t ON i.object_id = t.object_id "
+                "WHERE i.name IS NOT NULL AND i.type > 0 AND i.is_primary_key = 0 "
+                "ORDER BY t.name, i.name"
+            )
+        return [IndexInfo(name=row[0], table_name=row[1], is_unique=row[2]) for row in cursor.fetchall()]
+
+    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
+        """Get triggers from SQL Server."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                f"SELECT tr.name, OBJECT_NAME(tr.parent_id, DB_ID('{database}')) "
+                f"FROM [{database}].sys.triggers tr "
+                f"WHERE tr.is_ms_shipped = 0 AND tr.parent_id > 0 "
+                f"ORDER BY OBJECT_NAME(tr.parent_id, DB_ID('{database}')), tr.name"
+            )
+        else:
+            cursor.execute(
+                "SELECT tr.name, OBJECT_NAME(tr.parent_id) "
+                "FROM sys.triggers tr "
+                "WHERE tr.is_ms_shipped = 0 AND tr.parent_id > 0 "
+                "ORDER BY OBJECT_NAME(tr.parent_id), tr.name"
+            )
+        return [TriggerInfo(name=row[0], table_name=row[1] or "") for row in cursor.fetchall()]
+
+    def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
+        """Get sequences from SQL Server (2012+)."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(f"SELECT name FROM [{database}].sys.sequences ORDER BY name")
+        else:
+            cursor.execute("SELECT name FROM sys.sequences ORDER BY name")
+        return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+
+    def get_index_definition(
+        self, conn: Any, index_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a SQL Server index."""
+        cursor = conn.cursor()
+        # Get index info and columns
+        if database:
+            cursor.execute(
+                f"SELECT i.is_unique, i.type_desc, c.name "
+                f"FROM [{database}].sys.indexes i "
+                f"JOIN [{database}].sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id "
+                f"JOIN [{database}].sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id "
+                f"JOIN [{database}].sys.tables t ON i.object_id = t.object_id "
+                f"WHERE i.name = ? AND t.name = ? "
+                f"ORDER BY ic.key_ordinal",
+                (index_name, table_name),
+            )
+        else:
+            cursor.execute(
+                "SELECT i.is_unique, i.type_desc, c.name "
+                "FROM sys.indexes i "
+                "JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id "
+                "JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id "
+                "JOIN sys.tables t ON i.object_id = t.object_id "
+                "WHERE i.name = ? AND t.name = ? "
+                "ORDER BY ic.key_ordinal",
+                (index_name, table_name),
+            )
+        rows = cursor.fetchall()
+        is_unique = rows[0][0] if rows else False
+        index_type = rows[0][1] if rows else "NONCLUSTERED"
+        columns = [row[2] for row in rows]
+
+        return {
+            "name": index_name,
+            "table_name": table_name,
+            "columns": columns,
+            "is_unique": is_unique,
+            "type": index_type,
+            "definition": f"CREATE {'UNIQUE ' if is_unique else ''}{index_type} INDEX [{index_name}] ON [{table_name}] ({', '.join(f'[{c}]' for c in columns)})",
+        }
+
+    def get_trigger_definition(
+        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a SQL Server trigger."""
+        cursor = conn.cursor()
+        # Get trigger definition using OBJECT_DEFINITION
+        if database:
+            cursor.execute(
+                f"SELECT OBJECT_DEFINITION(tr.object_id), "
+                f"  CASE WHEN tr.is_instead_of_trigger = 1 THEN 'INSTEAD OF' "
+                f"       ELSE 'AFTER' END as timing "
+                f"FROM [{database}].sys.triggers tr "
+                f"JOIN [{database}].sys.tables t ON tr.parent_id = t.object_id "
+                f"WHERE tr.name = ? AND t.name = ?",
+                (trigger_name, table_name),
+            )
+        else:
+            cursor.execute(
+                "SELECT OBJECT_DEFINITION(tr.object_id), "
+                "  CASE WHEN tr.is_instead_of_trigger = 1 THEN 'INSTEAD OF' "
+                "       ELSE 'AFTER' END as timing "
+                "FROM sys.triggers tr "
+                "JOIN sys.tables t ON tr.parent_id = t.object_id "
+                "WHERE tr.name = ? AND t.name = ?",
+                (trigger_name, table_name),
+            )
+        row = cursor.fetchone()
+        if row:
+            definition = row[0]
+            # Parse event from definition
+            event = None
+            if definition:
+                upper_def = definition.upper()
+                events = []
+                if " INSERT" in upper_def:
+                    events.append("INSERT")
+                if " UPDATE" in upper_def:
+                    events.append("UPDATE")
+                if " DELETE" in upper_def:
+                    events.append("DELETE")
+                event = ", ".join(events) if events else None
+
+            return {
+                "name": trigger_name,
+                "table_name": table_name,
+                "timing": row[1],
+                "event": event,
+                "definition": definition,
+            }
+        return {
+            "name": trigger_name,
+            "table_name": table_name,
+            "timing": None,
+            "event": None,
+            "definition": None,
+        }
+
+    def get_sequence_definition(
+        self, conn: Any, sequence_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a SQL Server sequence."""
+        cursor = conn.cursor()
+        # Cast sql_variant columns to BIGINT to avoid pyodbc type -25 error
+        if database:
+            cursor.execute(
+                f"SELECT CAST(start_value AS BIGINT), CAST(increment AS BIGINT), "
+                f"CAST(minimum_value AS BIGINT), CAST(maximum_value AS BIGINT), is_cycling "
+                f"FROM [{database}].sys.sequences WHERE name = ?",
+                (sequence_name,),
+            )
+        else:
+            cursor.execute(
+                "SELECT CAST(start_value AS BIGINT), CAST(increment AS BIGINT), "
+                "CAST(minimum_value AS BIGINT), CAST(maximum_value AS BIGINT), is_cycling "
+                "FROM sys.sequences WHERE name = ?",
+                (sequence_name,),
+            )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "name": sequence_name,
+                "start_value": row[0],
+                "increment": row[1],
+                "min_value": row[2],
+                "max_value": row[3],
+                "cycle": row[4],
+            }
+        return {
+            "name": sequence_name,
+            "start_value": None,
+            "increment": None,
+            "min_value": None,
+            "max_value": None,
+            "cycle": None,
+        }
 
     def quote_identifier(self, name: str) -> str:
         """Quote identifier using SQL Server brackets.

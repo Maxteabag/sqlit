@@ -18,7 +18,7 @@ from textual.lazy import Lazy
 from textual.screen import ModalScreen
 from textual.theme import Theme
 from textual.timer import Timer
-from textual.widgets import DataTable, Static, TextArea, Tree
+from textual.widgets import Static, TextArea, Tree
 from textual.worker import Worker
 
 from .config import (
@@ -28,8 +28,14 @@ from .config import (
     save_settings,
 )
 from .db import DatabaseAdapter
-from .mocks import MockProfile
 from .mock_settings import apply_mock_environment, build_mock_profile_from_settings
+from .mocks import MockProfile
+from .omarchy import (
+    DEFAULT_THEME,
+    get_current_theme_name,
+    get_matching_textual_theme,
+    is_omarchy_installed,
+)
 from .state_machine import (
     UIStateMachine,
     get_leader_bindings,
@@ -38,12 +44,20 @@ from .ui.mixins import (
     AutocompleteMixin,
     ConnectionMixin,
     QueryMixin,
+    ResultsFilterMixin,
     ResultsMixin,
     TreeFilterMixin,
     TreeMixin,
     UINavigationMixin,
 )
-from .widgets import AutocompleteDropdown, ContextFooter, TreeFilterInput, VimMode
+from .widgets import (
+    AutocompleteDropdown,
+    ContextFooter,
+    ResultsFilterInput,
+    SqlitDataTable,
+    TreeFilterInput,
+    VimMode,
+)
 
 
 class SSMSTUI(
@@ -53,6 +67,7 @@ class SSMSTUI(
     QueryMixin,
     AutocompleteMixin,
     ResultsMixin,
+    ResultsFilterMixin,
     UINavigationMixin,
     App,
 ):
@@ -201,9 +216,11 @@ class SSMSTUI(
     }
 
 
-    #results-table {
+    #results-area DataTable {
         height: 1fr;
     }
+
+    /* FastDataTable already has zebra stripes with $primary 10% */
 
     #status-bar {
         height: 1;
@@ -281,6 +298,12 @@ class SSMSTUI(
         Binding("enter", "tree_filter_accept", "Select", show=False),
         Binding("n", "tree_filter_next", "Next match", show=False),
         Binding("N", "tree_filter_prev", "Prev match", show=False),
+        # Results filter bindings
+        Binding("slash", "results_filter", "Filter results", show=False),
+        Binding("escape", "results_filter_close", "Close filter", show=False),
+        Binding("enter", "results_filter_accept", "Select", show=False),
+        Binding("n", "results_filter_next", "Next match", show=False),
+        Binding("N", "results_filter_prev", "Prev match", show=False),
     ]
 
     def __init__(
@@ -322,6 +345,7 @@ class SSMSTUI(
         self._last_result_columns: list[str] = []
         self._last_result_rows: list[tuple] = []
         self._last_result_row_count: int = 0
+        self._results_table_counter: int = 0
         self._internal_clipboard: str = ""
         self._fullscreen_mode: str = "none"
         self._last_notification: str = ""
@@ -349,6 +373,9 @@ class SSMSTUI(
         self._state_machine = UIStateMachine()
         self._session_factory: Any | None = None
         self._last_query_table: dict | None = None
+        # Omarchy theme sync state
+        self._omarchy_theme_watcher: Timer | None = None
+        self._omarchy_last_theme_name: str | None = None
 
         if mock_profile:
             self._session_factory = self._create_mock_session_factory(mock_profile)
@@ -384,8 +411,10 @@ class SSMSTUI(
         return self.query_one("#query-input", TextArea)
 
     @property
-    def results_table(self) -> DataTable:
-        return self.query_one("#results-table", DataTable)
+    def results_table(self) -> SqlitDataTable:
+        # The results table ID changes when replaced (results-table, results-table-1, etc.)
+        # Query for any DataTable within the results-area container
+        return self.query_one("#results-area DataTable")  # type: ignore[return-value]
 
     @property
     def sidebar(self) -> Any:
@@ -416,6 +445,10 @@ class SSMSTUI(
     @property
     def tree_filter_input(self) -> TreeFilterInput:
         return self.query_one("#tree-filter", TreeFilterInput)
+
+    @property
+    def results_filter_input(self) -> ResultsFilterInput:
+        return self.query_one("#results-filter", ResultsFilterInput)
 
     def push_screen(
         self,
@@ -505,7 +538,8 @@ class SSMSTUI(
                         yield Lazy(AutocompleteDropdown(id="autocomplete-dropdown"))
 
                     with Container(id="results-area"):
-                        yield Lazy(DataTable(id="results-table", zebra_stripes=True, show_header=False))
+                        yield ResultsFilterInput(id="results-filter")
+                        yield Lazy(SqlitDataTable(id="results-table", zebra_stripes=True, show_header=False))
 
             yield Static("Not connected", id="status-bar")
 
@@ -522,26 +556,21 @@ class SSMSTUI(
 
         settings = load_settings()
         self._startup_stamp("settings_loaded")
-        if "theme" in settings:
-            try:
-                self.theme = settings["theme"]
-            except Exception:
-                self.theme = "sqlit"
-        else:
-            self.theme = "sqlit"
+
+        # Initialize Omarchy theme sync
+        self._init_omarchy_theme(settings)
 
         self._expanded_paths = set(settings.get("expanded_nodes", []))
         self._startup_stamp("settings_applied")
 
         self._apply_mock_settings(settings)
 
-        if self._startup_connection:
-            # Only show the explicit startup connection, not saved ones
-            self._setup_startup_connection(self._startup_connection)
-        elif self._mock_profile:
+        if self._mock_profile:
             self.connections = self._mock_profile.connections.copy()
         else:
             self.connections = load_connections(load_credentials=False)
+        if self._startup_connection:
+            self._setup_startup_connection(self._startup_connection)
         self._startup_stamp("connections_loaded")
 
         self.refresh_tree()
@@ -574,10 +603,9 @@ class SSMSTUI(
             self._session_factory = self._create_mock_session_factory(mock_profile)
 
     def _setup_startup_connection(self, config: ConnectionConfig) -> None:
-        """Set up a startup connection as the only visible connection."""
+        """Set up a startup connection to auto-connect after mount."""
         if not config.name:
             config.name = "Temp Connection"
-        self.connections = [config]
         self._startup_connect_config = config
 
     def _startup_stamp(self, name: str) -> None:
@@ -717,3 +745,62 @@ class SSMSTUI(
         settings = load_settings()
         settings["theme"] = new_theme
         save_settings(settings)
+
+    def _init_omarchy_theme(self, settings: dict) -> None:
+        """Initialize theme on startup, with Omarchy matching if installed.
+
+        Strategy:
+        1. If Omarchy is installed, try to match the Omarchy theme to a Textual theme
+        2. If a match is found, use it and start watching for changes
+        3. If no match or Omarchy not installed, use saved theme or default
+        """
+        saved_theme = settings.get("theme")
+
+        # Check if Omarchy is installed
+        if not is_omarchy_installed():
+            # No Omarchy, use saved theme or default
+            self._apply_theme_safe(saved_theme or DEFAULT_THEME)
+            return
+
+        # Omarchy is installed - match theme and start watcher
+        matched_theme = get_matching_textual_theme(self.available_themes)
+        self._omarchy_last_theme_name = get_current_theme_name()
+        self._apply_theme_safe(matched_theme)
+        self._start_omarchy_watcher()
+
+    def _apply_theme_safe(self, theme_name: str) -> None:
+        """Apply a theme with fallback to default on error."""
+        try:
+            self.theme = theme_name
+        except Exception:
+            self.theme = DEFAULT_THEME
+
+    def _start_omarchy_watcher(self) -> None:
+        """Start watching for Omarchy theme changes."""
+        if self._omarchy_theme_watcher is not None:
+            return  # Already watching
+
+        # Check for theme changes every 2 seconds
+        self._omarchy_theme_watcher = self.set_interval(2.0, self._check_omarchy_theme_change)
+
+    def _stop_omarchy_watcher(self) -> None:
+        """Stop watching for Omarchy theme changes."""
+        if self._omarchy_theme_watcher is not None:
+            self._omarchy_theme_watcher.stop()
+            self._omarchy_theme_watcher = None
+
+    def _check_omarchy_theme_change(self) -> None:
+        """Check if the Omarchy theme has changed and apply if so."""
+        current_name = get_current_theme_name()
+        if current_name is None:
+            return
+
+        # Check if theme name changed
+        if current_name != self._omarchy_last_theme_name:
+            self._omarchy_last_theme_name = current_name
+            self._apply_omarchy_theme()
+
+    def _apply_omarchy_theme(self) -> None:
+        """Match and apply the current Omarchy theme."""
+        matched_theme = get_matching_textual_theme(self.available_themes)
+        self._apply_theme_safe(matched_theme)

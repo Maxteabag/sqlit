@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .test_database_base import BaseDatabaseTests, DatabaseTestConfig
 
 
@@ -59,6 +61,81 @@ class TestOracleIntegration(BaseDatabaseTests):
         finally:
             # Cleanup
             cli_runner("connection", "delete", connection_name, check=False)
+
+    def test_create_oracle_connection_with_role(self, oracle_db, cli_runner):
+        """Test creating an Oracle connection with --oracle-role parameter."""
+        from .conftest import ORACLE_HOST, ORACLE_PASSWORD, ORACLE_PORT, ORACLE_USER
+
+        connection_name = "test_oracle_role"
+
+        try:
+            # Create connection with role parameter
+            result = cli_runner(
+                "connections",
+                "add",
+                "oracle",
+                "--name",
+                connection_name,
+                "--server",
+                ORACLE_HOST,
+                "--port",
+                str(ORACLE_PORT),
+                "--database",
+                oracle_db,
+                "--username",
+                ORACLE_USER,
+                "--password",
+                ORACLE_PASSWORD,
+                "--oracle-role",
+                "normal",
+            )
+            assert result.returncode == 0
+            assert "created successfully" in result.stdout
+
+            # Verify connection works with normal role
+            result = cli_runner(
+                "query",
+                "-c",
+                connection_name,
+                "-q",
+                "SELECT 1 FROM dual",
+            )
+            assert result.returncode == 0
+
+        finally:
+            # Cleanup
+            cli_runner("connection", "delete", connection_name, check=False)
+
+    def test_oracle_role_choices(self, oracle_db, cli_runner):
+        """Test that invalid oracle-role values are rejected."""
+        from .conftest import ORACLE_HOST, ORACLE_PASSWORD, ORACLE_PORT, ORACLE_USER
+
+        connection_name = "test_oracle_invalid_role"
+
+        # Create connection with invalid role
+        result = cli_runner(
+            "connections",
+            "add",
+            "oracle",
+            "--name",
+            connection_name,
+            "--server",
+            ORACLE_HOST,
+            "--port",
+            str(ORACLE_PORT),
+            "--database",
+            oracle_db,
+            "--username",
+            ORACLE_USER,
+            "--password",
+            ORACLE_PASSWORD,
+            "--oracle-role",
+            "invalid_role",
+            check=False,
+        )
+        # Should fail because invalid_role is not a valid choice
+        assert result.returncode != 0
+        assert "invalid choice" in result.stderr.lower() or "invalid" in result.stderr.lower()
 
     def test_query_oracle_fetch_first(self, oracle_connection, cli_runner):
         """Test Oracle FETCH FIRST clause (Oracle's equivalent of LIMIT)."""

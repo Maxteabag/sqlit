@@ -5,11 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ..protocols import AppProtocol
+from .query import SPINNER_FRAMES
 from ..tree_nodes import ConnectionNode
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
     from ...db import DatabaseAdapter
+    from ...services.docker_detector import DetectedContainer
+    from ..screens.connection_picker import DockerConnectionResult
 
 
 def _needs_db_password(config: ConnectionConfig) -> bool:
@@ -48,6 +51,9 @@ class ConnectionMixin:
 
     current_config: ConnectionConfig | None = None
     current_adapter: DatabaseAdapter | None = None
+    _connecting_config: ConnectionConfig | None = None
+    _connect_spinner_timer = None
+    _connect_spinner_index = 0
 
     def _populate_credentials_if_missing(self: AppProtocol, config: ConnectionConfig) -> None:
         """Populate missing credentials from the credentials service."""
@@ -115,19 +121,67 @@ class ConnectionMixin:
 
         self._do_connect(config)
 
+    def _set_connecting_state(self: AppProtocol, config: ConnectionConfig | None, refresh: bool = True) -> None:
+        """Track which connection is currently being attempted."""
+        self._connecting_config = config
+        if config is None:
+            self._stop_connect_spinner()
+            if refresh:
+                self.refresh_tree()
+            try:
+                self._update_status_bar()
+            except Exception:
+                pass
+            return
+
+        self._start_connect_spinner()
+        if refresh:
+            self.refresh_tree()
+        self._update_connecting_indicator()
+        try:
+            self._update_status_bar()
+        except Exception:
+            pass
+
+    def _start_connect_spinner(self: AppProtocol) -> None:
+        """Start the connection spinner animation."""
+        self._connect_spinner_index = 0
+        if hasattr(self, "_connect_spinner_timer") and self._connect_spinner_timer is not None:
+            self._connect_spinner_timer.stop()
+        self._connect_spinner_timer = self.set_interval(1 / 30, self._animate_connect_spinner)
+
+    def _stop_connect_spinner(self: AppProtocol) -> None:
+        """Stop the connection spinner animation."""
+        if hasattr(self, "_connect_spinner_timer") and self._connect_spinner_timer is not None:
+            self._connect_spinner_timer.stop()
+            self._connect_spinner_timer = None
+
+    def _animate_connect_spinner(self: AppProtocol) -> None:
+        """Update connecting spinner animation frame."""
+        if not getattr(self, "_connecting_config", None):
+            return
+        self._connect_spinner_index = (self._connect_spinner_index + 1) % len(SPINNER_FRAMES)
+        self._update_connecting_indicator()
+        try:
+            self._update_status_bar()
+        except Exception:
+            pass
+
     def _do_connect(self: AppProtocol, config: ConnectionConfig) -> None:
         from ...services import ConnectionSession
 
-        if hasattr(self, "_session") and self._session:
-            self._session.close()
-            self._session = None
-            self.current_connection = None
-            self.current_config = None
-            self.current_adapter = None
-            self.current_ssh_tunnel = None
-            self.refresh_tree()
+        # Disconnect from current server first (if any)
+        if self.current_connection:
+            self._disconnect_silent()
 
         self._connection_failed = False
+        self._set_connecting_state(config, refresh=True)
+
+        # Track connection attempt to ignore stale callbacks
+        if not hasattr(self, "_connection_attempt_id"):
+            self._connection_attempt_id = 0
+        self._connection_attempt_id += 1
+        attempt_id = self._connection_attempt_id
 
         create_session = self._session_factory or ConnectionSession.create
 
@@ -135,18 +189,40 @@ class ConnectionMixin:
             return create_session(config)
 
         def on_success(session: ConnectionSession) -> None:
+            # Ignore if a newer connection attempt was started
+            if attempt_id != self._connection_attempt_id:
+                session.close()
+                return
+
+            self._set_connecting_state(None, refresh=False)
             self._connection_failed = False
             self._session = session
             self.current_connection = session.connection
             self.current_config = config
             self.current_adapter = session.adapter
             self.current_ssh_tunnel = session.tunnel
+            is_saved = any(c.name == config.name for c in self.connections)
+            self._direct_connection_config = None if is_saved else config
 
             self.refresh_tree()
+            self.call_after_refresh(self._select_connected_node)
             self._load_schema_cache()
             self._update_status_bar()
+            self._update_section_labels()
+            if config.db_type == "mariadb" and self.current_adapter and not self.current_adapter.supports_sequences:
+                version = getattr(self.current_adapter, "_server_version_str", None)
+                if isinstance(version, str) and version:
+                    message = f"MariaDB {version} does not support sequences (requires 10.3+)"
+                else:
+                    message = "MariaDB does not support sequences (requires 10.3+)"
+                self.notify(message, severity="warning")
 
         def on_error(error: Exception) -> None:
+            # Ignore if a newer connection attempt was started
+            if attempt_id != self._connection_attempt_id:
+                return
+
+            self._set_connecting_state(None, refresh=True)
             from ...config import save_connections
             from ...db.exceptions import MissingDriverError, MissingODBCDriverError
             from ...terminal import run_in_terminal
@@ -231,9 +307,15 @@ class ConnectionMixin:
             except Exception as e:
                 self.call_from_thread(on_error, e)
 
-        self.run_worker(do_work, name=f"connect-{config.name}", thread=True, exclusive=True)
+        # Use fixed name so exclusive=True cancels any previous connection attempt
+        self.run_worker(do_work, name="connect", thread=True, exclusive=True)
 
     def _disconnect_silent(self: AppProtocol) -> None:
+        """Disconnect without user notification.
+
+        Closes the session, clears connection state, and refreshes the tree.
+        Called 'silent' because it doesn't notify the user, but it does update the UI.
+        """
         if hasattr(self, "_session") and self._session:
             self._session.close()
             self._session = None
@@ -242,15 +324,24 @@ class ConnectionMixin:
         self.current_config = None
         self.current_adapter = None
         self.current_ssh_tunnel = None
+        self._direct_connection_config = None
+        self.refresh_tree()
+        self._update_section_labels()
+
+    def _select_connected_node(self: AppProtocol) -> None:
+        """Move cursor to the connected node without toggling expansion."""
+        if not self.current_config:
+            return
+        for node in self.object_tree.root.children:
+            if isinstance(node.data, ConnectionNode) and node.data.config.name == self.current_config.name:
+                self.object_tree.move_cursor(node)
+                break
 
     def action_disconnect(self: AppProtocol) -> None:
         """Disconnect from current database."""
         if self.current_connection:
             self._disconnect_silent()
-
             self.status_bar.update("Disconnected")
-
-            self.refresh_tree()
             self.notify("Disconnected")
 
     def action_new_connection(self: AppProtocol) -> None:
@@ -406,14 +497,18 @@ class ConnectionMixin:
             return
 
         config = data.config
+        is_connected = self.current_config and self.current_config.name == config.name
 
-        if self.current_config and self.current_config.name == config.name:
-            self.notify("Disconnect first before deleting", severity="warning")
-            return
+        def do_delete(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            if is_connected:
+                self._disconnect_silent()
+            self._do_delete_connection(config)
 
         self.push_screen(
             ConfirmScreen(f"Delete '{config.name}'?"),
-            lambda confirmed: self._do_delete_connection(config) if confirmed else None,
+            do_delete,
         )
 
     def _do_delete_connection(self: AppProtocol, config: ConnectionConfig) -> None:
@@ -452,8 +547,7 @@ class ConnectionMixin:
             config = data.config
             if self.current_config and self.current_config.name == config.name:
                 return
-            if self.current_connection:
-                self._disconnect_silent()
+            # Don't disconnect here - we'll disconnect only after successful connection
             self.connect_to_server(config)
 
     def action_show_connection_picker(self: AppProtocol) -> None:
@@ -465,9 +559,22 @@ class ConnectionMixin:
         )
 
     def _handle_connection_picker_result(self: AppProtocol, result: str | None) -> None:
+        from ..screens.connection_picker import DockerConnectionResult
+
         if result is None:
             return
 
+        # Handle special "new connection" action
+        if result == "__new_connection__":
+            self.action_new_connection()
+            return
+
+        # Handle Docker container result
+        if isinstance(result, DockerConnectionResult):
+            self._handle_docker_container_result(result)
+            return
+
+        # Handle saved connection selection
         config = next((c for c in self.connections if c.name == result), None)
         if config:
             for node in self.object_tree.root.children:
@@ -478,6 +585,42 @@ class ConnectionMixin:
             if self.current_config and self.current_config.name == config.name:
                 self.notify(f"Already connected to {config.name}")
                 return
-            if self.current_connection:
-                self._disconnect_silent()
+            # Don't disconnect here - we'll disconnect only after successful connection
             self.connect_to_server(config)
+
+    def _handle_docker_container_result(self: AppProtocol, result: DockerConnectionResult) -> None:
+        """Handle a Docker container selection from the connection picker."""
+        from ...services.docker_detector import container_to_connection_config
+
+        container = result.container
+        config = container_to_connection_config(container)
+
+        # Try to find matching saved connection to select in tree
+        matching_config = self._find_matching_saved_connection(container)
+        if matching_config:
+            # Select the saved connection in tree
+            for node in self.object_tree.root.children:
+                if isinstance(node.data, ConnectionNode) and node.data.config.name == matching_config.name:
+                    self.object_tree.select_node(node)
+                    break
+            # Use the saved config (has the saved name)
+            config = matching_config
+
+        # Connect directly (saving is handled in the picker itself)
+        # Don't disconnect here - we'll disconnect only after successful connection
+        self.connect_to_server(config)
+
+    def _find_matching_saved_connection(self: AppProtocol, container: DetectedContainer) -> ConnectionConfig | None:
+        """Find a saved connection that matches a Docker container."""
+        for conn in self.connections:
+            # Match by host:port and db_type
+            if (
+                conn.db_type == container.db_type
+                and conn.server in ("localhost", "127.0.0.1", container.host)
+                and conn.port == str(container.port)
+            ):
+                return conn
+            # Also match by name
+            if conn.name == container.container_name:
+                return conn
+        return None

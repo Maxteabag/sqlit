@@ -54,6 +54,7 @@ class ConnectionSchema:
     is_file_based: bool = False
     has_advanced_auth: bool = False
     default_port: str = ""
+    requires_auth: bool = True  # Whether this database requires authentication
 
 
 # Common field templates
@@ -311,6 +312,14 @@ MARIADB_SCHEMA = ConnectionSchema(
     default_port="3306",
 )
 
+def _get_oracle_role_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("normal", "Normal"),
+        SelectOption("sysdba", "SYSDBA"),
+        SelectOption("sysoper", "SYSOPER"),
+    )
+
+
 ORACLE_SCHEMA = ConnectionSchema(
     db_type="oracle",
     display_name="Oracle",
@@ -331,6 +340,13 @@ ORACLE_SCHEMA = ConnectionSchema(
         ),
         _username_field(),
         _password_field(),
+        SchemaField(
+            name="oracle_role",
+            label="Role",
+            field_type=FieldType.DROPDOWN,
+            options=_get_oracle_role_options(),
+            default="normal",
+        ),
     )
     + SSH_FIELDS,
     default_port="1521",
@@ -348,6 +364,7 @@ COCKROACHDB_SCHEMA = ConnectionSchema(
     )
     + SSH_FIELDS,
     default_port="26257",
+    requires_auth=False,  # CockroachDB can run in insecure mode without auth
 )
 
 SQLITE_SCHEMA = ConnectionSchema(
@@ -387,6 +404,7 @@ TURSO_SCHEMA = ConnectionSchema(
         ),
     ),
     supports_ssh=False,
+    requires_auth=False,  # Turso local servers don't require auth
 )
 
 

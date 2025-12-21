@@ -6,6 +6,7 @@ the TUI and CLI to ensure consistent behavior.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,42 @@ if TYPE_CHECKING:
 
 # Query types that return result sets (SELECT-like queries)
 SELECT_KEYWORDS = frozenset(["SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA"])
+
+# Regex for parsing USE database statements
+# Matches: USE dbname, USE [dbname], USE `dbname`, USE "dbname"
+_USE_PATTERN = re.compile(
+    r"^\s*USE\s+"
+    r"(?:"
+    r"\[([^\]]+)\]"  # [bracketed] - SQL Server style
+    r"|`([^`]+)`"  # `backtick` - MySQL style
+    r"|\"([^\"]+)\""  # "quoted" - standard SQL style
+    r"|(\w+)"  # unquoted identifier
+    r")"
+    r"\s*;?\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_use_statement(query: str) -> str | None:
+    """Parse a USE database statement and return the database name.
+
+    Supports various quoting styles:
+    - USE mydb
+    - USE [mydb]  (SQL Server)
+    - USE `mydb`  (MySQL)
+    - USE "mydb"
+
+    Args:
+        query: The SQL query string.
+
+    Returns:
+        The database name if this is a USE statement, None otherwise.
+    """
+    match = _USE_PATTERN.match(query)
+    if not match:
+        return None
+    # Return first non-None group (the captured database name)
+    return next((g for g in match.groups() if g is not None), None)
 
 
 def is_select_query(query: str) -> bool:

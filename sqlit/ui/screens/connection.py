@@ -567,6 +567,15 @@ class ConnectionScreen(ModalScreen):
             error = self._missing_driver_error
 
         if error:
+            if getattr(error, "import_error", None):
+                detail = str(error.import_error).splitlines()[0].strip()
+                detail_hint = escape(detail) if detail else "Import failed."
+                test_status.update(
+                    f"[yellow]⚠ Driver failed to load:[/] {error.package_name}\n"
+                    f"[dim]{detail_hint} Press ^i for details.[/]"
+                )
+                dialog.border_subtitle = "[bold]Help ^i[/]  Cancel <esc>"
+                return
             strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
             if strategy.can_auto_install:
                 install_cmd = self._format_install_hint(strategy, error.package_name)
@@ -809,31 +818,36 @@ class ConnectionScreen(ModalScreen):
         self.call_after_refresh(self._ensure_initial_tab)
 
         if debug:
-            print(f"[DEBUG] _ensure_initial_tab scheduled: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t0) * 1000
+            print(f"[DEBUG] _ensure_initial_tab scheduled: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._set_initial_select_values()
 
         if debug:
-            print(f"[DEBUG] _set_initial_select_values: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _set_initial_select_values: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._apply_prefill_values()
 
         if debug:
-            print(f"[DEBUG] _apply_prefill_values: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _apply_prefill_values: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._update_field_visibility()
 
         if debug:
-            print(f"[DEBUG] _update_field_visibility: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _update_field_visibility: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._validate_name_unique()
 
         if debug:
-            print(f"[DEBUG] _validate_name_unique: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _validate_name_unique: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         field_groups = self._get_field_groups_for_type(self._current_db_type, tab="general")
@@ -841,20 +855,24 @@ class ConnectionScreen(ModalScreen):
         self._set_advanced_tab_enabled(bool(advanced))
 
         if debug:
-            print(f"[DEBUG] field_groups + advanced tab: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] field_groups + advanced tab: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._update_ssh_tab_enabled(self._current_db_type)
 
         if debug:
-            print(f"[DEBUG] _update_ssh_tab_enabled: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _update_ssh_tab_enabled: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
         self._update_mssql_driver_setup_visibility(self._current_db_type)
 
         if debug:
-            print(f"[DEBUG] _update_mssql_driver_setup_visibility: {(time.perf_counter() - t1)*1000:.1f}ms", file=sys.stderr)
-            print(f"[DEBUG] on_mount total: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t1) * 1000
+            print(f"[DEBUG] _update_mssql_driver_setup_visibility: {elapsed:.1f}ms", file=sys.stderr)
+            total = (time.perf_counter() - t0) * 1000
+            print(f"[DEBUG] on_mount total: {total:.1f}ms", file=sys.stderr)
 
         # Defer driver check to after screen is rendered to avoid blocking UI
         self.call_after_refresh(self._deferred_driver_check)
@@ -874,10 +892,13 @@ class ConnectionScreen(ModalScreen):
             self._check_ssh_driver_availability()
 
         if debug:
-            print(f"[DEBUG] _check_driver_availability: {(time.perf_counter() - t0)*1000:.1f}ms", file=sys.stderr)
+            elapsed = (time.perf_counter() - t0) * 1000
+            print(f"[DEBUG] _check_driver_availability: {elapsed:.1f}ms", file=sys.stderr)
 
         if self._post_install_message and not self._missing_driver_error:
             self._update_driver_status_ui()
+
+
 
     def _ensure_initial_tab(self) -> None:
         try:
@@ -1120,7 +1141,11 @@ class ConnectionScreen(ModalScreen):
         values = self._get_current_form_values()
 
         for name, field_def in self._field_definitions.items():
-            container = self.query_one(f"#container-{name}", Container)
+            try:
+                container = self.query_one(f"#container-{name}", Container)
+            except Exception:
+                # Container may not be mounted yet after dynamic field rebuild
+                continue
             should_show = True
             if field_def.visible_when:
                 should_show = bool(field_def.visible_when(values))
@@ -1621,12 +1646,18 @@ class ConnectionScreen(ModalScreen):
             return None
 
     def _prompt_install_missing_driver(self, error: Exception) -> None:
-        from ..screens import ConfirmScreen, MessageScreen
+        from ..screens import ConfirmScreen, MessageScreen, PackageSetupScreen
 
         if not isinstance(error, MissingDriverError):
             return
 
         if self._install_in_progress:
+            return
+
+        if getattr(error, "import_error", None):
+            self.app.push_screen(
+                PackageSetupScreen(error, on_install=lambda err: self._start_missing_driver_install(err))
+            )
             return
 
         strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)

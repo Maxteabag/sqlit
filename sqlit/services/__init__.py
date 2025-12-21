@@ -25,6 +25,14 @@ from .credentials import (
     reset_credentials_service,
     set_credentials_service,
 )
+from .docker_detector import (
+    ContainerStatus,
+    DetectedContainer,
+    DockerStatus,
+    container_to_connection_config,
+    detect_database_containers,
+    get_docker_status,
+)
 from .executor import DatabaseExecutor
 from .protocols import (
     AdapterFactoryProtocol,
@@ -56,6 +64,13 @@ __all__ = [
     "get_credentials_service",
     "set_credentials_service",
     "reset_credentials_service",
+    # Docker detection
+    "ContainerStatus",
+    "DockerStatus",
+    "DetectedContainer",
+    "get_docker_status",
+    "detect_database_containers",
+    "container_to_connection_config",
     # Protocols
     "AdapterProtocol",
     "AdapterFactoryProtocol",

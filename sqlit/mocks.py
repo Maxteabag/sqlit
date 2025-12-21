@@ -4,8 +4,19 @@ Usage:
     sqlit --mock=sqlite-demo   # Pre-configured SQLite with demo data
     sqlit --mock=empty         # Empty connections, but mock adapters available
     sqlit --mock=multi-db      # Multiple database connections
+    sqlit --mock=perf-test --demo-rows=10000  # Performance testing with 10k rows
     sqlit --mock=driver-install-success --mock-missing-drivers=postgresql --mock-install=success
     sqlit --mock=driver-install-fail --mock-missing-drivers=mysql --mock-install=fail
+
+Performance Testing:
+    Use --demo-rows=COUNT with any mock profile to generate fake data.
+    If Faker is installed (pip install Faker), realistic data is generated.
+    Otherwise, simple placeholder data is used.
+
+    Examples:
+        sqlit --mock=perf-test --demo-rows=1000    # 1k rows
+        sqlit --mock=perf-test --demo-rows=10000   # 10k rows
+        sqlit --mock=sqlite-demo --demo-rows=5000  # Any profile works
 """
 
 from __future__ import annotations
@@ -15,7 +26,52 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .config import ConnectionConfig
-from .db.adapters.base import ColumnInfo, DatabaseAdapter
+from .db.adapters.base import ColumnInfo, DatabaseAdapter, IndexInfo, SequenceInfo, TriggerInfo
+
+
+def _generate_fake_data(row_count: int) -> tuple[list[str], list[tuple]]:
+    """Generate fake data rows using Faker if available, otherwise basic data.
+
+    Args:
+        row_count: Number of rows to generate.
+
+    Returns:
+        Tuple of (columns, rows).
+    """
+    try:
+        from faker import Faker
+
+        fake = Faker()
+        Faker.seed(42)  # Reproducible results
+
+        columns = ["id", "name", "email", "phone", "address", "created_at"]
+        rows = []
+        for i in range(row_count):
+            rows.append((
+                i + 1,
+                fake.name(),
+                fake.email(),
+                fake.phone_number(),
+                fake.address().replace("\n", ", "),
+                fake.date_time().isoformat(),
+            ))
+        return columns, rows
+
+    except ImportError:
+        # Faker not installed - generate simple data
+        columns = ["id", "name", "email", "value", "status", "created_at"]
+        rows = []
+        statuses = ["active", "inactive", "pending", "archived"]
+        for i in range(row_count):
+            rows.append((
+                i + 1,
+                f"User {i + 1}",
+                f"user{i + 1}@example.com",
+                round((i * 17.5) % 1000, 2),  # Pseudo-random values
+                statuses[i % len(statuses)],
+                f"2024-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}",
+            ))
+        return columns, rows
 
 
 class MockConnection:
@@ -61,6 +117,9 @@ class MockDatabaseAdapter(DatabaseAdapter):
         tables: list[tuple[str, str]] | None = None,
         views: list[tuple[str, str]] | None = None,
         columns: dict[str, list[ColumnInfo]] | None = None,
+        indexes: list[IndexInfo] | None = None,
+        triggers: list[TriggerInfo] | None = None,
+        sequences: list[SequenceInfo] | None = None,
         query_results: dict[str, tuple[list[str], list[tuple]]] | None = None,
         default_schema: str = "",
         default_query_result: tuple[list[str], list[tuple]] | None = None,
@@ -75,6 +134,9 @@ class MockDatabaseAdapter(DatabaseAdapter):
         self._tables = tables or []
         self._views = views or []
         self._columns = columns or {}
+        self._indexes = indexes or []
+        self._triggers = triggers or []
+        self._sequences = sequences or []
         self._query_results = query_results or {}
         self._default_schema = default_schema
         self._default_query_result = default_query_result or (
@@ -147,6 +209,80 @@ class MockDatabaseAdapter(DatabaseAdapter):
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         return []
 
+    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
+        return self._indexes
+
+    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
+        return self._triggers
+
+    def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
+        return self._sequences
+
+    def get_index_definition(
+        self, conn: Any, index_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get mock index definition."""
+        for idx in self._indexes:
+            if idx.name == index_name:
+                return {
+                    "name": idx.name,
+                    "table_name": idx.table_name,
+                    "columns": [],
+                    "is_unique": idx.is_unique,
+                    "definition": f"CREATE INDEX {idx.name} ON {idx.table_name} (...)",
+                }
+        return {
+            "name": index_name,
+            "table_name": table_name,
+            "columns": [],
+            "is_unique": False,
+            "definition": None,
+        }
+
+    def get_trigger_definition(
+        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get mock trigger definition."""
+        for trg in self._triggers:
+            if trg.name == trigger_name:
+                return {
+                    "name": trg.name,
+                    "table_name": trg.table_name,
+                    "timing": "AFTER",
+                    "event": "INSERT",
+                    "definition": f"CREATE TRIGGER {trg.name} AFTER INSERT ON {trg.table_name} ...",
+                }
+        return {
+            "name": trigger_name,
+            "table_name": table_name,
+            "timing": None,
+            "event": None,
+            "definition": None,
+        }
+
+    def get_sequence_definition(
+        self, conn: Any, sequence_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get mock sequence definition."""
+        for seq in self._sequences:
+            if seq.name == sequence_name:
+                return {
+                    "name": seq.name,
+                    "start_value": 1,
+                    "increment": 1,
+                    "min_value": 1,
+                    "max_value": 9223372036854775807,
+                    "cycle": False,
+                }
+        return {
+            "name": sequence_name,
+            "start_value": None,
+            "increment": None,
+            "min_value": None,
+            "max_value": None,
+            "cycle": None,
+        }
+
     def quote_identifier(self, name: str) -> str:
         return f'"{name}"'
 
@@ -157,10 +293,24 @@ class MockDatabaseAdapter(DatabaseAdapter):
 
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query and return (columns, rows, truncated)."""
+        import os
         import time
 
         if self._query_delay > 0:
             time.sleep(self._query_delay)
+
+        # Check if demo rows mode is enabled
+        demo_rows_env = os.environ.get("SQLIT_DEMO_ROWS", "")
+        if demo_rows_env:
+            try:
+                demo_row_count = int(demo_rows_env)
+                if demo_row_count > 0:
+                    cols, rows = _generate_fake_data(demo_row_count)
+                    if max_rows and len(rows) > max_rows:
+                        return cols, rows[:max_rows], True
+                    return cols, rows, False
+            except ValueError:
+                pass  # Invalid value, fall through to normal behavior
 
         query_lower = query.lower().strip()
 
@@ -569,6 +719,65 @@ def _create_supabase_demo_profile() -> MockProfile:
     )
 
 
+def _create_perf_test_profile() -> MockProfile:
+    """Create a performance testing profile.
+
+    Usage:
+        sqlit --mock=perf-test --demo-rows=10000
+
+    This profile is designed for testing DataTable rendering performance
+    with large datasets. Use --demo-rows to specify the number of rows.
+    """
+    connections = [
+        ConnectionConfig(
+            name="Performance Test DB",
+            db_type="sqlite",
+            file_path="./perf_test.db",
+        ),
+    ]
+
+    # Create an adapter that's optimized for perf testing
+    # (minimal schema, fast responses)
+    adapter = MockDatabaseAdapter(
+        name="SQLite",
+        tables=[
+            ("main", "large_table"),
+            ("main", "users"),
+            ("main", "transactions"),
+        ],
+        views=[],
+        columns={
+            "large_table": [
+                ColumnInfo("id", "INTEGER"),
+                ColumnInfo("name", "TEXT"),
+                ColumnInfo("email", "TEXT"),
+                ColumnInfo("phone", "TEXT"),
+                ColumnInfo("address", "TEXT"),
+                ColumnInfo("created_at", "TEXT"),
+            ],
+            "users": [
+                ColumnInfo("id", "INTEGER"),
+                ColumnInfo("name", "TEXT"),
+                ColumnInfo("email", "TEXT"),
+            ],
+            "transactions": [
+                ColumnInfo("id", "INTEGER"),
+                ColumnInfo("user_id", "INTEGER"),
+                ColumnInfo("amount", "REAL"),
+                ColumnInfo("timestamp", "TEXT"),
+            ],
+        },
+        default_schema="main",
+    )
+
+    return MockProfile(
+        name="perf-test",
+        connections=connections,
+        adapters={"sqlite": adapter},
+        use_default_adapters=True,
+    )
+
+
 # Registry of available mock profiles
 MOCK_PROFILES: dict[str, Callable[[], MockProfile]] = {
     "sqlite-demo": _create_sqlite_demo_profile,
@@ -577,6 +786,7 @@ MOCK_PROFILES: dict[str, Callable[[], MockProfile]] = {
     "driver-install-success": _create_driver_install_success_profile,
     "driver-install-fail": _create_driver_install_fail_profile,
     "supabase-demo": _create_supabase_demo_profile,
+    "perf-test": _create_perf_test_profile,
 }
 
 

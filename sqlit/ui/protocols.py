@@ -9,8 +9,9 @@ if TYPE_CHECKING:
     from textual.screen import Screen
     from textual.timer import Timer
     from textual.widget import Widget
-    from textual.widgets import DataTable, Static, TextArea, Tree
+    from textual.widgets import Static, TextArea, Tree
     from textual.worker import Worker
+    from ..widgets import SqlitDataTable
 
     from ..config import ConnectionConfig
     from ..db import DatabaseAdapter
@@ -166,7 +167,7 @@ class AppProtocol(Protocol):
         ...
 
     @property
-    def results_table(self) -> DataTable:
+    def results_table(self) -> SqlitDataTable:
         """The results table widget."""
         ...
 
@@ -180,6 +181,16 @@ class AppProtocol(Protocol):
         """The autocomplete dropdown widget."""
         ...
 
+    @property
+    def tree_filter_input(self) -> Any:
+        """The tree filter input widget."""
+        ...
+
+    @property
+    def results_filter_input(self) -> Any:
+        """The results filter input widget."""
+        ...
+
     # === Connection state ===
 
     connections: list[ConnectionConfig]
@@ -187,6 +198,10 @@ class AppProtocol(Protocol):
     current_config: ConnectionConfig | None
     current_adapter: DatabaseAdapter | None
     current_ssh_tunnel: Any
+    _direct_connection_config: ConnectionConfig | None
+    _connecting_config: ConnectionConfig | None
+    _connect_spinner_index: int
+    _connect_spinner_timer: Timer | None
 
     # === Session state ===
 
@@ -235,6 +250,7 @@ class AppProtocol(Protocol):
     _last_result_row_count: int
     _internal_clipboard: str
     _last_query_table: dict[str, Any] | None
+    _results_table_counter: int
 
     # === UI state ===
 

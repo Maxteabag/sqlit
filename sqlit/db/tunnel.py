@@ -24,7 +24,13 @@ def ensure_ssh_tunnel_available() -> None:
     except Exception as e:
         from .exceptions import MissingDriverError
 
-        raise MissingDriverError("SSH tunnel", "ssh", "sshtunnel") from e
+        raise MissingDriverError(
+            "SSH tunnel",
+            "ssh",
+            "sshtunnel",
+            module_name="sshtunnel",
+            import_error=str(e),
+        ) from e
 
 
 def create_ssh_tunnel(config: ConnectionConfig) -> tuple[Any, str, int]:

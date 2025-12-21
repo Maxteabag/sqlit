@@ -29,6 +29,7 @@ class CancellableQuery:
             sql="SELECT * FROM large_table",
             config=connection_config,
             adapter=db_adapter,
+            tunnel=existing_tunnel,  # Optional: reuse existing tunnel
         )
 
         # In main thread: start cancellable query
@@ -41,16 +42,18 @@ class CancellableQuery:
         sql: The SQL query to execute.
         config: Connection configuration for creating dedicated connection.
         adapter: Database adapter for connection and query execution.
+        tunnel: Optional existing SSH tunnel to reuse.
     """
 
     sql: str
     config: ConnectionConfig
     adapter: DatabaseAdapter
+    tunnel: Any | None = None
 
     def __post_init__(self) -> None:
         """Initialize internal state."""
         self._connection: Any = None
-        self._tunnel: Any = None
+        self._created_tunnel: Any = None
         self._lock = threading.Lock()
         self._cancelled = False
         self._executing = False
@@ -85,11 +88,17 @@ class CancellableQuery:
             self._executing = True
 
         try:
-            # Create SSH tunnel if needed
-            self._tunnel, host, port = create_ssh_tunnel(self.config)
+            # reuse existing tunnel or create new one
+            if self.tunnel:
+                # Reusing existing tunnel
+                host = "127.0.0.1"
+                port = self.tunnel.local_bind_port
+            else:
+                # Create SSH tunnel if needed
+                self._created_tunnel, host, port = create_ssh_tunnel(self.config)
 
             # Adjust config for tunnel
-            if self._tunnel:
+            if self.tunnel or self._created_tunnel:
                 connect_config = replace(self.config, server=host, port=str(port))
             else:
                 connect_config = self.config
@@ -161,13 +170,13 @@ class CancellableQuery:
                     pass
                 self._connection = None
 
-            # Stop SSH tunnel
-            if self._tunnel is not None:
+            # Stop locally created SSH tunnel
+            if self._created_tunnel is not None:
                 try:
-                    self._tunnel.stop()
+                    self._created_tunnel.stop()
                 except Exception:
                     pass
-                self._tunnel = None
+                self._created_tunnel = None
 
     @property
     def is_cancelled(self) -> bool:

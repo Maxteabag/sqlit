@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .base import ColumnInfo, DatabaseAdapter, TableInfo
+from .base import ColumnInfo, DatabaseAdapter, IndexInfo, SequenceInfo, TableInfo, TriggerInfo, import_driver_module
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -41,20 +41,25 @@ class TursoAdapter(DatabaseAdapter):
     def supports_stored_procedures(self) -> bool:
         return False
 
+    def execute_test_query(self, conn: Any) -> None:
+        """Execute a simple query to verify the connection works.
+
+        Turso uses a different API (no cursor, direct execute on connection).
+        """
+        conn.execute(self.test_query)
+
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to Turso database.
 
         Uses config.server for the database URL and config.password for the auth token.
         Supports libsql://, https://, and http:// URLs.
         """
-        try:
-            from libsql_client import create_client_sync
-        except ImportError as e:
-            from ...db.exceptions import MissingDriverError
-
-            if not self.install_extra or not self.install_package:
-                raise e
-            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+        libsql_client = import_driver_module(
+            "libsql_client",
+            driver_name=self.name,
+            extra_name=self.install_extra,
+            package_name=self.install_package,
+        )
 
         url = config.server
         # Ensure URL has proper scheme
@@ -62,7 +67,7 @@ class TursoAdapter(DatabaseAdapter):
             url = f"libsql://{url}"
 
         auth_token = config.password if config.password else None
-        client = create_client_sync(url, auth_token=auth_token)
+        client = libsql_client.create_client_sync(url, auth_token=auth_token)
         return client
 
     def get_databases(self, conn: Any) -> list[str]:
@@ -95,6 +100,38 @@ class TursoAdapter(DatabaseAdapter):
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Turso doesn't support stored procedures - return empty list."""
+        return []
+
+    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
+        """Get indexes from Turso (SQLite-compatible)."""
+        result = conn.execute(
+            "SELECT name, tbl_name FROM sqlite_master "
+            "WHERE type='index' AND name NOT LIKE 'sqlite_%' "
+            "ORDER BY tbl_name, name"
+        )
+        results = []
+        for row in result.rows:
+            # Check if index is unique using PRAGMA
+            idx_result = conn.execute(f"PRAGMA index_list({self.quote_identifier(row[1])})")
+            is_unique = False
+            for idx_info in idx_result.rows:
+                if idx_info[1] == row[0]:  # idx_info: seq, name, unique, origin, partial
+                    is_unique = idx_info[2] == 1
+                    break
+            results.append(IndexInfo(name=row[0], table_name=row[1], is_unique=is_unique))
+        return results
+
+    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
+        """Get triggers from Turso (SQLite-compatible)."""
+        result = conn.execute(
+            "SELECT name, tbl_name FROM sqlite_master "
+            "WHERE type='trigger' "
+            "ORDER BY tbl_name, name"
+        )
+        return [TriggerInfo(name=row[0], table_name=row[1]) for row in result.rows]
+
+    def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
+        """Turso/SQLite doesn't support sequences - return empty list."""
         return []
 
     def quote_identifier(self, name: str) -> str:

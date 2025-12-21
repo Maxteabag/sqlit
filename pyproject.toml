@@ -28,20 +28,22 @@ classifiers = [
 ]
 dependencies = [
     "textual[syntax]>=6.10.0",
+    "textual-fastdatatable>=0.14.0",
     "pyperclip>=1.8.2",
     "keyring>=24.0.0",
+    "docker>=7.0.0",  # Docker container auto-detection (lazy loaded)
 ]
 
 [project.optional-dependencies]
 all = [
     "psycopg2-binary>=2.9.0",
     "pyodbc>=5.0.0",
-    "mysql-connector-python>=8.0.0",
+    "mysql-connector-python>=9.1.0",  # min avoids known CVEs
     "mariadb>=1.1.0",
     "oracledb>=2.0.0",
-    "duckdb>=0.9.0",
+    "duckdb>=1.1.0",  # min avoids known CVEs
     "clickhouse-connect>=0.7.0",
-    "requests>=2.0.0",
+    "requests>=2.32.4",  # min avoids known CVEs
     "libsql-client>=0.1.0",
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",
@@ -49,12 +51,12 @@ all = [
 postgres = ["psycopg2-binary>=2.9.0"]
 cockroachdb = ["psycopg2-binary>=2.9.0"]
 mssql = ["pyodbc>=5.0.0"]
-mysql = ["mysql-connector-python>=8.0.0"]
+mysql = ["mysql-connector-python>=9.1.0"]  # min avoids known CVEs
 mariadb = ["mariadb>=1.1.0"]
 oracle = ["oracledb>=2.0.0"]
-duckdb = ["duckdb>=0.9.0"]
+duckdb = ["duckdb>=1.1.0"]  # min avoids known CVEs
 clickhouse = ["clickhouse-connect>=0.7.0"]
-d1 = ["requests>=2.0.0"]
+d1 = ["requests>=2.32.4"]  # min avoids known CVEs
 turso = ["libsql-client>=0.1.0"]
 ssh = [
     "sshtunnel>=0.4.0",
@@ -71,6 +73,8 @@ dev = [
     "pytest-timeout>=2.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.0",
+    "pytest-benchmark>=4.0",
+    "Faker>=28.0",
     "build",
     "ruff>=0.8.0",
     "mypy>=1.0",
@@ -110,6 +114,7 @@ markers = [
     "oracle: Oracle database tests",
     "clickhouse: ClickHouse database tests",
     "asyncio: async tests",
+    "integration: integration tests (may require external services)",
 ]
 
 [tool.coverage.run]
@@ -142,7 +147,11 @@ module = [
     "duckdb",
     "clickhouse_connect",
     "libsql_client",
-    "sshtunnel"
+    "sshtunnel",
+    "docker",
+    "docker.errors",
+    "pyarrow",
+    "textual_fastdatatable"
 ]
 ignore_missing_imports = true
 

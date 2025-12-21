@@ -8,15 +8,19 @@ from rich.markup import escape as escape_markup
 from textual.widgets import Tree
 
 from ..protocols import AppProtocol
+from .query import SPINNER_FRAMES
 from ..tree_nodes import (
     ColumnNode,
     ConnectionNode,
     DatabaseNode,
     FolderNode,
+    IndexNode,
     LoadingNode,
     ProcedureNode,
     SchemaNode,
+    SequenceNode,
     TableNode,
+    TriggerNode,
     ViewNode,
 )
 
@@ -42,27 +46,74 @@ class TreeMixin:
         }
         return badge_map.get(db_type, db_type.upper() if db_type else "DB")
 
+    def _format_connection_label(self, conn: Any, status: str, spinner: str | None = None) -> str:
+        display_info = escape_markup(conn.get_display_info())
+        db_type_label = self._db_type_badge(conn.db_type)
+        escaped_name = escape_markup(conn.name)
+        source_emoji = conn.get_source_emoji()
+
+        if status == "connected":
+            return f"[#4ADE80]* {source_emoji}{escaped_name}[/] [{db_type_label}] ({display_info})"
+        if status == "connecting":
+            frame = spinner or SPINNER_FRAMES[0]
+            return (
+                f"[#FBBF24]{frame}[/] {source_emoji}{escaped_name} [dim italic]Connecting...[/]"
+            )
+        return f"{source_emoji}[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})"
+
+    def _connect_spinner_frame(self) -> str:
+        idx = getattr(self, "_connect_spinner_index", 0)
+        return SPINNER_FRAMES[idx % len(SPINNER_FRAMES)]
+
+    def _update_connecting_indicator(self: AppProtocol) -> None:
+        connecting_config = getattr(self, "_connecting_config", None)
+        if not connecting_config:
+            return
+
+        spinner = self._connect_spinner_frame()
+        label = self._format_connection_label(connecting_config, "connecting", spinner=spinner)
+
+        for node in self.object_tree.root.children:
+            if isinstance(node.data, ConnectionNode) and node.data.config.name == connecting_config.name:
+                node.set_label(label)
+                node.allow_expand = False
+                break
+
     def refresh_tree(self: AppProtocol) -> None:
         """Refresh the explorer tree."""
         self.object_tree.clear()
         self.object_tree.root.expand()
 
-        for conn in self.connections:
-            display_info = escape_markup(conn.get_display_info())
-            db_type_label = self._db_type_badge(conn.db_type)
-            escaped_name = escape_markup(conn.name)
+        connecting_config = getattr(self, "_connecting_config", None)
+        connecting_name = connecting_config.name if connecting_config else None
+        connecting_spinner = self._connect_spinner_frame() if connecting_config else None
+
+        direct_config = getattr(self, "_direct_connection_config", None)
+        direct_active = (
+            direct_config is not None
+            and self.current_config is not None
+            and direct_config.name == self.current_config.name
+        )
+        connections = [self.current_config] if direct_active else self.connections
+        if connecting_config and not any(c.name == connecting_config.name for c in connections):
+            connections = connections + [connecting_config]
+
+        for conn in connections:
             # Check if this is the connected server
             is_connected = (
                 self.current_config is not None
                 and conn.name == self.current_config.name
             )
+            is_connecting = connecting_name == conn.name and not is_connected
             if is_connected:
-                label = f"[#4ADE80]* {escaped_name}[/] [{db_type_label}] ({display_info})"
+                label = self._format_connection_label(conn, "connected")
+            elif is_connecting:
+                label = self._format_connection_label(conn, "connecting", spinner=connecting_spinner)
             else:
-                label = f"[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})"
+                label = self._format_connection_label(conn, "idle")
             node = self.object_tree.root.add(label)
             node.data = ConnectionNode(config=conn)
-            node.allow_expand = True
+            node.allow_expand = is_connected
 
         if self.current_connection and self.current_config:
             self.populate_connected_tree()
@@ -78,10 +129,11 @@ class TreeMixin:
             display_info = escape_markup(config.get_display_info())
             db_type_label = self._db_type_badge(config.db_type)
             escaped_name = escape_markup(config.name)
+            source_emoji = config.get_source_emoji() if hasattr(config, "get_source_emoji") else ""
             if connected:
-                name = f"[#4ADE80]* {escaped_name}[/]"
+                name = f"[#4ADE80]* {source_emoji}{escaped_name}[/]"
             else:
-                name = escaped_name
+                name = f"{source_emoji}{escaped_name}"
             return f"{name} [{db_type_label}] ({display_info})"
 
         active_node = None
@@ -95,6 +147,7 @@ class TreeMixin:
         if not active_node:
             active_node = self.object_tree.root.add(get_conn_label(self.current_config, connected=True))
             active_node.data = ConnectionNode(config=self.current_config)
+            active_node.allow_expand = True
 
         active_node.remove_children()
 
@@ -127,7 +180,7 @@ class TreeMixin:
             self.notify(f"Error loading objects: {e}", severity="error")
 
     def _add_database_object_nodes(self: AppProtocol, parent_node: Any, database: str | None) -> None:
-        """Add Tables, Views, and optionally Stored Procedures nodes."""
+        """Add Tables, Views, Indexes, Triggers, Sequences, and Stored Procedures nodes."""
         tables_node = parent_node.add("Tables")
         tables_node.data = FolderNode(folder_type="tables", database=database)
         tables_node.allow_expand = True
@@ -136,10 +189,36 @@ class TreeMixin:
         views_node.data = FolderNode(folder_type="views", database=database)
         views_node.allow_expand = True
 
-        if self.current_adapter and self.current_adapter.supports_stored_procedures:
-            procs_node = parent_node.add("Stored Procedures")
-            procs_node.data = FolderNode(folder_type="procedures", database=database)
-            procs_node.allow_expand = True
+        def add_optional_folder(
+            label: str, folder_type: str, supported: bool | None
+        ) -> None:
+            if supported:
+                folder_node = parent_node.add(label)
+                folder_node.data = FolderNode(folder_type=folder_type, database=database)
+                folder_node.allow_expand = True
+            else:
+                parent_node.add_leaf(f"[dim]{label} (Not available)[/]")
+
+        add_optional_folder(
+            "Indexes",
+            "indexes",
+            self.current_adapter.supports_indexes if self.current_adapter else None,
+        )
+        add_optional_folder(
+            "Triggers",
+            "triggers",
+            self.current_adapter.supports_triggers if self.current_adapter else None,
+        )
+        add_optional_folder(
+            "Sequences",
+            "sequences",
+            self.current_adapter.supports_sequences if self.current_adapter else None,
+        )
+        add_optional_folder(
+            "Stored Procedures",
+            "procedures",
+            self.current_adapter.supports_stored_procedures if self.current_adapter else None,
+        )
 
     def _get_node_path(self, node: Any) -> str:
         """Get a unique path string for a tree node."""
@@ -281,7 +360,7 @@ class TreeMixin:
             child.data = ColumnNode(database=db_name, schema=schema_name, table=obj_name, name=col.name)
 
     def _load_folder_async(self: AppProtocol, node: Any, data: FolderNode) -> None:
-        """Spawn worker to load folder contents (tables/views/procedures)."""
+        """Spawn worker to load folder contents (tables/views/indexes/triggers/sequences/procedures)."""
         folder_type = data.folder_type
         db_name = data.database
 
@@ -298,6 +377,21 @@ class TreeMixin:
                         items = [("table", s, t) for s, t in adapter.get_tables(conn, db_name)]
                     elif folder_type == "views":
                         items = [("view", s, v) for s, v in adapter.get_views(conn, db_name)]
+                    elif folder_type == "indexes":
+                        if adapter.supports_indexes:
+                            items = [("index", i.name, i.table_name) for i in adapter.get_indexes(conn, db_name)]
+                        else:
+                            items = []
+                    elif folder_type == "triggers":
+                        if adapter.supports_triggers:
+                            items = [("trigger", t.name, t.table_name) for t in adapter.get_triggers(conn, db_name)]
+                        else:
+                            items = []
+                    elif folder_type == "sequences":
+                        if adapter.supports_sequences:
+                            items = [("sequence", s.name, "") for s in adapter.get_sequences(conn, db_name)]
+                        else:
+                            items = []
                     elif folder_type == "procedures":
                         if adapter.supports_stored_procedures:
                             items = [("procedure", "", p) for p in adapter.get_procedures(conn, db_name)]
@@ -332,8 +426,22 @@ class TreeMixin:
         else:
             for item in items:
                 if item[0] == "procedure":
-                    child = node.add(escape_markup(item[2]))
+                    child = node.add_leaf(escape_markup(item[2]))
                     child.data = ProcedureNode(database=db_name, name=item[2])
+                elif item[0] == "index":
+                    # Display as "index_name (table_name)" - leaf node, no children
+                    display = f"{escape_markup(item[1])} [dim]({escape_markup(item[2])})[/]"
+                    child = node.add_leaf(display)
+                    child.data = IndexNode(database=db_name, name=item[1], table_name=item[2])
+                elif item[0] == "trigger":
+                    # Display as "trigger_name (table_name)" - leaf node, no children
+                    display = f"{escape_markup(item[1])} [dim]({escape_markup(item[2])})[/]"
+                    child = node.add_leaf(display)
+                    child.data = TriggerNode(database=db_name, name=item[1], table_name=item[2])
+                elif item[0] == "sequence":
+                    # Leaf node, no children
+                    child = node.add_leaf(escape_markup(item[1]))
+                    child.data = SequenceNode(database=db_name, name=item[1])
 
     def _add_schema_grouped_items(
         self,
@@ -399,6 +507,12 @@ class TreeMixin:
 
     def on_tree_node_selected(self: AppProtocol, event: Tree.NodeSelected) -> None:
         """Handle tree node selection (double-click/enter)."""
+        # Ignore selection events when tree filter is active - the filter captures
+        # printable characters, but Textual's Tree type-ahead may fire NodeSelected
+        # before on_key can stop the event
+        if getattr(self, "_tree_filter_visible", False):
+            return
+
         node = event.node
         if not node.data:
             return
@@ -409,8 +523,7 @@ class TreeMixin:
             config = data.config
             if self.current_config and self.current_config.name == config.name:
                 return
-            if self.current_connection:
-                self._disconnect_silent()
+            # _disconnect_silent handles refresh_tree internally
             self.connect_to_server(config)
 
     def on_tree_node_highlighted(self: AppProtocol, event: Tree.NodeHighlighted) -> None:
@@ -445,7 +558,7 @@ class TreeMixin:
             self.object_tree.action_cursor_up()
 
     def action_select_table(self: AppProtocol) -> None:
-        """Generate and execute SELECT query for selected table/view."""
+        """Generate and execute SELECT query for selected table/view, or show info for indexes/triggers/sequences."""
         if not self.current_adapter or not self._session:
             return
 
@@ -455,22 +568,110 @@ class TreeMixin:
             return
 
         data = node.data
-        if not isinstance(data, TableNode | ViewNode):
+
+        # Handle table/view - execute SELECT query
+        if isinstance(data, TableNode | ViewNode):
+            # Store table info for edit_cell action
+            try:
+                columns = self._session.adapter.get_columns(
+                    self._session.connection, data.name, data.database, data.schema
+                )
+                self._last_query_table = {
+                    "database": data.database,
+                    "schema": data.schema,
+                    "name": data.name,
+                    "columns": columns,
+                }
+            except Exception:
+                self._last_query_table = None
+
+            self.query_input.text = self.current_adapter.build_select_query(data.name, 100, data.database, data.schema)
+            self.action_execute_query()
             return
 
-        # Store table info for edit_cell action
-        try:
-            columns = self._session.adapter.get_columns(
-                self._session.connection, data.name, data.database, data.schema
-            )
-            self._last_query_table = {
-                "database": data.database,
-                "schema": data.schema,
-                "name": data.name,
-                "columns": columns,
-            }
-        except Exception:
-            self._last_query_table = None
+        # Handle index - show index definition
+        if isinstance(data, IndexNode):
+            self._show_index_info(data)
+            return
 
-        self.query_input.text = self.current_adapter.build_select_query(data.name, 100, data.database, data.schema)
-        self.action_execute_query()
+        # Handle trigger - show trigger definition
+        if isinstance(data, TriggerNode):
+            self._show_trigger_info(data)
+            return
+
+        # Handle sequence - show sequence info
+        if isinstance(data, SequenceNode):
+            self._show_sequence_info(data)
+            return
+
+    def _show_index_info(self: AppProtocol, data: IndexNode) -> None:
+        """Show index definition in the results panel."""
+        if not self._session:
+            return
+
+        try:
+            info = self._session.adapter.get_index_definition(
+                self._session.connection, data.name, data.table_name, data.database
+            )
+            self._display_object_info("Index", info)
+        except Exception as e:
+            self.notify(f"Error getting index info: {e}", severity="error")
+
+    def _show_trigger_info(self: AppProtocol, data: TriggerNode) -> None:
+        """Show trigger definition in the results panel."""
+        if not self._session:
+            return
+
+        try:
+            info = self._session.adapter.get_trigger_definition(
+                self._session.connection, data.name, data.table_name, data.database
+            )
+            self._display_object_info("Trigger", info)
+        except Exception as e:
+            self.notify(f"Error getting trigger info: {e}", severity="error")
+
+    def _show_sequence_info(self: AppProtocol, data: SequenceNode) -> None:
+        """Show sequence information in the results panel."""
+        if not self._session:
+            return
+
+        try:
+            info = self._session.adapter.get_sequence_definition(
+                self._session.connection, data.name, data.database
+            )
+            self._display_object_info("Sequence", info)
+        except Exception as e:
+            self.notify(f"Error getting sequence info: {e}", severity="error")
+
+    def _display_object_info(self: AppProtocol, object_type: str, info: dict) -> None:
+        """Display object info in the results table as a Property/Value view."""
+        # Build rows for display
+        rows: list[tuple[str, str]] = []
+        for key, value in info.items():
+            if value is not None:
+                # Format the key nicely
+                display_key = key.replace("_", " ").title()
+                # Handle lists (like columns)
+                if isinstance(value, list):
+                    display_value = ", ".join(str(v) for v in value) if value else "(none)"
+                # Handle booleans
+                elif isinstance(value, bool):
+                    display_value = "Yes" if value else "No"
+                else:
+                    display_value = str(value)
+                rows.append((display_key, display_value))
+
+        # Update the results table using the helper method
+        self._replace_results_table(["Property", "Value"], rows)  # type: ignore[attr-defined]
+
+        # Store for copy/export functionality
+        self._last_result_columns = ["Property", "Value"]
+        self._last_result_rows = rows
+        self._last_result_row_count = len(rows)
+
+        self.notify(f"{object_type}: {info.get('name', 'Unknown')}")
+
+        # Also show the definition in the query input if available
+        definition = info.get("definition")
+        if definition:
+            self.query_input.text = f"/*\n{definition}\n*/"

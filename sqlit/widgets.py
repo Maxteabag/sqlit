@@ -7,12 +7,68 @@ from typing import TYPE_CHECKING, Any
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
+from textual.strip import Strip
 from textual.widgets import Static
+from textual_fastdatatable import DataTable as FastDataTable
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from textual.events import Key
     from textual.widget import Widget
+
+
+class SqlitDataTable(FastDataTable):
+    """FastDataTable with correct header behavior when show_header is False."""
+
+    def render_line(self, y: int) -> Strip:
+        width, _ = self.size
+        scroll_x, scroll_y = self.scroll_offset
+
+        fixed_rows_height = self.fixed_rows
+        if self.show_header:
+            fixed_rows_height += self.header_height
+
+        if y >= fixed_rows_height:
+            y += scroll_y
+
+        if not self.show_header:
+            # FastDataTable still renders the header row at y=0; offset by 1 when hidden.
+            y += 1
+
+        return self._render_line(y, scroll_x, scroll_x + width, self.rich_style)
+
+
+class ResultsTableContainer(Container):
+    """A focusable container for the results DataTable.
+
+    This container holds focus when its child DataTable is replaced,
+    preventing focus from jumping to another widget during table updates.
+    Key events are forwarded to the child DataTable.
+    """
+
+    can_focus = True
+
+    def on_key(self, event: Key) -> None:
+        """Forward key events to the child DataTable."""
+        # Find the DataTable child
+        try:
+            table = self.query_one(SqlitDataTable)
+            # Let the table handle navigation keys
+            if event.key in ("up", "down", "left", "right", "pageup", "pagedown", "home", "end"):
+                # Simulate the key on the table
+                table.post_message(event)
+                event.stop()
+        except Exception:
+            pass
+
+    def on_focus(self, event: Any) -> None:
+        """When container gets focus, style it as active."""
+        self.add_class("container-focused")
+
+    def on_blur(self, event: Any) -> None:
+        """When container loses focus, remove active styling."""
+        self.remove_class("container-focused")
 
 
 def flash_widget(
@@ -171,11 +227,11 @@ class Dialog(Container):
             self.border_subtitle = subtitle
 
 
-class TreeFilterInput(Static):
-    """Filter input widget for the explorer tree."""
+class FilterInput(Static):
+    """Filter input widget for search/filter functionality."""
 
     DEFAULT_CSS = """
-    TreeFilterInput {
+    FilterInput {
         width: 100%;
         height: 1;
         background: $surface;
@@ -183,7 +239,7 @@ class TreeFilterInput(Static):
         padding: 0 1;
     }
 
-    TreeFilterInput.visible {
+    FilterInput.visible {
         display: block;
     }
     """
@@ -194,11 +250,12 @@ class TreeFilterInput(Static):
         self.match_count: int = 0
         self.total_count: int = 0
 
-    def set_filter(self, text: str, match_count: int = 0, total_count: int = 0) -> None:
+    def set_filter(self, text: str, match_count: int = 0, total_count: int = 0, truncated: bool = False) -> None:
         """Set the filter text and match count."""
         self.filter_text = text
         self.match_count = match_count
         self.total_count = total_count
+        self.truncated = truncated
         self._rebuild()
 
     def clear(self) -> None:
@@ -206,6 +263,7 @@ class TreeFilterInput(Static):
         self.filter_text = ""
         self.match_count = 0
         self.total_count = 0
+        self.truncated = False
         self._rebuild()
 
     def _rebuild(self) -> None:
@@ -213,7 +271,9 @@ class TreeFilterInput(Static):
         if not self.filter_text:
             self.update("[dim]/[/] ")
         else:
-            count_text = f"[dim]{self.match_count}/{self.total_count}[/]"
+            # Show "5000+" if results were truncated
+            count_display = f"{self.match_count}+" if self.truncated else str(self.match_count)
+            count_text = f"[dim]{count_display}/{self.total_count}[/]"
             self.update(f"[dim]/[/] {self.filter_text} {count_text}")
 
     def show(self) -> None:
@@ -229,6 +289,11 @@ class TreeFilterInput(Static):
     def is_visible(self) -> bool:
         """Check if filter is visible."""
         return "visible" in self.classes
+
+
+# Aliases for filter inputs in different contexts
+TreeFilterInput = FilterInput
+ResultsFilterInput = FilterInput
 
 
 class AutocompleteDropdown(Static):

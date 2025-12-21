@@ -92,10 +92,30 @@ def get_all_schemas() -> dict[str, ConnectionSchema]:
     return {k: v.schema for k, v in PROVIDERS.items()}
 
 
+def _check_mock_missing_driver(db_type: str, adapter: "DatabaseAdapter") -> None:
+    """Check if driver should be mocked as missing (for testing).
+
+    This is external to the adapter class to avoid the base class
+    needing to know about concrete implementation identities.
+    """
+    import os
+
+    forced_missing = os.environ.get("SQLIT_MOCK_MISSING_DRIVERS", "").strip()
+    if not forced_missing:
+        return
+
+    forced = {s.strip() for s in forced_missing.split(",") if s.strip()}
+    if db_type in forced:
+        from .exceptions import MissingDriverError
+
+        if not adapter.install_extra or not adapter.install_package:
+            raise ImportError(f"Missing driver for {adapter.name}")
+        raise MissingDriverError(adapter.name, adapter.install_extra, adapter.install_package)
+
+
 def get_adapter(db_type: str) -> "DatabaseAdapter":
     adapter = get_adapter_class(db_type)()
-    # Internal: allow adapters to know their provider id for test/mocking hooks.
-    setattr(adapter, "_db_type", db_type)
+    _check_mock_missing_driver(db_type, adapter)
     return adapter
 
 
@@ -128,3 +148,9 @@ def is_file_based(db_type: str) -> bool:
 def has_advanced_auth(db_type: str) -> bool:
     spec = PROVIDERS.get(db_type)
     return spec.schema.has_advanced_auth if spec else False
+
+
+def requires_auth(db_type: str) -> bool:
+    """Check if this database type requires authentication."""
+    spec = PROVIDERS.get(db_type)
+    return spec.schema.requires_auth if spec else True

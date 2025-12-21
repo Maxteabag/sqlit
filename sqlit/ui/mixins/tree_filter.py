@@ -13,9 +13,12 @@ from ..tree_nodes import (
     ConnectionNode,
     DatabaseNode,
     FolderNode,
+    IndexNode,
     ProcedureNode,
     SchemaNode,
+    SequenceNode,
     TableNode,
+    TriggerNode,
     ViewNode,
 )
 
@@ -120,9 +123,11 @@ class TreeFilterMixin:
             event.stop()
             return
 
-        # Handle printable characters
-        if len(key) == 1 and key.isprintable():
-            self._tree_filter_text += key
+        # Handle printable characters - use event.character for proper shift support
+        # event.key might be "shift+?" but event.character will be "?"
+        char = getattr(event, "character", None)
+        if char and char.isprintable():
+            self._tree_filter_text += char
             self._update_tree_filter()
             event.prevent_default()
             event.stop()
@@ -214,6 +219,12 @@ class TreeFilterMixin:
         elif isinstance(data, ProcedureNode):
             return data.name
         elif isinstance(data, ColumnNode):
+            return data.name
+        elif isinstance(data, IndexNode):
+            return data.name
+        elif isinstance(data, TriggerNode):
+            return data.name
+        elif isinstance(data, SequenceNode):
             return data.name
         return ""
 

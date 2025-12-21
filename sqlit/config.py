@@ -23,6 +23,7 @@ from .stores.base import CONFIG_DIR
 CONFIG_PATH = CONFIG_DIR / "connections.json"
 SETTINGS_PATH = CONFIG_DIR / "settings.json"
 HISTORY_PATH = CONFIG_DIR / "query_history.json"
+STARRED_PATH = CONFIG_DIR / "starred_queries.json"
 
 
 # Module-level convenience functions for backward compatibility.
@@ -74,6 +75,27 @@ def delete_query_from_history(connection_name: str, timestamp: str) -> bool:
     from .stores.history import delete_query_from_history as _delete_query_from_history
 
     return _delete_query_from_history(connection_name, timestamp)
+
+
+def load_starred_queries(connection_name: str) -> set[str]:
+    """Load starred queries for a specific connection."""
+    from .stores.starred import load_starred_queries as _load_starred
+
+    return _load_starred(connection_name)
+
+
+def is_query_starred(connection_name: str, query: str) -> bool:
+    """Check if a query is starred."""
+    from .stores.starred import is_query_starred as _is_starred
+
+    return _is_starred(connection_name, query)
+
+
+def toggle_query_star(connection_name: str, query: str) -> bool:
+    """Toggle star status. Returns True if now starred."""
+    from .stores.starred import toggle_query_star as _toggle
+
+    return _toggle(connection_name, query)
 
 
 if TYPE_CHECKING:
@@ -155,6 +177,14 @@ class ConnectionConfig:
     # Supabase specific fields
     supabase_region: str = ""
     supabase_project_id: str = ""
+    # Oracle specific fields
+    oracle_role: str = "normal"  # "normal", "sysdba", "sysoper"
+    # Source tracking (e.g., "docker" for auto-detected containers)
+    source: str | None = None
+    # Original connection URL if created from URL
+    connection_url: str | None = None
+    # Extra options from URL query parameters (e.g., sslmode=require)
+    extra_options: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Handle backwards compatibility with old configs."""
@@ -245,3 +275,27 @@ class ConnectionConfig:
 
         db_part = f"@{self.database}" if self.database else ""
         return f"{self.name}{db_part}"
+
+    def get_source_emoji(self) -> str:
+        """Get emoji indicator for connection source (e.g., '🐳 ' for docker)."""
+        return get_source_emoji(self.source)
+
+
+# Source emoji mapping
+SOURCE_EMOJIS: dict[str, str] = {
+    "docker": "🐳 ",
+}
+
+
+def get_source_emoji(source: str | None) -> str:
+    """Get emoji for a connection source.
+
+    Args:
+        source: The source type (e.g., "docker") or None.
+
+    Returns:
+        Emoji string with trailing space, or empty string if no emoji.
+    """
+    if source is None:
+        return ""
+    return SOURCE_EMOJIS.get(source, "")

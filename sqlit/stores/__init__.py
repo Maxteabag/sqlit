@@ -9,9 +9,11 @@ This package provides clean separation of data persistence concerns:
 from .connections import ConnectionStore
 from .history import HistoryStore
 from .settings import SettingsStore
+from .starred import StarredStore
 
 __all__ = [
     "ConnectionStore",
     "HistoryStore",
     "SettingsStore",
+    "StarredStore",
 ]

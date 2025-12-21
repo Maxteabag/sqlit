@@ -28,6 +28,7 @@ CONNECTION_ARG_NAMES = {
     "ssh_key_path",
     "ssh_password",
     "driver",
+    "oracle_role",
 }
 
 

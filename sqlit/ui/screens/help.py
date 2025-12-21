@@ -27,8 +27,8 @@ class HelpScreen(ModalScreen):
     }
 
     #help-dialog {
-        width: 60;
-        max-width: 70%;
+        width: 80;
+        max-width: 85%;
         max-height: 80%;
     }
 

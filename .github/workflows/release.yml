@@ -101,47 +101,48 @@ jobs:
             echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Setup SSH for AUR
+      - name: Wait for PyPI and get checksum
+        id: pypi
         run: |
-          mkdir -p ~/.ssh
-          # Decode base64-encoded SSH key (encode with: base64 -w 0 < ~/.ssh/aur_key)
-          echo "${{ secrets.AUR_SSH_KEY }}" | base64 -d > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          echo "Host aur.archlinux.org" >> ~/.ssh/config
-          echo "  IdentityFile ~/.ssh/aur" >> ~/.ssh/config
-          echo "  User aur" >> ~/.ssh/config
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          VERSION=${{ steps.version.outputs.VERSION }}
+          URL="https://files.pythonhosted.org/packages/source/s/sqlit-tui/sqlit_tui-${VERSION}.tar.gz"
 
-      - name: Clone AUR repo
-        run: git clone ssh://aur@aur.archlinux.org/python-sqlit-tui.git aur-repo
+          echo "Waiting for package to be available on PyPI..."
+          for i in {1..20}; do
+            HTTP_CODE=$(curl -sI -o /dev/null -w "%{http_code}" "$URL")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Package available on PyPI (attempt $i)"
+              break
+            fi
+            echo "Waiting for PyPI... attempt $i (got HTTP $HTTP_CODE)"
+            sleep 30
+          done
+
+          # Download and compute checksum
+          curl -sL "$URL" -o /tmp/pkg.tar.gz
+          CHECKSUM=$(sha256sum /tmp/pkg.tar.gz | cut -d' ' -f1)
+          echo "CHECKSUM=${CHECKSUM}" >> $GITHUB_OUTPUT
+          echo "Checksum: ${CHECKSUM}"
 
       - name: Update PKGBUILD
         run: |
-          cd aur-repo
           VERSION=${{ steps.version.outputs.VERSION }}
+          CHECKSUM=${{ steps.pypi.outputs.CHECKSUM }}
 
-          # Wait for PyPI to have the package available
-          sleep 30
-
-          # Download new tarball and get checksum
-          curl -sL "https://files.pythonhosted.org/packages/source/s/sqlit-tui/sqlit_tui-${VERSION}.tar.gz" -o /tmp/pkg.tar.gz
-          CHECKSUM=$(sha256sum /tmp/pkg.tar.gz | cut -d' ' -f1)
-
-          # Update version and checksum in PKGBUILD
+          cd aur
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
           sed -i "s/^sha256sums=.*/sha256sums=('${CHECKSUM}')/" PKGBUILD
 
-          # Update .SRCINFO
-          sed -i "s/pkgver = .*/pkgver = ${VERSION}/" .SRCINFO
-          sed -i "s/sqlit_tui-[0-9.]*/sqlit_tui-${VERSION}/g" .SRCINFO
-          sed -i "s/sha256sums = .*/sha256sums = ${CHECKSUM}/" .SRCINFO
+          echo "Updated PKGBUILD:"
+          cat PKGBUILD
 
-      - name: Push to AUR
-        run: |
-          cd aur-repo
-          git config user.email "peter.w.adams96@gmail.com"
-          git config user.name "Peter"
-          git add PKGBUILD .SRCINFO
-          git diff --staged --quiet || git commit -m "Update to v${{ steps.version.outputs.VERSION }}"
-          git push
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        with:
+          pkgname: python-sqlit-tui
+          pkgbuild: ./aur/PKGBUILD
+          commit_username: Peter
+          commit_email: peter.w.adams96@gmail.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to v${{ steps.version.outputs.VERSION }}"

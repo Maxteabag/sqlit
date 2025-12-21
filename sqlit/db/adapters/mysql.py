@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ..schema import get_default_port
-from .base import MySQLBaseAdapter
+from .base import MySQLBaseAdapter, import_driver_module
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -32,17 +32,15 @@ class MySQLAdapter(MySQLBaseAdapter):
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to MySQL database."""
-        try:
-            import mysql.connector
-        except ImportError as e:
-            from ...db.exceptions import MissingDriverError
-
-            if not self.install_extra or not self.install_package:
-                raise e
-            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+        mysql_connector = import_driver_module(
+            "mysql.connector",
+            driver_name=self.name,
+            extra_name=self.install_extra,
+            package_name=self.install_package,
+        )
 
         port = int(config.port or get_default_port("mysql"))
-        return mysql.connector.connect(
+        return mysql_connector.connect(
             host=config.server,
             port=port,
             database=config.database or None,

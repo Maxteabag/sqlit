@@ -61,16 +61,35 @@ class PackageSetupScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         strategy = detect_strategy(extra_name=self.error.extra_name, package_name=self.error.package_name)
-        self._can_auto_install = strategy.can_auto_install
-        self._instructions_text = strategy.manual_instructions.strip() + "\n"
+        has_import_error = bool(getattr(self.error, "import_error", None))
+        self._can_auto_install = strategy.can_auto_install and not has_import_error
+        instructions = []
+        if has_import_error:
+            details = str(self.error.import_error).strip()
+            if details:
+                instructions.append("Import error:")
+                instructions.append(details)
+                instructions.append("")
+        instructions.append(strategy.manual_instructions.strip())
+        self._instructions_text = "\n".join(instructions).strip() + "\n"
 
         shortcuts = [("Yank", "y"), ("Cancel", "<esc>")]
         if self._can_auto_install:
             shortcuts.insert(0, ("Install", "i"))
-        with Dialog(id="package-dialog", title="Missing package", shortcuts=shortcuts):
-            yield Static(
+        title = "Driver import failed" if has_import_error else "Missing package"
+        if has_import_error:
+            message = (
+                f"The [bold]{self.error.driver_name}[/] driver is installed but failed to load.\n"
+                f"Package: [bold]{self.error.package_name}[/]"
+            )
+        else:
+            message = (
                 f"This connection requires the [bold]{self.error.driver_name}[/] driver.\n"
-                f"Package: [bold]{self.error.package_name}[/]",
+                f"Package: [bold]{self.error.package_name}[/]"
+            )
+        with Dialog(id="package-dialog", title=title, shortcuts=shortcuts):
+            yield Static(
+                message,
                 id="package-message",
             )
 

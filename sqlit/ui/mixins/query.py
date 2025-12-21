@@ -4,17 +4,24 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa
 from rich.markup import escape as escape_markup
 from textual.timer import Timer
 from textual.worker import Worker
+from textual_fastdatatable import ArrowBackend
 
 from ..protocols import AppProtocol
+from ...widgets import SqlitDataTable
 from ...utils import format_duration_ms
 
 if TYPE_CHECKING:
     from ...services import QueryService
 
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+# Row limits for rendering
+MAX_FETCH_ROWS = 100000
+MAX_RENDER_ROWS = 100000
 
 
 class QueryMixin:
@@ -33,6 +40,7 @@ class QueryMixin:
     _cancellable_query: Any | None = None
     _spinner_timer: Timer | None = None
     _query_cursor_cache: dict[str, tuple[int, int]] | None = None  # query text -> cursor (row, col)
+    _results_table_counter: int = 0  # Counter for unique table IDs
 
     def action_execute_query(self: AppProtocol) -> None:
         """Execute the current query."""
@@ -117,8 +125,10 @@ class QueryMixin:
         """Run query asynchronously using a cancellable dedicated connection."""
         import asyncio
         import time
+        from dataclasses import replace
 
         from ...services import CancellableQuery, QueryResult, QueryService
+        from ...services.query import parse_use_statement
 
         adapter = self.current_adapter
         config = self.current_config
@@ -128,23 +138,34 @@ class QueryMixin:
             self._stop_query_spinner()
             return
 
+        # Handle USE database statements
+        db_name = parse_use_statement(query)
+        if db_name is not None:
+            self.current_config = replace(config, database=db_name)
+            self._stop_query_spinner()
+            self._display_non_query_result(0, 0)
+            self.notify(f"Switched to database: {db_name}")
+            self._update_status_bar()
+            if keep_insert_mode:
+                self._restore_insert_mode()
+            return
+
         # Dedicated connection enables cancellation by closing it.
         cancellable = CancellableQuery(
             sql=query,
             config=config,
             adapter=adapter,
+            tunnel=self.current_ssh_tunnel,
         )
         self._cancellable_query = cancellable
 
         service = self._query_service or QueryService()
 
         try:
-            max_fetch_rows = 10000
-
             start_time = time.perf_counter()
             result = await asyncio.to_thread(
                 cancellable.execute,
-                max_fetch_rows,
+                MAX_FETCH_ROWS,
             )
             elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -170,6 +191,76 @@ class QueryMixin:
             self._cancellable_query = None
             self._stop_query_spinner()
 
+    def _replace_results_table(self: AppProtocol, columns: list[str], rows: list[tuple]) -> None:
+        """Update the results table with new data.
+
+        Creates a new FastDataTable with ArrowBackend.
+        """
+        container = self.results_area
+        old_table = self.results_table
+
+        # Generate unique ID for new table
+        self._results_table_counter += 1
+        new_id = f"results-table-{self._results_table_counter}"
+
+        if not columns or not rows:
+            # Create empty table
+            new_table = SqlitDataTable(id=new_id, zebra_stripes=True, show_header=False)
+            container.mount(new_table, after=old_table)
+            old_table.remove()
+            return
+
+        # Prepare data (escape markup and handle NULL)
+        formatted_rows = []
+        for row in rows[:MAX_RENDER_ROWS]:
+            formatted = []
+            for i in range(len(columns)):
+                val = row[i] if i < len(row) else None
+                str_val = escape_markup(str(val)) if val is not None else "NULL"
+                formatted.append(str_val)
+            formatted_rows.append(formatted)
+
+        # Build Arrow table
+        arrow_columns = {col: [r[i] for r in formatted_rows] for i, col in enumerate(columns)}
+        arrow_table = pa.table(arrow_columns)
+        backend = ArrowBackend(arrow_table)
+
+        # Create and mount new table, then remove old
+        new_table = SqlitDataTable(id=new_id, zebra_stripes=True, backend=backend)
+        container.mount(new_table, after=old_table)
+        old_table.remove()
+
+    def _replace_results_table_raw(self: AppProtocol, columns: list[str], rows: list[tuple]) -> None:
+        """Update the results table with pre-formatted data (no escaping).
+
+        Use this when the data is already escaped/formatted (e.g., with highlighting).
+        """
+        container = self.results_area
+        old_table = self.results_table
+
+        # Generate unique ID for new table
+        self._results_table_counter += 1
+        new_id = f"results-table-{self._results_table_counter}"
+
+        if not columns or not rows:
+            # Create empty table
+            new_table = SqlitDataTable(id=new_id, zebra_stripes=True, show_header=False)
+            container.mount(new_table, after=old_table)
+            old_table.remove()
+            return
+
+        # Build Arrow table (data is already formatted)
+        arrow_columns = {}
+        for i, col in enumerate(columns):
+            arrow_columns[col] = [r[i] for r in rows[:MAX_RENDER_ROWS]]
+        arrow_table = pa.table(arrow_columns)
+        backend = ArrowBackend(arrow_table)
+
+        # Create and mount new table, then remove old
+        new_table = SqlitDataTable(id=new_id, zebra_stripes=True, backend=backend)
+        container.mount(new_table, after=old_table)
+        old_table.remove()
+
     def _display_query_results(
         self: AppProtocol, columns: list[str], rows: list[tuple], row_count: int, truncated: bool, elapsed_ms: float
     ) -> None:
@@ -178,13 +269,7 @@ class QueryMixin:
         self._last_result_rows = rows
         self._last_result_row_count = row_count
 
-        self.results_table.clear(columns=True)
-        self.results_table.show_header = True
-        self.results_table.add_columns(*columns)
-
-        for row in rows[:1000]:
-            str_row = tuple(escape_markup(str(v)) if v is not None else "NULL" for v in row)
-            self.results_table.add_row(*str_row)
+        self._replace_results_table(columns, rows)
 
         time_str = format_duration_ms(elapsed_ms)
         if truncated:
@@ -198,10 +283,7 @@ class QueryMixin:
         self._last_result_rows = [(f"{affected} row(s) affected",)]
         self._last_result_row_count = 1
 
-        self.results_table.clear(columns=True)
-        self.results_table.show_header = True
-        self.results_table.add_column("Result")
-        self.results_table.add_row(f"{affected} row(s) affected")
+        self._replace_results_table(["Result"], [(f"{affected} row(s) affected",)])
         time_str = format_duration_ms(elapsed_ms)
         self.notify(f"Query executed: {affected} row(s) affected in {time_str}")
 
@@ -211,10 +293,8 @@ class QueryMixin:
         self._last_result_rows = [(error_message,)]
         self._last_result_row_count = 1
 
-        self.results_table.clear(columns=True)
-        self.results_table.show_header = True
-        self.results_table.add_column("Error")
-        self.results_table.add_row(escape_markup(error_message))
+        # escape_markup is handled in _replace_results_table
+        self._replace_results_table(["Error"], [(error_message,)])
         self.notify(f"Query error: {error_message}", severity="error")
 
     def _restore_insert_mode(self: AppProtocol) -> None:
@@ -242,10 +322,7 @@ class QueryMixin:
 
         self._stop_query_spinner()
 
-        self.results_table.clear(columns=True)
-        self.results_table.show_header = True
-        self.results_table.add_column("Status")
-        self.results_table.add_row("Query cancelled")
+        self._replace_results_table(["Status"], [("Query cancelled",)])
 
         self.notify("Query cancelled", severity="warning")
 
@@ -265,10 +342,7 @@ class QueryMixin:
             self._stop_query_spinner()
 
             # Update results table to show cancelled state
-            self.results_table.clear(columns=True)
-            self.results_table.show_header = True
-            self.results_table.add_column("Status")
-            self.results_table.add_row("Query cancelled")
+            self._replace_results_table(["Status"], [("Query cancelled",)])
             cancelled = True
 
         # Cancel schema indexing if running
@@ -291,8 +365,7 @@ class QueryMixin:
     def action_new_query(self: AppProtocol) -> None:
         """Start a new query (clear input and results)."""
         self.query_input.text = ""
-        self.results_table.clear(columns=True)
-        self.results_table.show_header = False
+        self._replace_results_table([], [])
 
     def action_show_history(self: AppProtocol) -> None:
         """Show query history for the current connection."""
@@ -300,12 +373,13 @@ class QueryMixin:
             self.notify("Not connected", severity="warning")
             return
 
-        from ...config import load_query_history
+        from ...config import load_query_history, load_starred_queries
         from ..screens import QueryHistoryScreen
 
         history = load_query_history(self.current_config.name)
+        starred = load_starred_queries(self.current_config.name)
         self.push_screen(
-            QueryHistoryScreen(history, self.current_config.name),
+            QueryHistoryScreen(history, self.current_config.name, starred),
             self._handle_history_result,
         )
 
@@ -340,6 +414,9 @@ class QueryMixin:
         elif action == "delete":
             self._delete_history_entry(data)
             self.action_show_history()
+        elif action == "toggle_star":
+            self._toggle_star(data)
+            self.action_show_history()
 
     def _delete_history_entry(self: AppProtocol, timestamp: str) -> None:
         """Delete a specific history entry by timestamp."""
@@ -348,3 +425,16 @@ class QueryMixin:
         if not self.current_config:
             return
         delete_query_from_history(self.current_config.name, timestamp)
+
+    def _toggle_star(self: AppProtocol, query: str) -> None:
+        """Toggle star status for a query."""
+        from ...config import toggle_query_star
+
+        if not self.current_config:
+            return
+
+        is_now_starred = toggle_query_star(self.current_config.name, query)
+        if is_now_starred:
+            self.notify("Query starred")
+        else:
+            self.notify("Query unstarred")

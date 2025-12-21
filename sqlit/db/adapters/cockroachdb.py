@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ..schema import get_default_port
-from .base import PostgresBaseAdapter
+from .base import PostgresBaseAdapter, import_driver_module
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -34,16 +34,19 @@ class CockroachDBAdapter(PostgresBaseAdapter):
     def supports_stored_procedures(self) -> bool:
         return False  # CockroachDB has limited stored procedure support
 
+    @property
+    def supports_triggers(self) -> bool:
+        """Triggers are preview-only in CockroachDB; treat as unsupported by default."""
+        return False
+
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to CockroachDB database."""
-        try:
-            import psycopg2
-        except ImportError as e:
-            from ...db.exceptions import MissingDriverError
-
-            if not self.install_extra or not self.install_package:
-                raise e
-            raise MissingDriverError(self.name, self.install_extra, self.install_package) from e
+        psycopg2 = import_driver_module(
+            "psycopg2",
+            driver_name=self.name,
+            extra_name=self.install_extra,
+            package_name=self.install_package,
+        )
 
         port = int(config.port or get_default_port("cockroachdb"))
         conn = psycopg2.connect(
