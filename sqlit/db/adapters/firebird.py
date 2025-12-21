@@ -160,7 +160,7 @@ class FirebirdAdapter(CursorBasedAdapter):
     ) -> dict[str, Any]:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT  rdb$initial_value, rdb$generator_increment"
+            "SELECT  rdb$initial_value, rdb$generator_increment "
             "FROM    rdb$generators "
             "WHERE   rdb$system_flag = 0 AND rdb$generator_name = ?",
             (sequence_name.upper(),),
@@ -223,10 +223,10 @@ class FirebirdAdapter(CursorBasedAdapter):
             "SELECT rdb$trigger_type, rdb$trigger_source FROM rdb$triggers WHERE rdb$trigger_name = ?",
             (trigger_name.upper(),),
         )
-        row = cursor.execute()
+        row = cursor.fetchone()
         if row:
             event = self._trigger_types[row[0]]
-            if row[0].startswith(("BEFORE ", "AFTER")):
+            if event.startswith(("BEFORE ", "AFTER")):
                 timing, event = event.split(" ", maxsplit=1)
             else:
                 timing = None
