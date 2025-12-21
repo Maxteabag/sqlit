@@ -54,7 +54,7 @@ Finds running docker sql resources. Connect to your local test servers in second
 
 ## Motivation
 
-Throughout my career, the undesputed truth was that SSMS was the only respectable way to access a database. It didn't matter that I wasn't a DBA, or that I didn't need complex performance graphs. I was expected to install a gigabyte-heavy behemoth that took ages to launch all for the mere grand purpose of running a few queries to update and view a couple of rows.
+Throughout my career, the undesputed truth was that SSMS was the only respectable way to access a database. It didn't matter that I wasn't a DBA, or that I didn't need complex performance graphs. I was expected to install a gigabyte-heavy behemoth that took ages to launch all for the mere purpose of running a few queries to update and view a couple of rows.
 
 When I switched to Linux, I was suddenly unable to return to the devil I know, and I asked myself: _how do I access my data now?_
 
