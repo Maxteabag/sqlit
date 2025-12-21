@@ -54,6 +54,7 @@ class ConnectionSchema:
     is_file_based: bool = False
     has_advanced_auth: bool = False
     default_port: str = ""
+    requires_auth: bool = True  # Whether this database requires authentication
 
 
 # Common field templates
@@ -363,6 +364,7 @@ COCKROACHDB_SCHEMA = ConnectionSchema(
     )
     + SSH_FIELDS,
     default_port="26257",
+    requires_auth=False,  # CockroachDB can run in insecure mode without auth
 )
 
 SQLITE_SCHEMA = ConnectionSchema(
@@ -402,6 +404,7 @@ TURSO_SCHEMA = ConnectionSchema(
         ),
     ),
     supports_ssh=False,
+    requires_auth=False,  # Turso local servers don't require auth
 )
 
 

@@ -125,3 +125,9 @@ def is_file_based(db_type: str) -> bool:
 def has_advanced_auth(db_type: str) -> bool:
     spec = PROVIDERS.get(db_type)
     return spec.schema.has_advanced_auth if spec else False
+
+
+def requires_auth(db_type: str) -> bool:
+    """Check if this database type requires authentication."""
+    spec = PROVIDERS.get(db_type)
+    return spec.schema.requires_auth if spec else True
