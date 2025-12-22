@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from textual.app import ComposeResult
@@ -395,8 +398,8 @@ class VimTextArea(TextArea):
     mode: reactive[VimMode] = reactive(VimMode.NORMAL)
     last_keys: reactive[str] = reactive('')
 
-    def _on_key(self, event:Key):
 
+    def _on_key(self, event:Key):
         ## Switch Modes
         if self.app.vim_mode == VimMode.NORMAL:
             # Go to Insert Mode
@@ -406,6 +409,12 @@ class VimTextArea(TextArea):
             # Navigate
             if event.character in ['h', 'j', 'k', 'l', 'w', 'b']:
                 self._navigate_cursor(character_pressed=event.character)
+
+            # Test Editor with Suspending
+            if event.character == 'K':
+                edited_text = self._suspend_and_go_to_editor_if_set()
+                if edited_text:
+                    self.text = edited_text
             event.prevent_default()
 
         elif self.app.vim_mode == VimMode.INSERT:
@@ -415,6 +424,36 @@ class VimTextArea(TextArea):
             if event.character in ["(", "[", "{", "'", '"', "`"]:
                 self._auto_close_brackets_and_quotes(character_pressed=event.character)
                 event.prevent_default()
+
+    def _suspend_and_go_to_editor_if_set(self) -> str | None:
+        editor = os.environ.get('EDITOR')
+        if not editor:
+            return
+
+        with tempfile.NamedTemporaryFile(mode="w+", suffix=".sql", delete=True) as tf:
+            temp_path = tf.name
+
+            if self.text:
+                tf.write(self.text)
+        try:
+            # Suspend the app and open the editor
+            with self.app.suspend():
+                result = os.system(f"{editor} {temp_path}")
+
+            # If editor exited successfully, read the content
+            if result == 0 and Path(temp_path).exists():
+                with open(temp_path) as f:
+                    content = f.read()
+                return content
+            else:
+                return None
+
+        finally:
+            # Clean up the temporary file
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
 
     def _move_to_insert_mode(self, character_pressed):
         match character_pressed:
