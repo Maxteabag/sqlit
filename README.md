@@ -48,21 +48,35 @@ Automatically finds running database containers. Connect to local test servers i
 
 ## Features
 
-- **Connection manager** - Save connections, switch between databases without CLI args
-- **Just run `sqlit`** - No CLI config needed, pick a connection and go
-- **Multi-database out of the box** - SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso - no adapters to install
-- **Docker** Connect directly to database docker container
-- **SSH tunnels built-in** - Connect to remote databases securely with password or key auth
-- Secure credentials - Stores your credentials on your OS's credentials store
-- **Vim-style editing** - Modal editing for terminal purists
-- **Query history** - Automatically saves queries per connection, searchable and sortable
-- **Filter results** - Find the data you're looking for without squinting your eyes in the results view
-- **Context-aware help** - No need to memorize keybindings
-- **Browse databases** - View tables, views, stored procedures, indexes, triggers and sequences
-- **Autocomplete** - tables, columns, and procedures
-- **CLI mode** - executing sql has never been this easy
-- Themes (Rose Pine, Tokyo Night, Nord, Gruvbox)
-- **Dependency wizard** - User friendly installation for required packages and drivers
+**Connection manager:** Save and switch connections without CLI args
+
+**Just run `sqlit`:** No CLI config needed, pick a connection and go
+
+**Multi-database support:** PostgreSQL, MySQL, SQLite, SQL Server, and 10+ more
+
+**Docker integration:** Auto-detect running database containers
+
+**SSH tunnels:** Connect to remote databases securely with password or key auth
+
+**Secure credentials:** Passwords stored in your OS keyring
+
+**Vim-style editing:** Modal editing for terminal purists
+
+**Query history:** Searchable, per-connection history
+
+**Filter results:** Fuzzy search through millions of rows
+
+**Context-aware help:** Keybindings shown on screen
+
+**Browse databases:** Tables, views, procedures, indexes, triggers, sequences
+
+**Autocomplete:** Tables, columns, and procedures
+
+**CLI mode:** Execute SQL from the command line
+
+**Themes:** Rose Pine, Tokyo Night, Nord, Gruvbox
+
+**Dependency wizard:** Auto-install missing drivers
 
 ---
 
