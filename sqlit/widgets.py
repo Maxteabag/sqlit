@@ -430,7 +430,7 @@ class VimTextArea(TextArea):
         if not editor:
             return
 
-        with tempfile.NamedTemporaryFile(mode="w+", suffix=".sql", delete=True) as tf:
+        with tempfile.NamedTemporaryFile(mode="w+", suffix=".sql", delete=False) as tf:
             temp_path = tf.name
 
             if self.text:
