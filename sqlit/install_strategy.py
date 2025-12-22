@@ -37,7 +37,7 @@ def _is_pipx() -> bool:
     pipx_override = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
     if pipx_override in {"1", "true", "yes", "pipx"}:
         return True
-    if pipx_override in {"0", "false", "no", "pip", "unknown"}:
+    if pipx_override in {"0", "false", "no", "pip", "unknown", "no-pip"}:
         return False
 
     exe = sys.executable.lower()
@@ -70,6 +70,8 @@ def _pep668_externally_managed() -> bool:
 
 
 def _pip_available() -> bool:
+    if os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower() == "no-pip":
+        return False
     return importlib.util.find_spec("pip") is not None
 
 
@@ -154,6 +156,18 @@ def _format_manual_instructions(package_name: str, reason: str) -> str:
 
 def detect_strategy(*, extra_name: str, package_name: str) -> InstallStrategy:
     """Detect the best installation strategy for optional driver dependencies."""
+    # When mocking driver errors, also force the no-pip path to show full instructions
+    if os.environ.get("SQLIT_MOCK_DRIVER_ERROR"):
+        return InstallStrategy(
+            kind="no-pip",
+            can_auto_install=False,
+            manual_instructions=_format_manual_instructions(
+                package_name,
+                "pip is not available for this Python interpreter.",
+            ),
+            reason_unavailable="pip is not available.",
+        )
+
     if _is_unknown_install():
         return InstallStrategy(
             kind="unknown",

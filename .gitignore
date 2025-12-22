@@ -54,5 +54,6 @@ assets/*
 !assets/favorites/
 assets/favorites/*
 !assets/favorites/logo.png
+!assets/favorites/logo_sqlit.png
 .worktrees/
 .obsidian/

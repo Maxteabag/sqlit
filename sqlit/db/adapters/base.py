@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import importlib
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-
-from rich.markup import escape
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
@@ -91,6 +90,18 @@ def import_driver_module(
     package_name: str | None,
 ) -> Any:
     """Import a driver module, raising MissingDriverError with detail if it fails."""
+    # Mock flag to force driver import error for testing
+    if os.environ.get("SQLIT_MOCK_DRIVER_ERROR") and extra_name and package_name:
+        from ...db.exceptions import MissingDriverError
+
+        raise MissingDriverError(
+            driver_name,
+            extra_name,
+            package_name,
+            module_name=module_name,
+            import_error=f"No module named '{module_name}'",
+        )
+
     if not extra_name or not package_name:
         return importlib.import_module(module_name)
 
@@ -1039,9 +1050,7 @@ def _create_driver_import_error_hint(driver_name: str, extra_name: str, package_
     from ...install_strategy import detect_strategy
 
     strategy = detect_strategy(extra_name=extra_name, package_name=package_name)
-    instructions = escape(strategy.manual_instructions)
     return (
         f"{driver_name} driver not found.\n\n"
-        f"To connect to {driver_name}, run:\n\n"
-        f"[bold]{instructions}[/bold]\n"
+        f"{strategy.manual_instructions}\n"
     )
