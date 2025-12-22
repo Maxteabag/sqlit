@@ -1,10 +1,9 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "sqlit-tui"
-version = "0.5.1"
 description = "A terminal UI for SQL Server, PostgreSQL, MySQL, SQLite, Oracle, and more"
 readme = "README.md"
 license = "MIT"
@@ -33,6 +32,7 @@ dependencies = [
     "keyring>=24.0.0",
     "docker>=7.0.0",  # Docker container auto-detection (lazy loaded)
 ]
+dynamic = ["version"]
 
 [project.optional-dependencies]
 all = [
@@ -85,6 +85,12 @@ dev = [
     "mypy>=1.0",
     "pre-commit>=3.0",
 ]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "sqlit/_version.py"
 
 [tool.ruff]
 target-version = "py310"
