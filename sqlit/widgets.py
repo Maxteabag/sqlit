@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING, Any
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
+from textual.reactive import reactive
 from textual.strip import Strip
-from textual.widgets import Static
+from textual.widgets import Static, TextArea
 from textual_fastdatatable import DataTable as FastDataTable
 
 if TYPE_CHECKING:
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
 
     from textual.events import Key
     from textual.widget import Widget
+
+    from .app import SSMSTUI
 
 
 class SqlitDataTable(FastDataTable):
@@ -386,3 +389,88 @@ class AutocompleteDropdown(Static):
     def is_visible(self) -> bool:
         """Check if dropdown is visible."""
         return "visible" in self.classes
+
+class VimTextArea(TextArea):
+    app: SSMSTUI
+    mode: reactive[VimMode] = reactive(VimMode.NORMAL)
+    last_keys: reactive[str] = reactive('')
+
+    def _on_key(self, event:Key):
+
+        ## Switch Modes
+        if self.app.vim_mode == VimMode.NORMAL:
+            # Go to Insert Mode
+            if event.character in ['i', 'I', 'a', 'A', 's', 'S', 'o', 'O']:
+                self._move_to_insert_mode(character_pressed=event.character)
+                event.prevent_default()
+            # Navigate
+            if event.character in ['h', 'j', 'k', 'l', 'w', 'b']:
+                self._navigate_cursor(character_pressed=event.character)
+            event.prevent_default()
+
+        elif self.app.vim_mode == VimMode.INSERT:
+            if event.key in ["escape", "ctrl+c"]:
+                self.app.action_exit_insert_mode()
+                event.prevent_default()
+            if event.character in ["(", "[", "{", "'", '"', "`"]:
+                self._auto_close_brackets_and_quotes(character_pressed=event.character)
+                event.prevent_default()
+
+    def _move_to_insert_mode(self, character_pressed):
+        match character_pressed:
+            case "i":
+                self.move_cursor_relative(columns=0)
+            case "I":
+                self.move_cursor(location=self.get_cursor_line_start_location())
+            case "a":
+                self.move_cursor_relative(columns=+1)
+            case "A":
+                self.move_cursor(location=self.get_cursor_line_end_location())
+            case "s":
+                self.replace("", *self.selection)
+            case "S":
+                # doesnt work
+                self._delete_cursor_line()
+            case "o":
+                self.move_cursor(location=self.get_cursor_line_end_location())
+                self.insert("\n")
+            case "O":
+                self.move_cursor_relative(rows=-1)
+                self.move_cursor(location=self.get_cursor_line_end_location())
+                self.insert("\n")
+
+        self.app.action_enter_insert_mode()
+
+    def _navigate_cursor(self, character_pressed):
+        self.cursor_blink = False
+        match character_pressed:
+            case "h":
+                self.move_cursor_relative(columns=-1)
+            case "j":
+                self.move_cursor_relative(rows=+1)
+            case "k":
+                self.move_cursor_relative(rows=-1)
+            case "l":
+                self.move_cursor_relative(columns=+1)
+            case "w":
+                self.action_cursor_word_right()
+                self.move_cursor_relative(columns=+1)
+            case "b":
+                self.action_cursor_word_left()
+        self.cursor_blink = True
+
+    def _auto_close_brackets_and_quotes(self, character_pressed):
+        match character_pressed:
+            case "(":
+                self.insert("()")
+            case "[":
+                self.insert("[]")
+            case "{":
+                self.insert("{}")
+            case "'":
+                self.insert("''")
+            case '"':
+                self.insert('""')
+            case '`':
+                self.insert('``')
+        self.move_cursor_relative(columns=-1)

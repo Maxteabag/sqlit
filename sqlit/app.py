@@ -57,6 +57,7 @@ from .widgets import (
     SqlitDataTable,
     TreeFilterInput,
     VimMode,
+    VimTextArea
 )
 
 
@@ -288,7 +289,7 @@ class SSMSTUI(
         Binding("ctrl+enter", "execute_query_insert", "Execute", show=False),
         Binding("d", "clear_query", "Clear", show=False),
         Binding("n", "new_query", "New", show=False),
-        Binding("h", "show_history", "History", show=False),
+        Binding("H", "show_history", "History", show=False),
         Binding("z", "collapse_tree", "Collapse", show=False),
         Binding("j", "tree_cursor_down", "Down", show=False),
         Binding("k", "tree_cursor_up", "Up", show=False),
@@ -541,7 +542,7 @@ class SSMSTUI(
 
                 with Vertical(id="main-panel"):
                     with Container(id="query-area"):
-                        yield TextArea(
+                        yield VimTextArea(
                             "",
                             language="sql",
                             id="query-input",

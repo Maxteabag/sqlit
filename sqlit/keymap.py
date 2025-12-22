@@ -122,7 +122,7 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("f5", "execute_query_insert", "query_insert"),
             ActionKeyDef("d", "clear_query", "query_normal"),
             ActionKeyDef("n", "new_query", "query_normal"),
-            ActionKeyDef("h", "show_history", "query_normal"),
+            ActionKeyDef("H", "show_history", "query_normal"),
             ActionKeyDef("y", "copy_context", "query_normal"),
             # Results
             ActionKeyDef("v", "view_cell", "results"),
