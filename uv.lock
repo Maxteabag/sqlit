@@ -3005,7 +3005,6 @@ source = { editable = "." }
 dependencies = [
     { name = "docker" },
     { name = "keyring" },
-    { name = "mssql-python" },
     { name = "pyperclip" },
     { name = "textual", extra = ["syntax"] },
     { name = "textual-fastdatatable" },
@@ -3104,7 +3103,6 @@ requires-dist = [
     { name = "libsql-client", marker = "extra == 'turso'", specifier = ">=0.1.0" },
     { name = "mariadb", marker = "extra == 'all'", specifier = ">=1.1.0" },
     { name = "mariadb", marker = "extra == 'mariadb'", specifier = ">=1.1.0" },
-    { name = "mssql-python", specifier = ">=1.1.0" },
     { name = "mssql-python", marker = "extra == 'all'", specifier = ">=1.1.0" },
     { name = "mssql-python", marker = "extra == 'mssql'", specifier = ">=1.1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0" },
