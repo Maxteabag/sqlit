@@ -197,29 +197,21 @@ def mssql_db(mssql_server_ready: bool) -> str:
         pytest.skip("SQL Server is not available")
 
     try:
-        import pyodbc
+        import mssql_python  # type: ignore[import]
     except ImportError:
-        pytest.skip("pyodbc is not installed")
-
-    # Find available driver
-    drivers = [d for d in pyodbc.drivers() if "SQL Server" in d]
-    if not drivers:
-        pytest.skip("No SQL Server ODBC driver installed")
-
-    driver = drivers[0]
+        pytest.skip("mssql-python is not installed")
 
     conn_str = (
-        f"DRIVER={{{driver}}};"
         f"SERVER={MSSQL_HOST},{MSSQL_PORT};"
         f"DATABASE=master;"
         f"UID={MSSQL_USER};"
         f"PWD={MSSQL_PASSWORD};"
-        f"TrustServerCertificate=yes;"
+        "Encrypt=yes;TrustServerCertificate=yes;"
     )
 
     try:
-        conn = pyodbc.connect(conn_str, timeout=10)
-        conn.autocommit = True
+        conn = mssql_python.connect(conn_str)
+        conn.autocommit = True  # type: ignore[assignment]
         cursor = conn.cursor()
 
         cursor.execute(f"SELECT name FROM sys.databases WHERE name = '{MSSQL_DATABASE}'")
@@ -232,14 +224,13 @@ def mssql_db(mssql_server_ready: bool) -> str:
         conn.close()
 
         conn_str = (
-            f"DRIVER={{{driver}}};"
             f"SERVER={MSSQL_HOST},{MSSQL_PORT};"
             f"DATABASE={MSSQL_DATABASE};"
             f"UID={MSSQL_USER};"
             f"PWD={MSSQL_PASSWORD};"
-            f"TrustServerCertificate=yes;"
+            "Encrypt=yes;TrustServerCertificate=yes;"
         )
-        conn = pyodbc.connect(conn_str, timeout=10)
+        conn = mssql_python.connect(conn_str)
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -307,22 +298,20 @@ def mssql_db(mssql_server_ready: bool) -> str:
         cursor.close()
         conn.close()
 
-    except pyodbc.Error as e:
+    except Exception as e:  # pragma: no cover - environment-specific failures
         pytest.skip(f"Failed to setup SQL Server database: {e}")
 
     yield MSSQL_DATABASE
 
     try:
-        conn = pyodbc.connect(
-            f"DRIVER={{{driver}}};"
+        conn = mssql_python.connect(
             f"SERVER={MSSQL_HOST},{MSSQL_PORT};"
             f"DATABASE=master;"
             f"UID={MSSQL_USER};"
             f"PWD={MSSQL_PASSWORD};"
-            f"TrustServerCertificate=yes;",
-            timeout=10,
+            "Encrypt=yes;TrustServerCertificate=yes;",
         )
-        conn.autocommit = True
+        conn.autocommit = True  # type: ignore[assignment]
         cursor = conn.cursor()
         cursor.execute(f"SELECT name FROM sys.databases WHERE name = '{MSSQL_DATABASE}'")
         if cursor.fetchone():

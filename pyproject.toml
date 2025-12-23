@@ -31,13 +31,14 @@ dependencies = [
     "pyperclip>=1.8.2",
     "keyring>=24.0.0",
     "docker>=7.0.0",  # Docker container auto-detection (lazy loaded)
+    "mssql-python>=1.1.0",
 ]
 dynamic = ["version"]
 
 [project.optional-dependencies]
 all = [
     "psycopg2-binary>=2.9.0",
-    "pyodbc>=5.0.0",
+    "mssql-python>=1.1.0",
     "mysql-connector-python>=9.1.0",  # min avoids known CVEs
     "mariadb>=1.1.0",
     "oracledb>=2.0.0",
@@ -52,7 +53,7 @@ all = [
 ]
 postgres = ["psycopg2-binary>=2.9.0"]
 cockroachdb = ["psycopg2-binary>=2.9.0"]
-mssql = ["pyodbc>=5.0.0"]
+mssql = ["mssql-python>=1.1.0"]
 mysql = ["mysql-connector-python>=9.1.0"]  # min avoids known CVEs
 mariadb = ["mariadb>=1.1.0"]
 oracle = ["oracledb>=2.0.0"]
@@ -170,4 +171,8 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "pyodbc"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mssql_python"
 ignore_missing_imports = true
