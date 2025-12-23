@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from textual.app import ComposeResult
@@ -10,6 +9,9 @@ from textual.containers import Container, Horizontal
 from textual.strip import Strip
 from textual.widgets import Static
 from textual_fastdatatable import DataTable as FastDataTable
+
+# Re-export VimMode from plugin for backward compatibility
+from .plugins.vim_mode.engine import VimMode, CommandAction
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -93,13 +95,6 @@ def flash_widget(
             on_complete()
 
     widget.set_timer(duration, cleanup)
-
-
-class VimMode(Enum):
-    """Vim editing modes."""
-
-    NORMAL = "NORMAL"
-    INSERT = "INSERT"
 
 
 class KeyBinding:
@@ -385,4 +380,59 @@ class AutocompleteDropdown(Static):
     @property
     def is_visible(self) -> bool:
         """Check if dropdown is visible."""
+        return "visible" in self.classes
+
+
+class VimCommandLine(Static):
+    """Command line widget for vim command mode.
+
+    Displays at the bottom of the query area when in command mode.
+    Shows the : prompt followed by the command being typed.
+    """
+
+    DEFAULT_CSS = """
+    VimCommandLine {
+        width: 100%;
+        height: 1;
+        background: $surface-darken-1;
+        padding: 0 1;
+        display: none;
+    }
+
+    VimCommandLine.visible {
+        display: block;
+    }
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__("", *args, **kwargs)
+        self._command_text: str = ":"
+
+    def set_command(self, text: str) -> None:
+        """Set the command line text."""
+        self._command_text = text
+        self._rebuild()
+
+    def clear(self) -> None:
+        """Clear the command line."""
+        self._command_text = ":"
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        """Rebuild the display."""
+        # Show cursor as a block character at the end
+        self.update(f"{self._command_text}[reverse] [/]")
+
+    def show(self) -> None:
+        """Show the command line."""
+        self.add_class("visible")
+        self._rebuild()
+
+    def hide(self) -> None:
+        """Hide the command line."""
+        self.remove_class("visible")
+
+    @property
+    def is_visible(self) -> bool:
+        """Check if command line is visible."""
         return "visible" in self.classes

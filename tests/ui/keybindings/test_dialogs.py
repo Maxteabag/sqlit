@@ -7,6 +7,7 @@ import pytest
 from sqlit.app import SSMSTUI
 from sqlit.keymap import get_keymap
 from sqlit.ui.screens import ConfirmScreen, ErrorScreen, HelpScreen
+from sqlit.widgets import VimMode
 
 
 class TestDialogKeybindings:
@@ -193,6 +194,11 @@ class TestDialogKeybindings:
             app.action_focus_query()
             await pilot.pause()
             assert app.query_input.has_focus
+
+            # Exit INSERT mode so leader key works
+            app.editor_mode = VimMode.NORMAL
+            app.query_input.read_only = True
+            await pilot.pause()
 
             # Open help via leader combo
             leader_key = keymap.action("leader_key")

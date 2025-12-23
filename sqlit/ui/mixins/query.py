@@ -321,7 +321,7 @@ class QueryMixin:
         """Restore INSERT mode after query execution (called on main thread)."""
         from ...widgets import VimMode
 
-        self.vim_mode = VimMode.INSERT
+        self.editor_mode = VimMode.INSERT
         self.query_input.read_only = False
         self.query_input.focus()
         self._update_footer_bindings()

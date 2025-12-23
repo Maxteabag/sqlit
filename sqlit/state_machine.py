@@ -723,7 +723,7 @@ class QueryNormalModeState(State):
     def is_active(self, app: SSMSTUI) -> bool:
         from .widgets import VimMode
 
-        return app.query_input.has_focus and app.vim_mode == VimMode.NORMAL
+        return app.query_input.has_focus and app.editor_mode == VimMode.NORMAL
 
 
 class QueryInsertModeState(State):
@@ -755,7 +755,7 @@ class QueryInsertModeState(State):
     def is_active(self, app: SSMSTUI) -> bool:
         from .widgets import VimMode
 
-        if not app.query_input.has_focus or app.vim_mode != VimMode.INSERT:
+        if not app.query_input.has_focus or app.editor_mode != VimMode.INSERT:
             return False
         # Defer to AutocompleteActiveState if autocomplete is visible
         return not getattr(app, "_autocomplete_visible", False)
@@ -795,7 +795,7 @@ class AutocompleteActiveState(State):
 
         return (
             app.query_input.has_focus
-            and app.vim_mode == VimMode.INSERT
+            and app.editor_mode == VimMode.INSERT
             and getattr(app, "_autocomplete_visible", False)
         )
 

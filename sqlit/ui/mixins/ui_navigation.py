@@ -143,15 +143,27 @@ class UINavigationMixin:
                 self.object_tree.cursor_line = 0
 
     def action_focus_query(self: AppProtocol) -> None:
-        """Focus the Query pane (in NORMAL mode)."""
+        """Focus the Query pane and enter INSERT mode (if vim enabled)."""
         from ...widgets import VimMode
 
         if self._fullscreen_mode != "none":
             self._set_fullscreen_mode("none")
-        self.vim_mode = VimMode.NORMAL
-        self.query_input.read_only = True
+
+        if self.vim_enabled:
+            # Vim mode: enter INSERT mode
+            self.editor_mode = VimMode.INSERT
+            self.query_input.read_only = False
+            vim_plugin = self._get_vim_plugin()
+            if vim_plugin and vim_plugin.engine:
+                vim_plugin.engine.enter_insert_mode()
+        else:
+            # No vim: enter editable state and track it
+            self.editor_mode = VimMode.INSERT
+            self.query_input.read_only = False
+
         self.query_input.focus()
         self._update_status_bar()
+        self._update_footer_bindings()
 
     def action_focus_results(self: AppProtocol) -> None:
         """Focus the Results pane."""
@@ -167,19 +179,42 @@ class UINavigationMixin:
         """Enter INSERT mode for query editing."""
         from ...widgets import VimMode
 
-        if self.query_input.has_focus and self.vim_mode == VimMode.NORMAL:
-            self.vim_mode = VimMode.INSERT
-            self.query_input.read_only = False
-            self._update_status_bar()
-            self._update_footer_bindings()
+        if self.query_input.has_focus and self.editor_mode == VimMode.NORMAL:
+            vim_plugin = self._get_vim_plugin()
+            if vim_plugin and vim_plugin.engine:
+                vim_plugin.engine.enter_insert_mode()
+            else:
+                self.editor_mode = VimMode.INSERT
+                self.query_input.read_only = False
+                self._update_status_bar()
+                self._update_footer_bindings()
 
     def action_exit_insert_mode(self: AppProtocol) -> None:
-        """Exit INSERT mode, return to NORMAL mode."""
+        """Exit INSERT mode, return to NORMAL mode.
+
+        In default editor mode, this makes the TextArea read-only so you can
+        execute queries with enter without accidentally typing. Press 'i' or
+        click to edit again.
+        """
         from ...widgets import VimMode
 
-        if self.vim_mode == VimMode.INSERT:
-            self.vim_mode = VimMode.NORMAL
+        self._hide_autocomplete()
+
+        # In default mode: make read-only but stay focused
+        if not self.vim_enabled:
             self.query_input.read_only = True
+            self.editor_mode = VimMode.NORMAL  # Track state for footer/status
+            self._update_status_bar()
+            self._update_footer_bindings()
+            return
+
+        if self.editor_mode == VimMode.INSERT:
+            vim_plugin = self._get_vim_plugin()
+            if vim_plugin and vim_plugin.engine:
+                vim_plugin.engine.exit_insert_mode()
+            else:
+                self.editor_mode = VimMode.NORMAL
+                self.query_input.read_only = True
             self._hide_autocomplete()
             self._update_status_bar()
             self._update_footer_bindings()
@@ -252,11 +287,12 @@ class UINavigationMixin:
 
         # Build left side content
         try:
-            if self.query_input.has_focus:
-                if self.vim_mode == VimMode.NORMAL:
-                    mode_str = f"[bold orange1]-- {self.vim_mode.value} --[/]"
+            if self.query_input.has_focus and self.vim_enabled:
+                # Only show vim mode indicator when vim is enabled
+                if self.editor_mode == VimMode.NORMAL:
+                    mode_str = f"[bold orange1]-- {self.editor_mode.value} --[/]"
                 else:
-                    mode_str = f"[dim]-- {self.vim_mode.value} --[/]"
+                    mode_str = f"[dim]-- {self.editor_mode.value} --[/]"
                 left_content = f"{status_str}{mode_str}  {conn_info}"
             else:
                 left_content = f"{status_str}{conn_info}"
@@ -427,6 +463,13 @@ class UINavigationMixin:
         self._update_section_labels()
         self._update_footer_bindings()
 
+    def action_toggle_vim_mode(self: AppProtocol) -> None:
+        """Toggle vim mode for the query editor."""
+        # Delegate to vim plugin
+        vim_plugin = self._get_vim_plugin()
+        if vim_plugin:
+            vim_plugin.toggle(self)
+
     def _update_footer_bindings(self: AppProtocol) -> None:
         """Update footer with context-appropriate bindings from the state machine."""
         from ...widgets import ContextFooter, KeyBinding
@@ -454,8 +497,9 @@ class UINavigationMixin:
         """Handle leader key (space) press - show command menu after delay."""
         from ...widgets import VimMode
 
-        # Don't trigger in INSERT mode
-        if self.vim_mode == VimMode.INSERT:
+        # Don't trigger leader when in query input INSERT mode (typing)
+        # In NORMAL mode (read-only), space triggers leader in both default and vim mode
+        if self.query_input.has_focus and self.editor_mode == VimMode.INSERT:
             return
 
         # Cancel any existing timer
@@ -528,6 +572,9 @@ class UINavigationMixin:
     def action_leader_change_theme(self: AppProtocol) -> None:
         self._execute_leader_command("change_theme")
 
+    def action_leader_toggle_vim_mode(self: AppProtocol) -> None:
+        self._execute_leader_command("toggle_vim_mode")
+
     def action_leader_show_help(self: AppProtocol) -> None:
         self._execute_leader_command("show_help")
 
@@ -543,8 +590,9 @@ class UINavigationMixin:
             has_query_focus = self.query_input.has_focus
         except Exception:
             has_query_focus = False
-        if not has_query_focus and self.vim_mode == VimMode.INSERT:
-            self.vim_mode = VimMode.NORMAL
+        # Only auto-exit INSERT mode when vim is enabled
+        if self.vim_enabled and not has_query_focus and self.editor_mode == VimMode.INSERT:
+            self.editor_mode = VimMode.NORMAL
             try:
                 self.query_input.read_only = True
             except Exception:

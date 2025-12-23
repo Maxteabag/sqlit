@@ -246,7 +246,7 @@ class ResultsMixin:
 
         # Enter insert mode
         from ...widgets import VimMode
-        self.vim_mode = VimMode.INSERT
+        self.editor_mode = VimMode.INSERT
         self.query_input.read_only = False
         self._update_status_bar()
         self._update_footer_bindings()

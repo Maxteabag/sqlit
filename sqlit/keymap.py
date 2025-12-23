@@ -90,6 +90,7 @@ class DefaultKeymapProvider(KeymapProvider):
             # Actions
             LeaderCommandDef("z", "cancel_operation", "Cancel", "Actions", guard="query_executing"),
             LeaderCommandDef("t", "change_theme", "Change Theme", "Actions"),
+            LeaderCommandDef("v", "toggle_vim_mode", "Toggle Vim Mode", "Actions"),
             LeaderCommandDef("h", "show_help", "Help", "Actions"),
             LeaderCommandDef("q", "quit", "Quit", "Actions"),
         ]

@@ -211,7 +211,12 @@ class AppProtocol(Protocol):
 
     # === Vim mode state ===
 
-    vim_mode: VimMode
+    editor_mode: VimMode  # Editor state (INSERT=editing, NORMAL=read-only)
+    vim_enabled: bool  # Whether vim plugin is enabled (property delegating to plugin)
+
+    def _get_vim_plugin(self) -> Any:
+        """Get the vim mode plugin if loaded."""
+        ...
 
     # === Tree state ===
 
@@ -539,3 +544,4 @@ class AppProtocol(Protocol):
     def _execute_leader_command(self, action: str) -> None:
         """Execute leader command."""
         ...
+

@@ -8,6 +8,7 @@ import pytest
 
 from sqlit.app import SSMSTUI
 from sqlit.keymap import get_keymap
+from sqlit.widgets import VimMode
 
 from ..mocks import MockConnectionStore, MockSettingsStore, create_test_connection
 
@@ -28,6 +29,11 @@ class TestContextualKeybindings:
             app.action_focus_query()
             await pilot.pause()
             assert app.query_input.has_focus
+
+            # Exit INSERT mode so navigation keys work
+            app.editor_mode = VimMode.NORMAL
+            app.query_input.read_only = True
+            await pilot.pause()
 
             # Press focus explorer key
             await pilot.press(focus_explorer_key)

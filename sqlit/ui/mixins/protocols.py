@@ -40,7 +40,7 @@ class AppProtocol(Protocol):
     _loading_nodes: set[str]
     _leader_pending: bool
     screen_stack: list[Any]
-    vim_mode: Any  # VimMode enum
+    editor_mode: Any  # VimMode enum (INSERT=editing, NORMAL=read-only)
 
     # Result state
     _last_result_columns: list[str]

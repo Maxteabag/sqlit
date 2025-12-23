@@ -218,7 +218,8 @@ class AutocompleteMixin:
             self._hide_autocomplete()
             return
 
-        if self.vim_mode != VimMode.INSERT:
+        # Only show autocomplete in INSERT mode (or when vim is disabled)
+        if self.vim_enabled and self.editor_mode != VimMode.INSERT:
             self._hide_autocomplete()
             return
 
@@ -277,7 +278,7 @@ class AutocompleteMixin:
             event.prevent_default()
             event.stop()
         elif event.key == "tab":
-            if self.vim_mode == VimMode.INSERT and dropdown.filtered_items:
+            if self.editor_mode == VimMode.INSERT and dropdown.filtered_items:
                 self._apply_autocomplete()
                 event.prevent_default()
                 event.stop()

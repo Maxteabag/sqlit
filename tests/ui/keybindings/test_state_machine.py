@@ -30,15 +30,16 @@ class MockApp:
         self.current_connection = None
         self.current_config = None
         self.screen_stack = [None]
-        self._vim_mode = VimMode.NORMAL
+        self._editor_mode = VimMode.NORMAL
+        self.vim_enabled = False
 
     object_tree = MockWidget()
     query_input = MockWidget()
     results_table = MockWidget()
 
     @property
-    def vim_mode(self):
-        return self._vim_mode
+    def editor_mode(self):
+        return self._editor_mode
 
 
 class TestQueryExecutingState:

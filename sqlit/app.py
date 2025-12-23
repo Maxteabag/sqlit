@@ -40,6 +40,7 @@ from .state_machine import (
     UIStateMachine,
     get_leader_bindings,
 )
+from .plugins import Plugin, discover_plugins
 from .ui.mixins import (
     AutocompleteMixin,
     ConnectionMixin,
@@ -56,6 +57,7 @@ from .widgets import (
     ResultsFilterInput,
     SqlitDataTable,
     TreeFilterInput,
+    VimCommandLine,
     VimMode,
 )
 
@@ -111,6 +113,10 @@ class SSMSTUI(
         }
         &:focus > .text-area--cursor-line {
             background: $surface-lighten-1;
+        }
+        /* Make visual mode selection more visible with orange tint */
+        & > .text-area--selection {
+            background: $warning 40%;
         }
     }
 
@@ -339,7 +345,7 @@ class SSMSTUI(
         self.current_config: ConnectionConfig | None = None
         self.current_adapter: DatabaseAdapter | None = None
         self.current_ssh_tunnel: Any | None = None
-        self.vim_mode: VimMode = VimMode.NORMAL
+        self.editor_mode: VimMode = VimMode.INSERT  # Editor state (INSERT=editing, NORMAL=read-only)
         self._expanded_paths: set[str] = set()
         self._loading_nodes: set[str] = set()
         self._session: Any | None = None
@@ -369,6 +375,7 @@ class SSMSTUI(
         self._leader_timer: Timer | None = None
         self._leader_pending: bool = False
         self._dialog_open: bool = False
+        self._plugins: list[Plugin] = []  # Loaded plugins
         self._last_active_pane: str | None = None
         self._query_worker: Worker[Any] | None = None
         self._query_executing: bool = False
@@ -534,7 +541,7 @@ class SSMSTUI(
             with Horizontal(id="content"):
                 with Vertical(id="sidebar"):
                     yield TreeFilterInput(id="tree-filter")
-                    tree: Tree[Any] = Tree("Servers", id="object-tree")
+                    tree = Tree("Servers", id="object-tree")
                     tree.show_root = False
                     tree.guide_depth = 2
                     yield tree
@@ -548,6 +555,7 @@ class SSMSTUI(
                             read_only=True,
                         )
                         yield Lazy(AutocompleteDropdown(id="autocomplete-dropdown"))
+                        yield VimCommandLine(id="vim-command-line")
 
                     with Container(id="results-area"):
                         yield ResultsFilterInput(id="results-filter")
@@ -588,6 +596,10 @@ class SSMSTUI(
         self.refresh_tree()
         self._startup_stamp("tree_refreshed")
 
+        # Load and initialize plugins
+        self._load_plugins(settings)
+        self._startup_stamp("plugins_initialized")
+
         self.object_tree.focus()
         self._startup_stamp("tree_focused")
         # Move cursor to first node if available
@@ -613,6 +625,27 @@ class SSMSTUI(
         if mock_profile:
             self._mock_profile = mock_profile
             self._session_factory = self._create_mock_session_factory(mock_profile)
+
+    def _load_plugins(self, settings: dict) -> None:
+        """Load and initialize plugins."""
+        for plugin_cls in discover_plugins():
+            plugin = plugin_cls()
+            plugin.register(self)
+            plugin.on_settings_load(self, settings)
+            self._plugins.append(plugin)
+
+    def _get_vim_plugin(self) -> Any:
+        """Get the vim mode plugin if loaded."""
+        for plugin in self._plugins:
+            if plugin.name == "vim_mode":
+                return plugin
+        return None
+
+    @property
+    def vim_enabled(self) -> bool:
+        """Check if vim plugin is enabled (delegates to vim plugin)."""
+        vim_plugin = self._get_vim_plugin()
+        return vim_plugin.enabled if vim_plugin else False
 
     def _setup_startup_connection(self, config: ConnectionConfig) -> None:
         """Set up a startup connection to auto-connect after mount."""
@@ -816,3 +849,53 @@ class SSMSTUI(
         """Match and apply the current Omarchy theme."""
         matched_theme = get_matching_textual_theme(self.available_themes)
         self._apply_theme_safe(matched_theme)
+
+    def on_key(self, event: Any) -> None:
+        """Handle key events, routing through plugins."""
+        from textual.events import Key
+
+        if not isinstance(event, Key):
+            return
+
+        # Only handle keys when query input has focus
+        if not self.query_input.has_focus:
+            return
+
+        # Handle autocomplete navigation when dropdown is visible
+        # Works in INSERT mode (vim enabled) or always when vim is disabled
+        if self._autocomplete_visible and (not self.vim_enabled or self.editor_mode == VimMode.INSERT):
+            dropdown = self.autocomplete_dropdown
+            if event.key in ("down", "ctrl+n"):
+                dropdown.move_selection(1)
+                event.prevent_default()
+                event.stop()
+                return
+            elif event.key in ("up", "ctrl+p"):
+                dropdown.move_selection(-1)
+                event.prevent_default()
+                event.stop()
+                return
+            elif event.key in ("tab", "enter", "return") and dropdown.filtered_items:
+                self._apply_autocomplete()
+                event.prevent_default()
+                event.stop()
+                return
+            elif event.key == "escape":
+                self._hide_autocomplete()
+                event.prevent_default()
+                event.stop()
+                return
+
+        # In default mode NORMAL state, space triggers leader key
+        if not self.vim_enabled and self.editor_mode == VimMode.NORMAL and event.key == "space":
+            self.action_leader_key()
+            event.prevent_default()
+            event.stop()
+            return
+
+        # Route to plugins
+        for plugin in self._plugins:
+            if plugin.on_key(self, event):
+                event.prevent_default()
+                event.stop()
+                return
