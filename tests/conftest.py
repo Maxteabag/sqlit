@@ -1495,14 +1495,14 @@ def turso_db(turso_server_ready: bool) -> str:
         pytest.skip("Turso (libsql-server) is not available")
 
     try:
-        from libsql_client import create_client_sync
+        from libsql import connect
     except ImportError:
-        pytest.skip("libsql-client is not installed")
+        pytest.skip("libsql is not installed")
 
     turso_url = f"http://{TURSO_HOST}:{TURSO_PORT}"
 
     try:
-        client = create_client_sync(turso_url)
+        client = connect(turso_url)
 
         client.execute("DROP TABLE IF EXISTS test_users")
         client.execute("DROP TABLE IF EXISTS test_products")
@@ -1566,7 +1566,7 @@ def turso_db(turso_server_ready: bool) -> str:
     yield turso_url
 
     try:
-        client = create_client_sync(turso_url)
+        client = connect(turso_url)
         client.execute("DROP TRIGGER IF EXISTS trg_test_users_audit")
         client.execute("DROP INDEX IF EXISTS idx_test_users_email")
         client.execute("DROP TABLE IF EXISTS test_users")

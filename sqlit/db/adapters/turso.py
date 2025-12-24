@@ -1,4 +1,4 @@
-"""Turso adapter using libsql-client."""
+"""Turso adapter using libsql."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class TursoAdapter(DatabaseAdapter):
     """Adapter for Turso (libSQL) databases.
 
-    Turso is a distributed SQLite-compatible database. Uses the libsql_client
+    Turso is a distributed SQLite-compatible database. Uses the libsql
     package for connections via HTTP/HTTPS URLs with optional token authentication.
     """
 
@@ -67,11 +67,11 @@ class TursoAdapter(DatabaseAdapter):
 
     @property
     def install_package(self) -> str:
-        return "libsql-client"
+        return "libsql"
 
     @property
     def driver_import_names(self) -> tuple[str, ...]:
-        return ("libsql_client",)
+        return ("libsql",)
 
     @property
     def supports_multiple_databases(self) -> bool:
@@ -94,8 +94,8 @@ class TursoAdapter(DatabaseAdapter):
         Uses config.server for the database URL and config.password for the auth token.
         Supports libsql://, https://, and http:// URLs.
         """
-        libsql_client = import_driver_module(
-            "libsql_client",
+        libsql = import_driver_module(
+            "libsql",
             driver_name=self.name,
             extra_name=self.install_extra,
             package_name=self.install_package,
@@ -107,7 +107,7 @@ class TursoAdapter(DatabaseAdapter):
             url = f"libsql://{url}"
 
         auth_token = config.password if config.password else None
-        client = libsql_client.create_client_sync(url, auth_token=auth_token)
+        client = libsql.connect(url, auth_token=auth_token)
         return client
 
     def get_databases(self, conn: Any) -> list[str]:
@@ -116,27 +116,27 @@ class TursoAdapter(DatabaseAdapter):
 
     def get_tables(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of tables from Turso. Returns (schema, name) with empty schema."""
-        result = conn.execute(
+        rows = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_litestream_%' "
             "ORDER BY name"
-        )
-        return [("", row[0]) for row in result.rows]
+        ).fetchall()
+        return [("", row[0]) for row in rows]
 
     def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of views from Turso. Returns (schema, name) with empty schema."""
-        result = conn.execute("SELECT name FROM sqlite_master WHERE type='view' ORDER BY name")
-        return [("", row[0]) for row in result.rows]
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type='view' ORDER BY name").fetchall()
+        return [("", row[0]) for row in rows]
 
     def get_columns(
         self, conn: Any, table: str, database: str | None = None, schema: str | None = None
     ) -> list[ColumnInfo]:
         """Get columns for a table from Turso. Schema parameter is ignored."""
         quoted_table = self.quote_identifier(table)
-        result = conn.execute(f"PRAGMA table_info({quoted_table})")
+        rows = conn.execute(f"PRAGMA table_info({quoted_table})").fetchall()
         # PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
         # pk > 0 indicates column is part of primary key
-        return [ColumnInfo(name=row[1], data_type=row[2] or "TEXT", is_primary_key=row[5] > 0) for row in result.rows]
+        return [ColumnInfo(name=row[1], data_type=row[2] or "TEXT", is_primary_key=row[5] > 0) for row in rows]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Turso doesn't support stored procedures - return empty list."""
@@ -144,17 +144,17 @@ class TursoAdapter(DatabaseAdapter):
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes from Turso (SQLite-compatible)."""
-        result = conn.execute(
+        rows = conn.execute(
             "SELECT name, tbl_name FROM sqlite_master "
             "WHERE type='index' AND name NOT LIKE 'sqlite_%' "
             "ORDER BY tbl_name, name"
-        )
+        ).fetchall()
         results = []
-        for row in result.rows:
+        for row in rows:
             # Check if index is unique using PRAGMA
-            idx_result = conn.execute(f"PRAGMA index_list({self.quote_identifier(row[1])})")
+            idx_result = conn.execute(f"PRAGMA index_list({self.quote_identifier(row[1])})").fetchall()
             is_unique = False
-            for idx_info in idx_result.rows:
+            for idx_info in idx_result:
                 if idx_info[1] == row[0]:  # idx_info: seq, name, unique, origin, partial
                     is_unique = idx_info[2] == 1
                     break
@@ -163,12 +163,12 @@ class TursoAdapter(DatabaseAdapter):
 
     def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
         """Get triggers from Turso (SQLite-compatible)."""
-        result = conn.execute(
+        rows = conn.execute(
             "SELECT name, tbl_name FROM sqlite_master "
             "WHERE type='trigger' "
             "ORDER BY tbl_name, name"
-        )
-        return [TriggerInfo(name=row[0], table_name=row[1]) for row in result.rows]
+        ).fetchall()
+        return [TriggerInfo(name=row[0], table_name=row[1]) for row in rows]
 
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         """Turso/SQLite doesn't support sequences - return empty list."""
@@ -188,10 +188,11 @@ class TursoAdapter(DatabaseAdapter):
 
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on Turso with optional row limit."""
-        result = conn.execute(query)
-        if result.columns:
-            columns = list(result.columns)
-            rows = [tuple(row) for row in result.rows]
+        cur = conn.cursor()
+        rows = cur.execute(query).fetchall()
+        columns = [col[0] for col in cur.description]
+        if columns:
+            rows = [tuple(row) for row in rows]
             if max_rows is not None and len(rows) > max_rows:
                 return columns, rows[:max_rows], True
             return columns, rows, False
@@ -199,5 +200,6 @@ class TursoAdapter(DatabaseAdapter):
 
     def execute_non_query(self, conn: Any, query: str) -> int:
         """Execute a non-query on Turso."""
-        result = conn.execute(query)
-        return int(result.rows_affected or 0)
+        cur = conn.cursor()
+        cur.execute(query)
+        return int(cur.rowcount or 0)
