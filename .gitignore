@@ -57,3 +57,6 @@ assets/favorites/*
 !assets/favorites/logo_sqlit.png
 .worktrees/
 .obsidian/
+
+# Test environment files with secrets
+tests/.env
