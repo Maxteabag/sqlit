@@ -239,7 +239,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | :---------------------------------- | :--------------------------- | :------------------------------------------------- | :------------------------------------------------- |
 | SQLite                              | *(built-in)*                 | *(built-in)*                                       | *(built-in)*                                       |
 | PostgreSQL / CockroachDB / Supabase | `psycopg2-binary`            | `pipx inject sqlit-tui psycopg2-binary`            | `python -m pip install psycopg2-binary`            |
-| SQL Server                          | `pyodbc`                     | `pipx inject sqlit-tui pyodbc`                     | `python -m pip install pyodbc`                     |
+| SQL Server                          | `mssql-python`               | `pipx inject sqlit-tui mssql-python`               | `python -m pip install mssql-python`               |
 | MySQL                               | `mysql-connector-python`     | `pipx inject sqlit-tui mysql-connector-python`     | `python -m pip install mysql-connector-python`     |
 | MariaDB                             | `mariadb`                    | `pipx inject sqlit-tui mariadb`                    | `python -m pip install mariadb`                    |
 | Oracle                              | `oracledb`                   | `pipx inject sqlit-tui oracledb`                   | `python -m pip install oracledb`                   |
@@ -249,8 +249,6 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Cloudflare D1                       | `requests`                   | `pipx inject sqlit-tui requests`                   | `python -m pip install requests`                   |
 | Snowflake                           | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` |
 | Firebird                            | `firebirdsql`                | `pipx inject sqlit-tui firebirdsql`                | `python -m pip install firebirdsql`                |
-
-**Note:** SQL Server also requires the platform-specific ODBC driver. On your first connection attempt, `sqlit` can help you install it if it's missing.
 
 ### SSH Tunnel Support
 

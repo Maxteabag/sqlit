@@ -169,9 +169,5 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "pyodbc"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "mssql_python"
 ignore_missing_imports = true
