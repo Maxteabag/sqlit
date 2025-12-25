@@ -3,7 +3,6 @@
 from .confirm import ConfirmScreen
 from .connection import ConnectionScreen
 from .connection_picker import ConnectionPickerScreen
-from .driver_setup import DriverSetupScreen
 from .error import ErrorScreen
 from .help import HelpScreen
 from .leader_menu import LeaderMenuScreen
@@ -18,7 +17,6 @@ __all__ = [
     "ConfirmScreen",
     "ConnectionScreen",
     "ConnectionPickerScreen",
-    "DriverSetupScreen",
     "ErrorScreen",
     "HelpScreen",
     "LeaderMenuScreen",

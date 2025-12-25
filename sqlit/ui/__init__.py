@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 __all__ = [
     "ConfirmScreen",
     "ConnectionScreen",
-    "DriverSetupScreen",
     "HelpScreen",
     "QueryHistoryScreen",
     "ValueViewScreen",
@@ -15,7 +14,6 @@ __all__ = [
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "ConfirmScreen": ("sqlit.ui.screens.confirm", "ConfirmScreen"),
     "ConnectionScreen": ("sqlit.ui.screens.connection", "ConnectionScreen"),
-    "DriverSetupScreen": ("sqlit.ui.screens.driver_setup", "DriverSetupScreen"),
     "HelpScreen": ("sqlit.ui.screens.help", "HelpScreen"),
     "QueryHistoryScreen": ("sqlit.ui.screens.query_history", "QueryHistoryScreen"),
     "ValueViewScreen": ("sqlit.ui.screens.value_view", "ValueViewScreen"),
@@ -24,7 +22,6 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
 if TYPE_CHECKING:
     from .screens.confirm import ConfirmScreen
     from .screens.connection import ConnectionScreen
-    from .screens.driver_setup import DriverSetupScreen
     from .screens.help import HelpScreen
     from .screens.query_history import QueryHistoryScreen
     from .screens.value_view import ValueViewScreen
