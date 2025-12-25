@@ -116,7 +116,7 @@ def _get_arch_package_name(package_name: str) -> str | None:
     mapping = {
         "psycopg2-binary": "python-psycopg2",
         "psycopg2": "python-psycopg2",
-        "pyodbc": "python-pyodbc",
+        "mssql-python": "python-mssql",
         "mysql-connector-python": "python-mysql-connector",
         "mariadb": "python-mariadb-connector",
         "oracledb": "python-oracledb",
