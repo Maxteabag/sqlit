@@ -111,12 +111,6 @@ class SQLServerAdapter(DatabaseAdapter):
             config.set_option("auth_type", "sql")
             config.set_option("trusted_connection", False)
 
-        driver = config.get_option("driver")
-        if not driver:
-            from ...config import _get_default_driver
-
-            config.set_option("driver", _get_default_driver())
-
         return config
 
     def _build_connection_string(self, config: ConnectionConfig) -> str:
@@ -419,7 +413,7 @@ class SQLServerAdapter(DatabaseAdapter):
     ) -> dict[str, Any]:
         """Get detailed information about a SQL Server sequence."""
         cursor = conn.cursor()
-        # Cast sql_variant columns to BIGINT to avoid pyodbc type -25 error
+        # Cast sql_variant columns to BIGINT to avoid driver type conversion errors
         if database:
             cursor.execute(
                 f"SELECT CAST(start_value AS BIGINT), CAST(increment AS BIGINT), "
