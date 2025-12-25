@@ -92,7 +92,8 @@ class TursoAdapter(DatabaseAdapter):
         """Connect to Turso database.
 
         Uses config.server for the database URL and config.password for the auth token.
-        Supports libsql://, https://, and http:// URLs.
+        Accepts libsql://, https://, and http:// URLs (libsql:// is converted to https://).
+        Uses direct HTTP mode for immediate read/write operations.
         """
         libsql = import_driver_module(
             "libsql",
@@ -102,13 +103,14 @@ class TursoAdapter(DatabaseAdapter):
         )
 
         url = config.server
-        # Ensure URL has proper scheme
-        if not url.startswith(("libsql://", "https://", "http://")):
-            url = f"libsql://{url}"
+        # Convert URL scheme (libsql package requires http:// or https://)
+        if url.startswith("libsql://"):
+            url = url.replace("libsql://", "https://", 1)
+        elif not url.startswith(("https://", "http://")):
+            url = f"https://{url}"
 
-        auth_token = config.password if config.password else None
-        client = libsql.connect(url, auth_token=auth_token)
-        return client
+        auth_token = config.password if config.password else ""
+        return libsql.connect(url, auth_token=auth_token)
 
     def get_databases(self, conn: Any) -> list[str]:
         """Turso doesn't support multiple databases - return empty list."""
@@ -202,4 +204,6 @@ class TursoAdapter(DatabaseAdapter):
         """Execute a non-query on Turso."""
         cur = conn.cursor()
         cur.execute(query)
-        return int(cur.rowcount or 0)
+        rowcount = int(cur.rowcount or 0)
+        conn.commit()
+        return rowcount
