@@ -1,9 +1,7 @@
 """Integration tests for SQL Server datetimeoffset support.
 
-Originally these tests validated a pyodbc-specific workaround for the
-datetimeoffset ODBC type (-155). With the switch to mssql-python (which
-handles datetimeoffset natively), the tests now verify that the adapter can
-round-trip datetimeoffset values correctly.
+These tests verify that the mssql-python adapter can correctly handle
+datetimeoffset values (timezone-aware datetime columns).
 """
 
 from __future__ import annotations
@@ -71,11 +69,7 @@ class TestMSSQLDatetimeOffset:
             pytest.skip("mssql-python is not installed")
 
     def test_query_datetimeoffset_column(self, mssql_adapter, mssql_config):
-        """Test that querying a table with datetimeoffset columns works.
-
-        Previously this would fail with:
-        'ODBC SQL type -155 is not yet supported. column-index=N type=-155'
-        """
+        """Test that querying a table with datetimeoffset columns works."""
         conn = mssql_adapter.connect(mssql_config)
 
         try:

@@ -830,10 +830,7 @@ class BaseDatabaseTests(ABC):
 
         This tests that databases with timezone-aware datetime types (like
         DATETIMEOFFSET, TIMESTAMPTZ, TIMESTAMP WITH TIME ZONE) can be queried
-        without errors. This is important because some drivers (like pyodbc)
-        don't natively support these types and need custom converters.
-
-        See: https://github.com/mkleehammer/pyodbc/issues/134
+        without errors.
         """
         if self.config.timezone_datetime_type is None:
             pytest.skip(f"{self.config.display_name} does not have a timezone-aware datetime type")
