@@ -144,12 +144,6 @@ AUTH_TYPE_LABELS = {
 }
 
 
-def _get_default_driver() -> str:
-    """Get default ODBC driver (lazy import)."""
-    from .drivers import SUPPORTED_DRIVERS
-    return SUPPORTED_DRIVERS[0]
-
-
 @dataclass
 class ConnectionConfig:
     """Database connection configuration."""
