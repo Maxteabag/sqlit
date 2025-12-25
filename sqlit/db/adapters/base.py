@@ -239,7 +239,7 @@ class DatabaseAdapter(ABC):
 
     @property
     def driver_setup_kind(self) -> str | None:
-        """Optional driver setup type for UI workflows (e.g., 'odbc')."""
+        """Optional driver setup type for UI workflows."""
         return None
 
     def normalize_config(self, config: ConnectionConfig) -> ConnectionConfig:

@@ -5,17 +5,8 @@ from __future__ import annotations
 import pytest
 
 from sqlit.config import ConnectionConfig
-from sqlit.db.schema import get_all_schemas
 
 from .conftest import ConnectionScreenTestApp
-
-
-def _get_providers_with_advanced_tab() -> set[str]:
-    return {db_type for db_type, schema in get_all_schemas().items() if any(f.advanced for f in schema.fields)}
-
-
-def _get_providers_without_advanced_tab() -> set[str]:
-    return {db_type for db_type, schema in get_all_schemas().items() if not any(f.advanced for f in schema.fields)}
 
 
 class TestConnectionScreen:
@@ -248,36 +239,6 @@ class TestTabNavigation:
             assert isinstance(screen.focused, Tabs), (
                 f"Shift+Tab from first field should focus tab bar, " f"but focused is {type(screen.focused).__name__}"
             )
-
-
-class TestAdvancedTab:
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("db_type", _get_providers_with_advanced_tab())
-    async def test_advanced_tab_enabled(self, db_type):
-        config = ConnectionConfig(name="test", db_type=db_type)
-        app = ConnectionScreenTestApp(config, editing=True)
-
-        async with app.run_test(size=(100, 35)) as _pilot:
-            screen = app.screen
-            tabs = screen.query_one("#connection-tabs")
-            advanced_pane = screen.query_one("#tab-advanced")
-            advanced_tab = tabs.get_tab(advanced_pane)
-
-            assert not advanced_tab.disabled
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("db_type", _get_providers_without_advanced_tab())
-    async def test_advanced_tab_disabled(self, db_type):
-        config = ConnectionConfig(name="test", db_type=db_type)
-        app = ConnectionScreenTestApp(config, editing=True)
-
-        async with app.run_test(size=(100, 35)) as _pilot:
-            screen = app.screen
-            tabs = screen.query_one("#connection-tabs")
-            advanced_pane = screen.query_one("#tab-advanced")
-            advanced_tab = tabs.get_tab(advanced_pane)
-
-            assert advanced_tab.disabled
 
 
 class TestEditConnectionNoDuplicates:

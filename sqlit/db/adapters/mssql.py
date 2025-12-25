@@ -1,4 +1,4 @@
-"""Microsoft SQL Server adapter using pyodbc."""
+"""Microsoft SQL Server adapter using mssql-python."""
 
 from __future__ import annotations
 
@@ -10,24 +10,8 @@ if TYPE_CHECKING:
     from ...config import ConnectionConfig
 
 
-def _convert_datetimeoffset(value: bytes) -> str:
-    """Convert SQL Server datetimeoffset binary to ISO 8601 string.
-
-    The binary format is 20 bytes: year(2), month(2), day(2), hour(2),
-    minute(2), second(2), nanoseconds(4), tz_hour(2), tz_minute(2).
-    See: https://github.com/mkleehammer/pyodbc/issues/134
-    """
-    import struct
-
-    tup = struct.unpack("<6hI2h", value)
-    year, month, day, hour, minute, second, ns, tz_hour, tz_min = tup
-    microseconds = ns // 1000
-    tz_sign = "+" if tz_hour >= 0 else "-"
-    return f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}.{microseconds:06d} {tz_sign}{abs(tz_hour):02d}:{abs(tz_min):02d}"
-
-
 class SQLServerAdapter(DatabaseAdapter):
-    """Adapter for Microsoft SQL Server using pyodbc."""
+    """Adapter for Microsoft SQL Server using the mssql-python driver."""
 
     @classmethod
     def badge_label(cls) -> str:
@@ -47,11 +31,13 @@ class SQLServerAdapter(DatabaseAdapter):
 
     @property
     def install_package(self) -> str:
-        return "pyodbc"
+        # Package providing the SQL Server driver (no external ODBC manager required)
+        return "mssql-python"
 
     @property
     def driver_import_names(self) -> tuple[str, ...]:
-        return ("pyodbc",)
+        # DB-API 2.0 compatible driver
+        return ("mssql_python",)
 
     @property
     def supports_multiple_databases(self) -> bool:
@@ -89,7 +75,9 @@ class SQLServerAdapter(DatabaseAdapter):
 
     @property
     def driver_setup_kind(self) -> str | None:
-        return "odbc"
+        # mssql-python uses Direct Database Connectivity and does not require
+        # a separate ODBC driver manager.
+        return None
 
     @classmethod
     def docker_image_patterns(cls) -> tuple[str, ...]:
@@ -123,22 +111,16 @@ class SQLServerAdapter(DatabaseAdapter):
             config.set_option("auth_type", "sql")
             config.set_option("trusted_connection", False)
 
-        driver = config.get_option("driver")
-        if not driver:
-            from ...config import _get_default_driver
-
-            config.set_option("driver", _get_default_driver())
-
         return config
 
     def _build_connection_string(self, config: ConnectionConfig) -> str:
-        """Build ODBC connection string from config.
+        """Build mssql-python connection string from config.
 
         Args:
             config: Connection configuration.
 
         Returns:
-            ODBC connection string for pyodbc.
+            semicolon-delimited key=value connection string.
         """
         from ...config import AuthType
 
@@ -146,13 +128,7 @@ class SQLServerAdapter(DatabaseAdapter):
         if config.port and config.port != "1433":
             server_with_port = f"{config.server},{config.port}"
 
-        driver = config.get_option("driver")
-        if not driver:
-            from ...config import _get_default_driver
-
-            driver = _get_default_driver()
         base = (
-            f"DRIVER={{{driver}}};"
             f"SERVER={server_with_port};"
             f"DATABASE={config.database or 'master'};"
             f"TrustServerCertificate=yes;"
@@ -163,7 +139,7 @@ class SQLServerAdapter(DatabaseAdapter):
         if auth == AuthType.WINDOWS:
             return base + "Trusted_Connection=yes;"
         elif auth == AuthType.SQL_SERVER:
-            return base + f"UID={config.username};PWD={config.password};"
+            return base + f"Authentication=SqlPassword;" f"UID={config.username};PWD={config.password};"
         elif auth == AuthType.AD_PASSWORD:
             return base + f"Authentication=ActiveDirectoryPassword;" f"UID={config.username};PWD={config.password};"
         elif auth == AuthType.AD_INTERACTIVE:
@@ -174,30 +150,16 @@ class SQLServerAdapter(DatabaseAdapter):
         return base + "Trusted_Connection=yes;"
 
     def connect(self, config: ConnectionConfig) -> Any:
-        """Connect to SQL Server using pyodbc."""
-        pyodbc = import_driver_module(
-            "pyodbc",
+        """Connect to SQL Server using the mssql-python driver."""
+        mssql_python = import_driver_module(
+            "mssql_python",
             driver_name=self.name,
             extra_name=self.install_extra,
             package_name=self.install_package,
         )
 
-        installed = list(pyodbc.drivers())
-        driver = config.get_option("driver")
-        if not driver:
-            from ...config import _get_default_driver
-
-            driver = _get_default_driver()
-        if driver not in installed:
-            from ...db.exceptions import MissingODBCDriverError
-
-            raise MissingODBCDriverError(driver, installed)
-
         conn_str = self._build_connection_string(config)
-        conn = pyodbc.connect(conn_str, timeout=10)
-
-        # Register converter for datetimeoffset (ODBC type -155) which pyodbc doesn't support natively
-        conn.add_output_converter(-155, _convert_datetimeoffset)
+        conn = mssql_python.connect(conn_str)
 
         return conn
 
@@ -451,7 +413,7 @@ class SQLServerAdapter(DatabaseAdapter):
     ) -> dict[str, Any]:
         """Get detailed information about a SQL Server sequence."""
         cursor = conn.cursor()
-        # Cast sql_variant columns to BIGINT to avoid pyodbc type -25 error
+        # Cast sql_variant columns to BIGINT to avoid driver type conversion errors
         if database:
             cursor.execute(
                 f"SELECT CAST(start_value AS BIGINT), CAST(increment AS BIGINT), "

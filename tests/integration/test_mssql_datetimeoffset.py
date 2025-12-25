@@ -1,7 +1,7 @@
 """Integration tests for SQL Server datetimeoffset support.
 
-Tests the fix for pyodbc ODBC type -155 (datetimeoffset) which is not natively supported.
-See: https://github.com/mkleehammer/pyodbc/issues/134
+These tests verify that the mssql-python adapter can correctly handle
+datetimeoffset values (timezone-aware datetime columns).
 """
 
 from __future__ import annotations
@@ -64,19 +64,12 @@ class TestMSSQLDatetimeOffset:
         if not is_mssql_available():
             pytest.skip("SQL Server is not available")
         try:
-            import pyodbc
-            drivers = [d for d in pyodbc.drivers() if "SQL Server" in d]
-            if not drivers:
-                pytest.skip("No SQL Server ODBC driver installed")
+            import mssql_python  # type: ignore[import]
         except ImportError:
-            pytest.skip("pyodbc is not installed")
+            pytest.skip("mssql-python is not installed")
 
     def test_query_datetimeoffset_column(self, mssql_adapter, mssql_config):
-        """Test that querying a table with datetimeoffset columns works.
-
-        Previously this would fail with:
-        'ODBC SQL type -155 is not yet supported. column-index=N type=-155'
-        """
+        """Test that querying a table with datetimeoffset columns works."""
         conn = mssql_adapter.connect(mssql_config)
 
         try:
@@ -117,25 +110,32 @@ class TestMSSQLDatetimeOffset:
             # Verify column names
             assert columns == ["id", "action", "created_at", "modified_at"]
 
-            # Verify datetimeoffset values are returned as strings
+            # Verify datetimeoffset values are returned with correct values
+            # (as strings or datetime objects).
             # Row 1: Eastern time (-05:00)
             assert rows[0][0] == 1
             assert rows[0][1] == "INSERT"
-            assert "2024-01-15" in rows[0][2]
-            assert "10:30:00" in rows[0][2]
-            assert "-05:00" in rows[0][2]
+            created_1 = rows[0][2]
+            created_1_str = created_1 if isinstance(created_1, str) else created_1.isoformat(" ")
+            assert "2024-01-15" in created_1_str
+            assert "10:30:00" in created_1_str
+            assert "-05:00" in created_1_str
 
             # Row 2: UTC (+00:00)
             assert rows[1][0] == 2
             assert rows[1][1] == "UPDATE"
-            assert "2024-06-20" in rows[1][2]
-            assert "+00:00" in rows[1][2]
+            created_2 = rows[1][2]
+            created_2_str = created_2 if isinstance(created_2, str) else created_2.isoformat(" ")
+            assert "2024-06-20" in created_2_str
+            assert "+00:00" in created_2_str
 
             # Row 3: India time (+05:30)
             assert rows[2][0] == 3
             assert rows[2][1] == "DELETE"
-            assert "2024-12-01" in rows[2][2]
-            assert "+05:30" in rows[2][2]
+            created_3 = rows[2][2]
+            created_3_str = created_3 if isinstance(created_3, str) else created_3.isoformat(" ")
+            assert "2024-12-01" in created_3_str
+            assert "+05:30" in created_3_str
             # NULL value should be None
             assert rows[2][3] is None
 
@@ -189,11 +189,13 @@ class TestMSSQLDatetimeOffset:
             for row in rows:
                 created_at = row[3]
                 modified_at = row[4]
-                # Should be non-empty strings with date components
-                assert isinstance(created_at, str)
-                assert isinstance(modified_at, str)
-                assert len(created_at) > 10  # Should have date + time + timezone
-                assert len(modified_at) > 10
+                # Should be non-empty values (string or datetime) with date components
+                assert created_at is not None
+                assert modified_at is not None
+                created_str = created_at if isinstance(created_at, str) else created_at.isoformat(" ")
+                modified_str = modified_at if isinstance(modified_at, str) else modified_at.isoformat(" ")
+                assert len(created_str) > 10  # date + time (+ optional timezone)
+                assert len(modified_str) > 10
 
             # Clean up
             cursor.execute("DROP TABLE test_entities")

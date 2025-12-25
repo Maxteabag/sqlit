@@ -42,7 +42,7 @@ from ...db import (
     is_file_based,
     supports_ssh,
 )
-from ...db.exceptions import MissingDriverError, MissingODBCDriverError
+from ...db.exceptions import MissingDriverError
 from ...fields import (
     FieldDefinition,
     FieldGroup,
@@ -103,14 +103,6 @@ class ConnectionScreen(ModalScreen):
 
     #connection-dialog Input, #connection-dialog Select {
         margin-bottom: 0;
-    }
-
-    #btn-odbc-setup {
-        width: auto;
-        border: solid $primary;
-        background: transparent;
-        color: $primary;
-        margin-top: 1;
     }
 
     .field-container {
@@ -195,8 +187,7 @@ class ConnectionScreen(ModalScreen):
         color: $error;
     }
 
-    #dynamic-fields-general,
-    #dynamic-fields-advanced {
+    #dynamic-fields-general {
         height: auto;
     }
 
@@ -428,51 +419,6 @@ class ConnectionScreen(ModalScreen):
                             width_class = "field-flex" if field_def.width == "flex" else "field-fixed"
                             with Container(classes=width_class):
                                 yield from self._create_field_widget(field_def, group.name)
-
-    def _split_groups_by_advanced(self, groups: list[FieldGroup]) -> tuple[list[FieldGroup], list[FieldGroup]]:
-        general = []
-        advanced = []
-        for group in groups:
-            general_fields = [f for f in group.fields if not f.advanced]
-            advanced_fields = [f for f in group.fields if f.advanced]
-            if general_fields:
-                general.append(
-                    FieldGroup(
-                        name=group.name,
-                        fields=general_fields,
-                        visible_when=group.visible_when,
-                    )
-                )
-            if advanced_fields:
-                advanced.append(
-                    FieldGroup(
-                        name=group.name,
-                        fields=advanced_fields,
-                        visible_when=group.visible_when,
-                    )
-                )
-        return general, advanced
-
-    def _set_advanced_tab_enabled(self, enabled: bool) -> None:
-        try:
-            tabs = self.query_one("#connection-tabs", TabbedContent)
-            advanced_pane = self.query_one("#tab-advanced", TabPane)
-        except Exception:
-            return
-
-        advanced_pane.disabled = not enabled
-        try:
-            tab = tabs.get_tab(advanced_pane)
-            tab.disabled = not enabled
-        except Exception:
-            pass
-
-        if not enabled:
-            try:
-                if tabs.active == advanced_pane.id:
-                    tabs.active = "tab-general"
-            except Exception:
-                pass
 
     def _update_ssh_tab_enabled(self, db_type: DatabaseType) -> None:
         try:
@@ -783,18 +729,8 @@ class ConnectionScreen(ModalScreen):
 
                     with Container(id="dynamic-fields-general"):
                         field_groups = self._get_field_groups_for_type(db_type, tab="general")
-                        general_groups, _advanced_groups = self._split_groups_by_advanced(field_groups)
-                        for group in general_groups:
+                        for group in field_groups:
                             yield from self._create_field_group(group)
-
-                with TabPane("Advanced", id="tab-advanced"):
-                    with Container(id="dynamic-fields-advanced"):
-                        field_groups = self._get_field_groups_for_type(db_type, tab="general")
-                        _general_groups, advanced_groups = self._split_groups_by_advanced(field_groups)
-                        for group in advanced_groups:
-                            yield from self._create_field_group(group)
-                    with Container(id="mssql-driver-setup", classes="hidden"):
-                        yield Button("ODBC driver setup…", id="btn-odbc-setup")
 
                 with TabPane("SSH", id="tab-ssh"):
                     with Container(id="dynamic-fields-ssh"):
@@ -849,27 +785,11 @@ class ConnectionScreen(ModalScreen):
             print(f"[DEBUG] _validate_name_unique: {elapsed:.1f}ms", file=sys.stderr)
             t1 = time.perf_counter()
 
-        field_groups = self._get_field_groups_for_type(self._current_db_type, tab="general")
-        _general, advanced = self._split_groups_by_advanced(field_groups)
-        self._set_advanced_tab_enabled(bool(advanced))
-
-        if debug:
-            elapsed = (time.perf_counter() - t1) * 1000
-            print(f"[DEBUG] field_groups + advanced tab: {elapsed:.1f}ms", file=sys.stderr)
-            t1 = time.perf_counter()
-
         self._update_ssh_tab_enabled(self._current_db_type)
 
         if debug:
             elapsed = (time.perf_counter() - t1) * 1000
             print(f"[DEBUG] _update_ssh_tab_enabled: {elapsed:.1f}ms", file=sys.stderr)
-            t1 = time.perf_counter()
-
-        self._update_driver_setup_visibility(self._current_db_type)
-
-        if debug:
-            elapsed = (time.perf_counter() - t1) * 1000
-            print(f"[DEBUG] _update_driver_setup_visibility: {elapsed:.1f}ms", file=sys.stderr)
             total = (time.perf_counter() - t0) * 1000
             print(f"[DEBUG] on_mount total: {total:.1f}ms", file=sys.stderr)
 
@@ -1008,21 +928,14 @@ class ConnectionScreen(ModalScreen):
         self._field_definitions.clear()
 
         general_container = self.query_one("#dynamic-fields-general", Container)
-        advanced_container = self.query_one("#dynamic-fields-advanced", Container)
         ssh_container = self.query_one("#dynamic-fields-ssh", Container)
         general_container.remove_children()
-        advanced_container.remove_children()
         ssh_container.remove_children()
 
         field_groups = self._get_field_groups_for_type(db_type, tab="general")
-        general_groups, advanced_groups = self._split_groups_by_advanced(field_groups)
-        self._set_advanced_tab_enabled(bool(advanced_groups))
-        for group in general_groups:
+        for group in field_groups:
             for widget in self._create_field_group_widgets(group):
                 general_container.mount(widget)
-        for group in advanced_groups:
-            for widget in self._create_field_group_widgets(group):
-                advanced_container.mount(widget)
 
         ssh_groups = self._get_field_groups_for_type(db_type, tab="ssh")
         for group in ssh_groups:
@@ -1121,7 +1034,6 @@ class ConnectionScreen(ModalScreen):
                 self._update_field_visibility()
                 self._focus_first_visible_field()
                 self._update_ssh_tab_enabled(db_type)
-                self._update_driver_setup_visibility(db_type)
                 self._check_driver_availability(db_type)
             return
 
@@ -1199,9 +1111,6 @@ class ConnectionScreen(ModalScreen):
                     continue
                 if name.startswith("ssh_"):
                     continue
-                field_def = self._field_definitions.get(name)
-                if field_def and field_def.advanced:
-                    continue
                 try:
                     container = self.query_one(f"#container-{name}", Container)
                     if "hidden" not in container.classes:
@@ -1209,38 +1118,7 @@ class ConnectionScreen(ModalScreen):
                 except Exception:
                     pass
 
-        elif active_tab == "tab-advanced":
-            for name in self._field_definitions:
-                widget = self._field_widgets.get(name)
-                if widget is None:
-                    continue
-                field_def = self._field_definitions.get(name)
-                if field_def and field_def.advanced:
-                    try:
-                        container = self.query_one(f"#container-{name}", Container)
-                        if "hidden" not in container.classes:
-                            fields.append(widget)
-                    except Exception:
-                        pass
-            try:
-                container = self.query_one("#mssql-driver-setup", Container)
-                if "hidden" not in container.classes:
-                    fields.append(self.query_one("#btn-odbc-setup", Button))
-            except Exception:
-                pass
-
         return fields
-
-    def _update_driver_setup_visibility(self, db_type: DatabaseType) -> None:
-        try:
-            container = self.query_one("#mssql-driver-setup", Container)
-        except Exception:
-            return
-        adapter = self._get_adapter_for_type(db_type)
-        if adapter.driver_setup_kind:
-            container.remove_class("hidden")
-        else:
-            container.add_class("hidden")
 
     def _set_select_field_value(self, field_name: str, value: str) -> None:
         widget = self._field_widgets.get(field_name)
@@ -1252,61 +1130,6 @@ class ConnectionScreen(ModalScreen):
                 widget.highlighted = i
                 return
 
-    def _open_odbc_driver_setup(self, installed_drivers: list[str] | None = None) -> None:
-        from ...drivers import get_installed_drivers
-        from ...terminal import run_in_terminal
-        from ..screens import DriverSetupScreen, MessageScreen
-
-        try:
-            self._get_adapter_for_type(self._current_db_type).ensure_driver_available()
-        except MissingDriverError as e:
-            self._prompt_install_missing_driver(e)
-            return
-
-        installed = installed_drivers if installed_drivers is not None else get_installed_drivers()
-
-        def on_result(result: Any) -> None:
-            if not result:
-                return
-            action = result[0]
-            if action == "select":
-                driver = result[1]
-                self._set_select_field_value("driver", driver)
-                return
-            if action == "install":
-                commands = result[1]
-                res = run_in_terminal(commands)
-                if res.success:
-                    self.app.push_screen(
-                        MessageScreen(
-                            "Driver install",
-                            "Installation started in a new terminal.\n\nPlease restart to apply.",
-                        )
-                    )
-                else:
-
-                    def reopen(_: Any = None) -> None:
-                        self._open_odbc_driver_setup(installed_drivers=installed)
-
-                    self.app.push_screen(
-                        MessageScreen(
-                            "Couldn't install automatically",
-                            "Couldn't install automatically, please install manually.",
-                        ),
-                        reopen,
-                    )
-
-        self.app.push_screen(DriverSetupScreen(installed), on_result)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-odbc-setup":
-            self._open_odbc_driver_setup()
-
-    def action_open_odbc_setup(self) -> None:
-        if self._get_adapter_for_type(self._current_db_type).driver_setup_kind != "odbc":
-            return
-        self._open_odbc_driver_setup()
-
     def action_install_driver(self) -> None:
         if self._install_in_progress:
             return
@@ -1316,9 +1139,6 @@ class ConnectionScreen(ModalScreen):
             return
         if self._missing_driver_error:
             self._prompt_install_missing_driver(self._missing_driver_error)
-            return
-        if self._get_adapter_for_type(self._current_db_type).driver_setup_kind == "odbc":
-            self._open_odbc_driver_setup()
 
     def _clear_field_error(self, name: str) -> None:
         try:
@@ -1364,7 +1184,7 @@ class ConnectionScreen(ModalScreen):
         """Clear error styling from all tabs."""
         try:
             tabs_widget = self.query_one("#connection-tabs", TabbedContent)
-            for tab_id in ["tab-general", "tab-advanced", "tab-ssh"]:
+            for tab_id in ["tab-general", "tab-ssh"]:
                 try:
                     pane = self.query_one(f"#{tab_id}", TabPane)
                     tab = tabs_widget.get_tab(pane)
@@ -1394,13 +1214,8 @@ class ConnectionScreen(ModalScreen):
                 self._set_tab_error("tab-ssh")
                 self.validation_state.add_tab_error("tab-ssh")
             elif field_name in self._field_definitions:
-                field_def = self._field_definitions[field_name]
-                if field_def.advanced:
-                    self._set_tab_error("tab-advanced")
-                    self.validation_state.add_tab_error("tab-advanced")
-                else:
-                    self._set_tab_error("tab-general")
-                    self.validation_state.add_tab_error("tab-general")
+                self._set_tab_error("tab-general")
+                self.validation_state.add_tab_error("tab-general")
             else:
                 self._set_tab_error("tab-general")
                 self.validation_state.add_tab_error("tab-general")
@@ -1439,8 +1254,6 @@ class ConnectionScreen(ModalScreen):
 
         def is_visible(field_def: FieldDefinition) -> bool:
             if field_def.visible_when and not bool(field_def.visible_when(values)):
-                return False
-            if field_def.advanced and not self._show_advanced:
                 return False
             return True
 
@@ -1485,8 +1298,6 @@ class ConnectionScreen(ModalScreen):
             if not field_def:
                 continue
             if field_def.visible_when and not bool(field_def.visible_when(values)):
-                continue
-            if field_def.advanced and not self._show_advanced:
                 continue
             widget = self._field_widgets.get(field_name)
             if widget is None:
@@ -1550,17 +1361,6 @@ class ConnectionScreen(ModalScreen):
 
         if active_tab == "tab-general":
             self.query_one("#conn-name", Input).focus()
-        elif active_tab == "tab-advanced":
-            for name, widget in self._field_widgets.items():
-                field_def = self._field_definitions.get(name)
-                if field_def and field_def.advanced:
-                    try:
-                        container = self.query_one(f"#container-{name}", Container)
-                        if "hidden" not in container.classes:
-                            widget.focus()
-                            return
-                    except Exception:
-                        pass
         elif active_tab == "tab-ssh":
             ssh_widget = self._field_widgets.get("ssh_enabled")
             if ssh_widget:
@@ -1766,9 +1566,6 @@ class ConnectionScreen(ModalScreen):
             if isinstance(error, MissingDriverError):
                 self._last_test_ok = False
                 self._prompt_install_missing_driver(error)
-            elif isinstance(error, MissingODBCDriverError):
-                self._last_test_ok = False
-                self._open_odbc_driver_setup(error.installed_drivers)
             elif isinstance(error, (ModuleNotFoundError, ImportError)):
                 hint = self._get_package_install_hint(config.db_type)
                 if hint:
@@ -1862,12 +1659,3 @@ class ConnectionScreen(ModalScreen):
         if self._install_in_progress:
             return
         self.dismiss(None)
-
-    @property
-    def _show_advanced(self) -> bool:
-        """Check if advanced tab is currently active."""
-        try:
-            tabs = self.query_one("#connection-tabs", TabbedContent)
-            return tabs.active == "tab-advanced"
-        except Exception:
-            return False

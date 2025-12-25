@@ -10,8 +10,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
-from ..drivers import SUPPORTED_DRIVERS
-
 
 class FieldType(Enum):
     TEXT = "text"
@@ -201,10 +199,6 @@ def _get_ssh_fields() -> tuple[SchemaField, ...]:
 SSH_FIELDS = _get_ssh_fields()
 
 
-def _get_mssql_driver_options() -> tuple[SelectOption, ...]:
-    return tuple(SelectOption(d, d) for d in SUPPORTED_DRIVERS)
-
-
 def _get_mssql_auth_options() -> tuple[SelectOption, ...]:
     return (
         SelectOption("sql", "SQL Server Authentication"),
@@ -234,14 +228,6 @@ MSSQL_SCHEMA = ConnectionSchema(
         ),
         _port_field("1433"),
         _database_field(),
-        SchemaField(
-            name="driver",
-            label="Driver",
-            field_type=FieldType.SELECT,
-            options=_get_mssql_driver_options(),
-            default=SUPPORTED_DRIVERS[0],
-            advanced=True,
-        ),
         SchemaField(
             name="auth_type",
             label="Authentication",
