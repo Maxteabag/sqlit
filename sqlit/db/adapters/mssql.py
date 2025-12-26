@@ -161,6 +161,10 @@ class SQLServerAdapter(DatabaseAdapter):
         conn_str = self._build_connection_string(config)
         conn = mssql_python.connect(conn_str)
 
+        # Store config and driver for potential reconnection to different databases
+        conn._sqlit_config = config
+        conn._sqlit_driver = mssql_python
+
         return conn
 
     def get_databases(self, conn: Any) -> list[str]:
@@ -169,174 +173,154 @@ class SQLServerAdapter(DatabaseAdapter):
         cursor.execute("SELECT name FROM sys.databases ORDER BY name")
         return [row[0] for row in cursor.fetchall()]
 
+    def _get_cursor_for_database(self, conn: Any, database: str | None) -> Any:
+        """Get a cursor for the specified database.
+
+        For regular SQL Server: uses USE [database] to switch context.
+        For Azure SQL Database: creates a new connection to the target database
+        (since USE is not supported).
+
+        Returns a cursor ready to execute queries against the target database.
+        """
+        cursor = conn.cursor()
+
+        if not database:
+            return cursor
+
+        # First try USE (works on regular SQL Server, faster than reconnecting)
+        try:
+            cursor.execute(f"USE [{database}]")
+            return cursor
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "use statement is not supported" not in error_msg and "switch between databases" not in error_msg:
+                # Some other error - re-raise
+                raise
+
+        # Azure SQL Database: USE not supported, need a new connection
+        # Check if we have the config stored for reconnection
+        config = getattr(conn, "_sqlit_config", None)
+        driver = getattr(conn, "_sqlit_driver", None)
+
+        if config is None or driver is None:
+            # No config available, can't reconnect - return original cursor
+            # (will query the connected database instead)
+            return cursor
+
+        # Create a new connection with the target database
+        from dataclasses import replace
+        new_config = replace(config, database=database)
+        new_conn_str = self._build_connection_string(new_config)
+
+        try:
+            new_conn = driver.connect(new_conn_str)
+            new_cursor = new_conn.cursor()
+            # Store reference to connection on cursor so it doesn't get garbage collected
+            new_cursor._sqlit_temp_conn = new_conn
+            return new_cursor
+        except Exception:
+            # Failed to connect to target database, fall back to original
+            return cursor
+
     def get_tables(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of tables with schema from SQL Server."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                f"SELECT TABLE_SCHEMA, TABLE_NAME FROM [{database}].INFORMATION_SCHEMA.TABLES "
-                f"WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME"
-            )
-        else:
-            cursor.execute(
-                "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
-                "WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME"
-            )
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME"
+        )
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
     def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of views with schema from SQL Server."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                f"SELECT TABLE_SCHEMA, TABLE_NAME FROM [{database}].INFORMATION_SCHEMA.VIEWS "
-                f"ORDER BY TABLE_SCHEMA, TABLE_NAME"
-            )
-        else:
-            cursor.execute(
-                "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS " "ORDER BY TABLE_SCHEMA, TABLE_NAME"
-            )
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS "
+            "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+        )
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
     def get_columns(
         self, conn: Any, table: str, database: str | None = None, schema: str | None = None
     ) -> list[ColumnInfo]:
         """Get columns for a table from SQL Server."""
-        cursor = conn.cursor()
+        cursor = self._get_cursor_for_database(conn, database)
         schema = schema or "dbo"
 
         # Get primary key columns
-        if database:
-            cursor.execute(
-                f"SELECT kcu.COLUMN_NAME "
-                f"FROM [{database}].INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
-                f"JOIN [{database}].INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
-                f"  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
-                f"  AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA "
-                f"WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' "
-                f"AND tc.TABLE_SCHEMA = ? AND tc.TABLE_NAME = ?",
-                (schema, table),
-            )
-        else:
-            cursor.execute(
-                "SELECT kcu.COLUMN_NAME "
-                "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
-                "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
-                "  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
-                "  AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA "
-                "WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' "
-                "AND tc.TABLE_SCHEMA = ? AND tc.TABLE_NAME = ?",
-                (schema, table),
-            )
+        cursor.execute(
+            "SELECT kcu.COLUMN_NAME "
+            "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
+            "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
+            "  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
+            "  AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA "
+            "WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' "
+            "AND tc.TABLE_SCHEMA = ? AND tc.TABLE_NAME = ?",
+            (schema, table),
+        )
         pk_columns = {row[0] for row in cursor.fetchall()}
 
         # Get all columns
-        if database:
-            cursor.execute(
-                f"SELECT COLUMN_NAME, DATA_TYPE FROM [{database}].INFORMATION_SCHEMA.COLUMNS "
-                f"WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
-                (schema, table),
-            )
-        else:
-            cursor.execute(
-                "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
-                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
-                (schema, table),
-            )
+        cursor.execute(
+            "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+            (schema, table),
+        )
         return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in cursor.fetchall()]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures from SQL Server."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                f"SELECT ROUTINE_NAME FROM [{database}].INFORMATION_SCHEMA.ROUTINES "
-                f"WHERE ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME"
-            )
-        else:
-            cursor.execute(
-                "SELECT ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES "
-                "WHERE ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME"
-            )
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES "
+            "WHERE ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME"
+        )
         return [row[0] for row in cursor.fetchall()]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes from SQL Server."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                f"SELECT i.name, t.name, i.is_unique "
-                f"FROM [{database}].sys.indexes i "
-                f"JOIN [{database}].sys.tables t ON i.object_id = t.object_id "
-                f"WHERE i.name IS NOT NULL AND i.type > 0 AND i.is_primary_key = 0 "
-                f"ORDER BY t.name, i.name"
-            )
-        else:
-            cursor.execute(
-                "SELECT i.name, t.name, i.is_unique "
-                "FROM sys.indexes i "
-                "JOIN sys.tables t ON i.object_id = t.object_id "
-                "WHERE i.name IS NOT NULL AND i.type > 0 AND i.is_primary_key = 0 "
-                "ORDER BY t.name, i.name"
-            )
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT i.name, t.name, i.is_unique "
+            "FROM sys.indexes i "
+            "JOIN sys.tables t ON i.object_id = t.object_id "
+            "WHERE i.name IS NOT NULL AND i.type > 0 AND i.is_primary_key = 0 "
+            "ORDER BY t.name, i.name"
+        )
         return [IndexInfo(name=row[0], table_name=row[1], is_unique=row[2]) for row in cursor.fetchall()]
 
     def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
         """Get triggers from SQL Server."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                f"SELECT tr.name, OBJECT_NAME(tr.parent_id, DB_ID('{database}')) "
-                f"FROM [{database}].sys.triggers tr "
-                f"WHERE tr.is_ms_shipped = 0 AND tr.parent_id > 0 "
-                f"ORDER BY OBJECT_NAME(tr.parent_id, DB_ID('{database}')), tr.name"
-            )
-        else:
-            cursor.execute(
-                "SELECT tr.name, OBJECT_NAME(tr.parent_id) "
-                "FROM sys.triggers tr "
-                "WHERE tr.is_ms_shipped = 0 AND tr.parent_id > 0 "
-                "ORDER BY OBJECT_NAME(tr.parent_id), tr.name"
-            )
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT tr.name, OBJECT_NAME(tr.parent_id) "
+            "FROM sys.triggers tr "
+            "WHERE tr.is_ms_shipped = 0 AND tr.parent_id > 0 "
+            "ORDER BY OBJECT_NAME(tr.parent_id), tr.name"
+        )
         return [TriggerInfo(name=row[0], table_name=row[1] or "") for row in cursor.fetchall()]
 
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         """Get sequences from SQL Server (2012+)."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(f"SELECT name FROM [{database}].sys.sequences ORDER BY name")
-        else:
-            cursor.execute("SELECT name FROM sys.sequences ORDER BY name")
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute("SELECT name FROM sys.sequences ORDER BY name")
         return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
 
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None
     ) -> dict[str, Any]:
         """Get detailed information about a SQL Server index."""
-        cursor = conn.cursor()
-        # Get index info and columns
-        if database:
-            cursor.execute(
-                f"SELECT i.is_unique, i.type_desc, c.name "
-                f"FROM [{database}].sys.indexes i "
-                f"JOIN [{database}].sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id "
-                f"JOIN [{database}].sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id "
-                f"JOIN [{database}].sys.tables t ON i.object_id = t.object_id "
-                f"WHERE i.name = ? AND t.name = ? "
-                f"ORDER BY ic.key_ordinal",
-                (index_name, table_name),
-            )
-        else:
-            cursor.execute(
-                "SELECT i.is_unique, i.type_desc, c.name "
-                "FROM sys.indexes i "
-                "JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id "
-                "JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id "
-                "JOIN sys.tables t ON i.object_id = t.object_id "
-                "WHERE i.name = ? AND t.name = ? "
-                "ORDER BY ic.key_ordinal",
-                (index_name, table_name),
-            )
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT i.is_unique, i.type_desc, c.name "
+            "FROM sys.indexes i "
+            "JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id "
+            "JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id "
+            "JOIN sys.tables t ON i.object_id = t.object_id "
+            "WHERE i.name = ? AND t.name = ? "
+            "ORDER BY ic.key_ordinal",
+            (index_name, table_name),
+        )
         rows = cursor.fetchall()
         is_unique = rows[0][0] if rows else False
         index_type = rows[0][1] if rows else "NONCLUSTERED"
@@ -355,28 +339,16 @@ class SQLServerAdapter(DatabaseAdapter):
         self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
     ) -> dict[str, Any]:
         """Get detailed information about a SQL Server trigger."""
-        cursor = conn.cursor()
-        # Get trigger definition using OBJECT_DEFINITION
-        if database:
-            cursor.execute(
-                f"SELECT OBJECT_DEFINITION(tr.object_id), "
-                f"  CASE WHEN tr.is_instead_of_trigger = 1 THEN 'INSTEAD OF' "
-                f"       ELSE 'AFTER' END as timing "
-                f"FROM [{database}].sys.triggers tr "
-                f"JOIN [{database}].sys.tables t ON tr.parent_id = t.object_id "
-                f"WHERE tr.name = ? AND t.name = ?",
-                (trigger_name, table_name),
-            )
-        else:
-            cursor.execute(
-                "SELECT OBJECT_DEFINITION(tr.object_id), "
-                "  CASE WHEN tr.is_instead_of_trigger = 1 THEN 'INSTEAD OF' "
-                "       ELSE 'AFTER' END as timing "
-                "FROM sys.triggers tr "
-                "JOIN sys.tables t ON tr.parent_id = t.object_id "
-                "WHERE tr.name = ? AND t.name = ?",
-                (trigger_name, table_name),
-            )
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT OBJECT_DEFINITION(tr.object_id), "
+            "  CASE WHEN tr.is_instead_of_trigger = 1 THEN 'INSTEAD OF' "
+            "       ELSE 'AFTER' END as timing "
+            "FROM sys.triggers tr "
+            "JOIN sys.tables t ON tr.parent_id = t.object_id "
+            "WHERE tr.name = ? AND t.name = ?",
+            (trigger_name, table_name),
+        )
         row = cursor.fetchone()
         if row:
             definition = row[0]
@@ -412,22 +384,13 @@ class SQLServerAdapter(DatabaseAdapter):
         self, conn: Any, sequence_name: str, database: str | None = None
     ) -> dict[str, Any]:
         """Get detailed information about a SQL Server sequence."""
-        cursor = conn.cursor()
-        # Cast sql_variant columns to BIGINT to avoid driver type conversion errors
-        if database:
-            cursor.execute(
-                f"SELECT CAST(start_value AS BIGINT), CAST(increment AS BIGINT), "
-                f"CAST(minimum_value AS BIGINT), CAST(maximum_value AS BIGINT), is_cycling "
-                f"FROM [{database}].sys.sequences WHERE name = ?",
-                (sequence_name,),
-            )
-        else:
-            cursor.execute(
-                "SELECT CAST(start_value AS BIGINT), CAST(increment AS BIGINT), "
-                "CAST(minimum_value AS BIGINT), CAST(maximum_value AS BIGINT), is_cycling "
-                "FROM sys.sequences WHERE name = ?",
-                (sequence_name,),
-            )
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT CAST(start_value AS BIGINT), CAST(increment AS BIGINT), "
+            "CAST(minimum_value AS BIGINT), CAST(maximum_value AS BIGINT), is_cycling "
+            "FROM sys.sequences WHERE name = ?",
+            (sequence_name,),
+        )
         row = cursor.fetchone()
         if row:
             return {
