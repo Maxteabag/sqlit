@@ -158,6 +158,10 @@ def get_completions(
     if is_inside_string(before_cursor):
         return []
 
+    # Don't suggest if there's no SQL content yet (just whitespace)
+    if not before_cursor.strip():
+        return []
+
     # Try DDL-specific handlers first (they return completions directly)
     for ddl_handler in [
         get_create_table_completions,
@@ -250,6 +254,16 @@ def get_completions(
 
     # ANY/ALL/SOME ( → suggest SELECT for subquery
     if re.search(r"\b(ANY|ALL|SOME)\s*\(\s*\w*$", clean_before, re.IGNORECASE):
+        return fuzzy_match(current_word, ["SELECT"])
+
+    # IN ( or NOT IN ( → suggest SELECT for subquery
+    if re.search(r"\bNOT\s+IN\s*\(\s*\w*$", clean_before, re.IGNORECASE):
+        return fuzzy_match(current_word, ["SELECT"])
+    if re.search(r"\bIN\s*\(\s*\w*$", clean_before, re.IGNORECASE):
+        return fuzzy_match(current_word, ["SELECT"])
+
+    # EXISTS ( or NOT EXISTS ( → suggest SELECT for subquery
+    if re.search(r"\b(NOT\s+)?EXISTS\s*\(\s*\w*$", clean_before, re.IGNORECASE):
         return fuzzy_match(current_word, ["SELECT"])
 
     # GROUPING SETS/CUBE/ROLLUP ( → suggest columns

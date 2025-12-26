@@ -378,15 +378,15 @@ class TestEdgeCases:
     """Tests for edge cases and potential issues."""
 
     def test_empty_sql(self):
-        """Should handle empty SQL."""
+        """Should return nothing for empty SQL (no context yet)."""
         completions = get_completions("", 0, ["users"], {"users": ["id"]})
-        assert len(completions) > 0
+        assert len(completions) == 0
 
     def test_cursor_at_start(self):
-        """Should handle cursor at start."""
+        """Should return nothing when cursor is at start (no context yet)."""
         sql = "SELECT * FROM users"
         completions = get_completions(sql, 0, ["users"], {"users": ["id"]})
-        assert len(completions) > 0
+        assert len(completions) == 0
 
     def test_cursor_in_middle(self):
         """Should handle cursor in middle of query."""
