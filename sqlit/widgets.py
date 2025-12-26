@@ -6,7 +6,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, VerticalScroll
 from textual.strip import Strip
 from textual.widgets import Static
 from textual_fastdatatable import DataTable as FastDataTable
@@ -296,8 +296,8 @@ TreeFilterInput = FilterInput
 ResultsFilterInput = FilterInput
 
 
-class AutocompleteDropdown(Static):
-    """Dropdown widget for SQL autocomplete suggestions."""
+class AutocompleteDropdown(VerticalScroll):
+    """Dropdown widget for SQL autocomplete suggestions with scrollbar."""
 
     DEFAULT_CSS = """
     AutocompleteDropdown {
@@ -306,11 +306,12 @@ class AutocompleteDropdown(Static):
         min-width: 20;
         max-width: 50;
         height: auto;
-        max-height: 10;
+        max-height: 12;
         background: $surface;
         border: round $border;
         padding: 0;
         display: none;
+        scrollbar-size: 1 1;
     }
 
     AutocompleteDropdown.visible {
@@ -318,6 +319,8 @@ class AutocompleteDropdown(Static):
     }
 
     AutocompleteDropdown .autocomplete-item {
+        width: 100%;
+        height: 1;
         padding: 0 1;
     }
 
@@ -328,7 +331,7 @@ class AutocompleteDropdown(Static):
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__("", *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.items: list[str] = []
         self.filtered_items: list[str] = []
         self.selected_index: int = 0
@@ -342,7 +345,7 @@ class AutocompleteDropdown(Static):
         if self.filter_text:
             self.filtered_items = [item for item in items if item.lower().startswith(self.filter_text)]
         else:
-            self.filtered_items = items[:20]
+            self.filtered_items = items[:50]  # Show more items with scrolling
 
         self.selected_index = 0
         self._rebuild()
@@ -351,8 +354,25 @@ class AutocompleteDropdown(Static):
         """Move selection up or down."""
         if not self.filtered_items:
             return
+        old_index = self.selected_index
         self.selected_index = (self.selected_index + delta) % len(self.filtered_items)
-        self._rebuild()
+        self._update_selection(old_index, self.selected_index)
+        self._scroll_to_selected()
+
+    def _update_selection(self, old_index: int, new_index: int) -> None:
+        """Update selection by toggling CSS classes (fast)."""
+        children = list(self.children)
+        if old_index < len(children):
+            children[old_index].remove_class("selected")
+        if new_index < len(children):
+            children[new_index].add_class("selected")
+
+    def _scroll_to_selected(self) -> None:
+        """Scroll to ensure selected item is visible."""
+        if not self.filtered_items:
+            return
+        # Each item is 1 line high, scroll to show selected
+        self.scroll_to(y=max(0, self.selected_index - 5), animate=False)
 
     def get_selected(self) -> str | None:
         """Get the currently selected item."""
@@ -361,18 +381,20 @@ class AutocompleteDropdown(Static):
         return None
 
     def _rebuild(self) -> None:
-        """Rebuild the dropdown content."""
+        """Rebuild the dropdown content (only called when items change)."""
+        # Remove all existing children
+        self.remove_children()
+
         if not self.filtered_items:
-            self.update("[dim]No matches[/]")
+            self.mount(Static("[dim]No matches[/]"))
             return
 
-        lines = []
-        for i, item in enumerate(self.filtered_items[:10]):
+        # Create item widgets
+        for i, item in enumerate(self.filtered_items):
+            label = Static(f" {item} ", classes="autocomplete-item")
             if i == self.selected_index:
-                lines.append(f"[reverse] {item} [/]")
-            else:
-                lines.append(f" {item} ")
-        self.update("\n".join(lines))
+                label.add_class("selected")
+            self.mount(label)
 
     def show(self) -> None:
         """Show the dropdown."""

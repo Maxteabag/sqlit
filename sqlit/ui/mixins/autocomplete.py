@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from textual.timer import Timer
@@ -9,6 +10,15 @@ from textual.widgets import TextArea
 from textual.worker import Worker
 
 from ..protocols import AppProtocol
+from ...sql_completion import (
+    SQL_OPERATORS,
+    SuggestionType,
+    extract_table_refs,
+    fuzzy_match,
+    get_all_functions,
+    get_all_keywords,
+    get_context,
+)
 
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -27,62 +37,117 @@ class AutocompleteMixin:
             return session.executor.submit(fn, *args, **kwargs).result()
         return fn(*args, **kwargs)
 
-    def _get_word_before_cursor(self, text: str, cursor_pos: int) -> tuple[str, str]:
-        """Get the current word being typed and the context keyword before it."""
-        if cursor_pos <= 0 or cursor_pos > len(text):
-            return "", ""
-
+    def _get_current_word(self, text: str, cursor_pos: int) -> str:
+        """Get the word currently being typed at cursor position."""
         before_cursor = text[:cursor_pos]
 
-        word_start = cursor_pos
-        while word_start > 0 and before_cursor[word_start - 1] not in " \t\n,()[]":
-            word_start -= 1
-        current_word = before_cursor[word_start:cursor_pos]
+        # Handle table.column case - get just the part after dot
+        if "." in before_cursor:
+            dot_match = re.search(r"\.(\w*)$", before_cursor)
+            if dot_match:
+                return dot_match.group(1)
 
-        if "." in current_word:
-            parts = current_word.rsplit(".", 1)
-            table_name = parts[0].strip("[]")
-            return parts[1] if len(parts) > 1 else "", f"column:{table_name}"
+        # Get word before cursor
+        match = re.search(r"(\w*)$", before_cursor)
+        if match:
+            return match.group(1)
+        return ""
 
-        context_text = before_cursor[:word_start].upper().strip()
+    def _build_alias_map(self: AppProtocol, text: str) -> dict[str, str]:
+        """Build a map of alias -> table name from the SQL text."""
+        table_refs = extract_table_refs(text)
+        known_tables = set(t.lower() for t in self._schema_cache.get("tables", []))
+        known_tables.update(t.lower() for t in self._schema_cache.get("views", []))
 
-        table_keywords = ["FROM", "JOIN", "INTO", "UPDATE", "TABLE"]
-        for kw in table_keywords:
-            if context_text.endswith(kw):
-                return current_word, "table"
+        alias_map: dict[str, str] = {}
+        for ref in table_refs:
+            if ref.alias and ref.name.lower() in known_tables:
+                alias_map[ref.alias.lower()] = ref.name
+        return alias_map
 
-        if context_text.endswith("EXEC") or context_text.endswith("EXECUTE"):
-            return current_word, "procedure"
+    def _get_autocomplete_suggestions(self: AppProtocol, text: str, cursor_pos: int) -> list[str]:
+        """Get autocomplete suggestions using the new SQL completion engine."""
+        suggestions = get_context(text, cursor_pos)
+        if not suggestions:
+            return []
 
-        if context_text.endswith("SELECT") or context_text.endswith(","):
-            return current_word, "column_or_table"
+        current_word = self._get_current_word(text, cursor_pos)
+        results: list[str] = []
 
-        return current_word, ""
+        # Build alias map for column lookups
+        alias_map = self._build_alias_map(text)
 
-    def _get_autocomplete_suggestions(self: AppProtocol, word: str, context: str) -> list[str]:
-        """Get autocomplete suggestions based on context."""
-        suggestions = []
+        # Get table refs for column scoping
+        table_refs = extract_table_refs(text)
 
-        if context == "table":
-            suggestions = self._schema_cache["tables"] + self._schema_cache["views"]
-        elif context == "procedure":
-            suggestions = self._schema_cache["procedures"]
-        elif context.startswith("column:"):
-            table_name = context.split(":", 1)[1].lower()
-            if table_name not in self._schema_cache["columns"]:
-                self._load_columns_for_table(table_name)
-            suggestions = self._schema_cache["columns"].get(table_name, [])
-        elif context == "column_or_table":
-            all_columns = []
-            for cols in self._schema_cache["columns"].values():
-                all_columns.extend(cols)
-            suggestions = list(set(all_columns)) + self._schema_cache["tables"]
+        for suggestion in suggestions:
+            if suggestion.type == SuggestionType.TABLE:
+                # Suggest tables and views
+                results.extend(self._schema_cache.get("tables", []))
+                results.extend(self._schema_cache.get("views", []))
 
-        if word:
-            word_lower = word.lower()
-            suggestions = [s for s in suggestions if s.lower().startswith(word_lower)]
+            elif suggestion.type == SuggestionType.COLUMN:
+                # Suggest columns from all tables in scope
+                loading = getattr(self, "_columns_loading", set())
+                any_loading = False
 
-        return suggestions[:50]
+                for ref in table_refs:
+                    table_key = ref.name.lower()
+                    if table_key in self._schema_cache.get("columns", {}):
+                        results.extend(self._schema_cache["columns"][table_key])
+                    elif table_key in loading:
+                        any_loading = True
+                    else:
+                        self._load_columns_for_table(table_key)
+                        any_loading = True
+
+                if any_loading and not results:
+                    results.append("Loading...")
+
+            elif suggestion.type == SuggestionType.ALIAS_COLUMN:
+                # Suggest columns for specific table/alias
+                scope = suggestion.table_scope
+                if scope:
+                    scope_lower = scope.lower()
+                    table_key = scope_lower
+
+                    # Check if it's an alias
+                    if scope_lower in alias_map:
+                        table_key = alias_map[scope_lower].lower()
+
+                    # Check if columns are in cache
+                    if table_key in self._schema_cache.get("columns", {}):
+                        results.extend(self._schema_cache["columns"][table_key])
+                    else:
+                        # Check if currently loading
+                        loading = getattr(self, "_columns_loading", set())
+                        if table_key in loading or scope_lower in loading:
+                            results.append("Loading...")
+                        else:
+                            # Start loading columns
+                            self._load_columns_for_table(table_key)
+                            results.append("Loading...")
+
+            elif suggestion.type == SuggestionType.PROCEDURE:
+                results.extend(self._schema_cache.get("procedures", []))
+
+            elif suggestion.type == SuggestionType.KEYWORD:
+                results.extend(get_all_keywords())
+                results.extend(get_all_functions())
+
+            elif suggestion.type == SuggestionType.OPERATOR:
+                results.extend(SQL_OPERATORS)
+
+        # Remove duplicates while preserving order
+        seen: set[str] = set()
+        unique_results: list[str] = []
+        for r in results:
+            if r.lower() not in seen:
+                seen.add(r.lower())
+                unique_results.append(r)
+
+        # Apply fuzzy matching
+        return fuzzy_match(current_word, unique_results)
 
     def _load_columns_for_table(self: AppProtocol, table_name: str) -> None:
         """Lazy load columns for a specific table (async via worker)."""
@@ -132,6 +197,18 @@ class AutocompleteMixin:
         self._columns_loading.discard(table_name)
         self._schema_cache["columns"][table_name] = column_names
         self._schema_cache["columns"][actual_table_name.lower()] = column_names
+
+        # Refresh autocomplete if visible (replaces "Loading..." with actual columns)
+        if self._autocomplete_visible:
+            text = self.query_input.text
+            cursor_loc = self.query_input.cursor_location
+            cursor_pos = self._location_to_offset(text, cursor_loc)
+            current_word = self._get_current_word(text, cursor_pos)
+            suggestions = self._get_autocomplete_suggestions(text, cursor_pos)
+            if suggestions:
+                self._show_autocomplete(suggestions, current_word)
+            else:
+                self._hide_autocomplete()
 
     def _show_autocomplete(self: AppProtocol, suggestions: list[str], filter_text: str) -> None:
         """Show the autocomplete dropdown with suggestions."""
@@ -213,6 +290,9 @@ class AutocompleteMixin:
         if event.text_area.id != "query-input":
             return
 
+        # Mark that text just changed so selection_changed knows to ignore cursor movement
+        self._text_just_changed = True
+
         if self._autocomplete_just_applied:
             self._autocomplete_just_applied = False
             self._hide_autocomplete()
@@ -229,19 +309,21 @@ class AutocompleteMixin:
         cursor_loc = event.text_area.cursor_location
         cursor_pos = self._location_to_offset(text, cursor_loc)
 
-        word, context = self._get_word_before_cursor(text, cursor_pos)
+        # Get current word for display purposes
+        current_word = self._get_current_word(text, cursor_pos)
 
-        if context:
-            is_column_context = context.startswith("column:")
-            if is_column_context or len(word) >= 1:
-                suggestions = self._get_autocomplete_suggestions(word, context)
-                if suggestions:
-                    self._show_autocomplete(suggestions, word)
-                else:
-                    self._hide_autocomplete()
-            else:
-                self._hide_autocomplete()
+        # Get suggestions using the new SQL completion engine
+        suggestions = self._get_autocomplete_suggestions(text, cursor_pos)
+
+        if suggestions:
+            self._show_autocomplete(suggestions, current_word)
         else:
+            self._hide_autocomplete()
+
+    def on_descendant_blur(self: AppProtocol, event: Any) -> None:
+        """Hide autocomplete when query input loses focus."""
+        # Check if the blur is from the query input
+        if hasattr(event, "widget") and getattr(event.widget, "id", None) == "query-input":
             self._hide_autocomplete()
 
     def action_autocomplete_next(self: AppProtocol) -> None:
@@ -256,6 +338,22 @@ class AutocompleteMixin:
 
     def action_autocomplete_close(self: AppProtocol) -> None:
         """Close autocomplete dropdown without exiting insert mode."""
+        self._hide_autocomplete()
+
+    def on_text_area_selection_changed(self: AppProtocol, event: Any) -> None:
+        """Hide autocomplete when cursor moves without text change."""
+        if not self._autocomplete_visible:
+            return
+
+        if getattr(event, "text_area", None) and getattr(event.text_area, "id", None) != "query-input":
+            return
+
+        # If text just changed, this cursor movement is from typing - ignore it
+        if getattr(self, "_text_just_changed", False):
+            self._text_just_changed = False
+            return
+
+        # Cursor moved without text change (arrow keys, click, etc.) - hide autocomplete
         self._hide_autocomplete()
 
     def on_key(self: AppProtocol, event: Any) -> None:
@@ -348,9 +446,10 @@ class AutocompleteMixin:
         self.notify("Schema indexing cancelled")
 
     async def _load_schema_cache_async(self: AppProtocol) -> None:
-        """Load database schema asynchronously in a worker thread.
+        """Load database schema asynchronously.
 
-        Only loads tables, views, and procedures. Columns are loaded lazily.
+        Only loads tables, views, and procedures.
+        Columns are lazy-loaded on demand when user types `table.`
         """
         import asyncio
 
@@ -377,7 +476,6 @@ class AutocompleteMixin:
             return await asyncio.to_thread(fn, *args, **kwargs)
 
         try:
-            # Get database list in thread
             databases: list[str | None]
             if adapter.supports_multiple_databases:
                 db = config.database
@@ -392,12 +490,11 @@ class AutocompleteMixin:
 
             for database in databases:
                 try:
-                    # Get tables in thread (NO columns - lazy loaded)
+                    # Get tables
                     tables = await run_db_call(adapter.get_tables, connection, database)
                     for schema_name, table_name in tables:
                         display_name = adapter.format_table_name(schema_name, table_name)
                         schema_cache["tables"].append(display_name)
-                        # Store metadata for lazy column loading
                         table_metadata[display_name.lower()] = (schema_name, table_name, database)
                         table_metadata[table_name.lower()] = (schema_name, table_name, database)
                         if database:
@@ -405,12 +502,11 @@ class AutocompleteMixin:
                             schema_cache["tables"].append(full_name)
                             table_metadata[full_name.lower()] = (schema_name, table_name, database)
 
-                    # Get views in thread (NO columns - lazy loaded)
+                    # Get views
                     views = await run_db_call(adapter.get_views, connection, database)
                     for schema_name, view_name in views:
                         display_name = adapter.format_table_name(schema_name, view_name)
                         schema_cache["views"].append(display_name)
-                        # Store metadata for lazy column loading
                         table_metadata[display_name.lower()] = (schema_name, view_name, database)
                         table_metadata[view_name.lower()] = (schema_name, view_name, database)
                         if database:
@@ -418,6 +514,7 @@ class AutocompleteMixin:
                             schema_cache["views"].append(full_name)
                             table_metadata[full_name.lower()] = (schema_name, view_name, database)
 
+                    # Get procedures
                     if adapter.supports_stored_procedures:
                         procedures = await run_db_call(adapter.get_procedures, connection, database)
                         schema_cache["procedures"].extend(procedures)
@@ -430,7 +527,7 @@ class AutocompleteMixin:
             schema_cache["views"] = list(dict.fromkeys(schema_cache["views"]))
             schema_cache["procedures"] = list(dict.fromkeys(schema_cache["procedures"]))
 
-            # Update cache (we're back on main thread after await)
+            # Update cache - columns will be lazy-loaded when needed
             self._update_schema_cache(schema_cache, table_metadata)
 
         except Exception as e:
