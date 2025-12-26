@@ -17,8 +17,7 @@ if TYPE_CHECKING:
 def _needs_db_password(config: ConnectionConfig) -> bool:
     """Check if the connection needs a database password prompt.
 
-    Returns True if password is None (not set) and the database type uses passwords.
-    Note: Empty string "" means explicitly set to empty (no prompt needed).
+    Returns True if password is None or empty and the database type uses passwords.
     """
     from ...db.providers import is_file_based
 
@@ -26,15 +25,14 @@ def _needs_db_password(config: ConnectionConfig) -> bool:
     if is_file_based(config.db_type):
         return False
 
-    # Check if password is not set (None means prompt needed)
-    return config.password is None
+    # Check if password is not set or empty (prompt needed)
+    return not config.password
 
 
 def _needs_ssh_password(config: ConnectionConfig) -> bool:
     """Check if the connection needs an SSH password prompt.
 
-    Returns True if SSH is enabled with password auth and password is None (not set).
-    Note: Empty string "" means explicitly set to empty (no prompt needed).
+    Returns True if SSH is enabled with password auth and password is None or empty.
     """
     if not config.ssh_enabled:
         return False
@@ -42,7 +40,7 @@ def _needs_ssh_password(config: ConnectionConfig) -> bool:
     if config.ssh_auth_type != "password":
         return False
 
-    return config.ssh_password is None
+    return not config.ssh_password
 
 
 class ConnectionMixin:
