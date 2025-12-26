@@ -419,10 +419,13 @@ class SQLServerAdapter(DatabaseAdapter):
         return f"[{escaped}]"
 
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
-        """Build SELECT TOP query for SQL Server."""
+        """Build SELECT TOP query for SQL Server.
+
+        Note: Does not include database prefix as Azure SQL Database doesn't
+        support cross-database references. The caller should ensure the
+        connection is to the correct database.
+        """
         schema = schema or "dbo"
-        if database:
-            return f"SELECT TOP {limit} * FROM [{database}].[{schema}].[{table}]"
         return f"SELECT TOP {limit} * FROM [{schema}].[{table}]"
 
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:

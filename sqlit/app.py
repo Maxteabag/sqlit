@@ -388,6 +388,7 @@ class SSMSTUI(
         self._state_machine = UIStateMachine()
         self._session_factory: Any | None = None
         self._last_query_table: dict | None = None
+        self._query_target_database: str | None = None  # Target DB for auto-generated queries
         # Omarchy theme sync state
         self._omarchy_theme_watcher: Timer | None = None
         self._omarchy_last_theme_name: str | None = None

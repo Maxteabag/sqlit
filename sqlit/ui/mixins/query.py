@@ -137,6 +137,14 @@ class QueryMixin:
             self._stop_query_spinner()
             return
 
+        # If we have a target database from clicking a table in the tree,
+        # use that database for the query execution (needed for Azure SQL)
+        target_db = getattr(self, "_query_target_database", None)
+        if target_db and target_db != config.database:
+            config = adapter.apply_database_override(config, target_db)
+        # Clear target database after use - it's only for the auto-generated query
+        self._query_target_database = None
+
         # Handle USE database statements
         db_name = parse_use_statement(query)
         if db_name is not None:

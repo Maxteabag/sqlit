@@ -617,6 +617,8 @@ class TreeMixin:
                 self._last_query_table = None
 
             self.query_input.text = self.current_adapter.build_select_query(data.name, 100, data.database, data.schema)
+            # Set target database for query execution (needed for Azure SQL)
+            self._query_target_database = data.database
             self.action_execute_query()
             return
 
