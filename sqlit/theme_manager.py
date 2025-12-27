@@ -13,9 +13,16 @@ from typing import Any, Protocol
 
 from rich.style import Style
 from textual.theme import Theme
+from textual.timer import Timer
 from textual.widgets.text_area import TextAreaTheme
 
 from .config import load_settings, save_settings
+from .omarchy import (
+    DEFAULT_THEME,
+    get_current_theme_name,
+    get_matching_textual_theme,
+    is_omarchy_installed,
+)
 
 CUSTOM_THEME_SETTINGS_KEY = "custom_themes"
 CUSTOM_THEME_DIR = Path.home() / ".slit" / "themes"
@@ -454,6 +461,18 @@ class ThemeAppProtocol(Protocol):
 
     def register_theme(self, theme: Theme) -> None: ...
 
+    def _apply_theme_safe(self, theme_name: str) -> None: ...
+
+    def set_interval(
+        self,
+        interval: float,
+        callback: Any,
+        *,
+        name: str | None = None,
+        repeat: int = 0,
+        pause: bool = False,
+    ) -> Any: ...
+
     def notify(
         self,
         message: str,
@@ -475,6 +494,8 @@ class ThemeManager:
         self._custom_theme_names: set[str] = set()
         self._custom_theme_paths: dict[str, Path] = {}
         self._light_theme_names: set[str] = set(LIGHT_THEME_NAMES)
+        self._omarchy_theme_watcher: Timer | None = None
+        self._omarchy_last_theme_name: str | None = None
 
     def register_builtin_themes(self) -> None:
         for theme in SQLIT_THEMES:
@@ -483,6 +504,32 @@ class ThemeManager:
     def register_textarea_themes(self) -> None:
         for textarea_theme in SQLIT_TEXTAREA_THEMES.values():
             self._app.query_input.register_theme(textarea_theme)
+
+    def initialize(self) -> dict:
+        settings = load_settings()
+        self.load_custom_themes(settings)
+        self._init_omarchy_theme(settings)
+        self.apply_textarea_theme(self._app.theme)
+        return settings
+
+    def on_theme_changed(self, new_theme: str) -> None:
+        settings = load_settings()
+        settings["theme"] = new_theme
+        save_settings(settings)
+        self.apply_textarea_theme(new_theme)
+
+    def apply_omarchy_theme(self) -> None:
+        matched_theme = get_matching_textual_theme(self._app.available_themes)
+        self._app._apply_theme_safe(matched_theme)
+
+    def on_omarchy_theme_change(self) -> None:
+        current_name = get_current_theme_name()
+        if current_name is None:
+            return
+
+        if current_name != self._omarchy_last_theme_name:
+            self._omarchy_last_theme_name = current_name
+            self.apply_omarchy_theme()
 
     def apply_textarea_theme(self, theme_name: str) -> None:
         try:
@@ -586,6 +633,35 @@ class ThemeManager:
         if not theme.dark:
             self._light_theme_names.add(theme.name)
         return theme.name
+
+    def _init_omarchy_theme(self, settings: dict) -> None:
+        saved_theme = settings.get("theme")
+        if not is_omarchy_installed():
+            self._app._apply_theme_safe(saved_theme or DEFAULT_THEME)
+            return
+
+        matched_theme = get_matching_textual_theme(self._app.available_themes)
+        self._omarchy_last_theme_name = get_current_theme_name()
+        if (
+            isinstance(saved_theme, str)
+            and saved_theme in self._app.available_themes
+            and saved_theme != matched_theme
+        ):
+            self._app._apply_theme_safe(saved_theme)
+            return
+
+        self._app._apply_theme_safe(matched_theme)
+        self._start_omarchy_watcher()
+
+    def _start_omarchy_watcher(self) -> None:
+        if self._omarchy_theme_watcher is not None:
+            return
+        self._omarchy_theme_watcher = self._app.set_interval(2.0, self.on_omarchy_theme_change)
+
+    def _stop_omarchy_watcher(self) -> None:
+        if self._omarchy_theme_watcher is not None:
+            self._omarchy_theme_watcher.stop()
+            self._omarchy_theme_watcher = None
 
     def _reload_custom_theme(self, path: Path, theme_name: str) -> None:
         expected_name = theme_name if theme_name in self._custom_theme_names else None

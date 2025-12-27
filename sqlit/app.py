@@ -23,19 +23,12 @@ from textual.worker import Worker
 from .config import (
     ConnectionConfig,
     load_connections,
-    load_settings,
-    save_settings,
 )
 from .db import DatabaseAdapter
 from .mock_settings import apply_mock_environment, build_mock_profile_from_settings
 from .mocks import MockProfile
-from .omarchy import (
-    DEFAULT_THEME,
-    get_current_theme_name,
-    get_matching_textual_theme,
-    is_omarchy_installed,
-)
 from .theme_manager import ThemeManager
+from .omarchy import DEFAULT_THEME
 from .state_machine import (
     UIStateMachine,
     get_leader_bindings,
@@ -363,8 +356,6 @@ class SSMSTUI(
         self._session_factory: Any | None = None
         self._last_query_table: dict | None = None
         # Omarchy theme sync state
-        self._omarchy_theme_watcher: Timer | None = None
-        self._omarchy_last_theme_name: str | None = None
 
         if mock_profile:
             self._session_factory = self._create_mock_session_factory(mock_profile)
@@ -543,16 +534,8 @@ class SSMSTUI(
         self._theme_manager.register_builtin_themes()
         self._theme_manager.register_textarea_themes()
 
-        settings = load_settings()
+        settings = self._theme_manager.initialize()
         self._startup_stamp("settings_loaded")
-
-        self._theme_manager.load_custom_themes(settings)
-
-        # Initialize Omarchy theme sync
-        self._init_omarchy_theme(settings)
-
-        # Apply matching TextArea theme for syntax highlighting
-        self._theme_manager.apply_textarea_theme(self.theme)
 
         self._expanded_paths = set(settings.get("expanded_nodes", []))
         self._startup_stamp("settings_applied")
@@ -736,12 +719,7 @@ class SSMSTUI(
 
     def watch_theme(self, old_theme: str, new_theme: str) -> None:
         """Save theme whenever it changes."""
-        settings = load_settings()
-        settings["theme"] = new_theme
-        save_settings(settings)
-
-        # Apply matching TextArea theme for syntax highlighting
-        self._theme_manager.apply_textarea_theme(new_theme)
+        self._theme_manager.on_theme_changed(new_theme)
 
     def get_custom_theme_names(self) -> set[str]:
         return self._theme_manager.get_custom_theme_names()
@@ -755,36 +733,6 @@ class SSMSTUI(
     def get_custom_theme_path(self, theme_name: str) -> Path:
         return self._theme_manager.get_custom_theme_path(theme_name)
 
-    def _init_omarchy_theme(self, settings: dict) -> None:
-        """Initialize theme on startup, with Omarchy matching if installed.
-
-        Strategy:
-        1. If Omarchy is installed, try to match the Omarchy theme to a Textual theme
-        2. If a match is found and no user override is saved, use it and start watching for changes
-        3. If no match or Omarchy not installed, use saved theme or default
-        """
-        saved_theme = settings.get("theme")
-
-        # Check if Omarchy is installed
-        if not is_omarchy_installed():
-            # No Omarchy, use saved theme or default
-            self._apply_theme_safe(saved_theme or DEFAULT_THEME)
-            return
-
-        # Omarchy is installed - match theme and start watcher
-        matched_theme = get_matching_textual_theme(self.available_themes)
-        self._omarchy_last_theme_name = get_current_theme_name()
-        if (
-            isinstance(saved_theme, str)
-            and saved_theme in self.available_themes
-            and saved_theme != matched_theme
-        ):
-            self._apply_theme_safe(saved_theme)
-            return
-
-        self._apply_theme_safe(matched_theme)
-        self._start_omarchy_watcher()
-
     def _apply_theme_safe(self, theme_name: str) -> None:
         """Apply a theme with fallback to default on error."""
         try:
@@ -794,33 +742,3 @@ class SSMSTUI(
                 self.theme = DEFAULT_THEME
             except Exception:
                 self.theme = "sqlit"
-
-    def _start_omarchy_watcher(self) -> None:
-        """Start watching for Omarchy theme changes."""
-        if self._omarchy_theme_watcher is not None:
-            return  # Already watching
-
-        # Check for theme changes every 2 seconds
-        self._omarchy_theme_watcher = self.set_interval(2.0, self._check_omarchy_theme_change)
-
-    def _stop_omarchy_watcher(self) -> None:
-        """Stop watching for Omarchy theme changes."""
-        if self._omarchy_theme_watcher is not None:
-            self._omarchy_theme_watcher.stop()
-            self._omarchy_theme_watcher = None
-
-    def _check_omarchy_theme_change(self) -> None:
-        """Check if the Omarchy theme has changed and apply if so."""
-        current_name = get_current_theme_name()
-        if current_name is None:
-            return
-
-        # Check if theme name changed
-        if current_name != self._omarchy_last_theme_name:
-            self._omarchy_last_theme_name = current_name
-            self._apply_omarchy_theme()
-
-    def _apply_omarchy_theme(self) -> None:
-        """Match and apply the current Omarchy theme."""
-        matched_theme = get_matching_textual_theme(self.available_themes)
-        self._apply_theme_safe(matched_theme)
