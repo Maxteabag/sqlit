@@ -62,6 +62,10 @@ class ClickHouseAdapter(DatabaseAdapter):
         return True
 
     @property
+    def system_databases(self) -> frozenset[str]:
+        return frozenset({"system", "information_schema", "INFORMATION_SCHEMA"})
+
+    @property
     def supports_stored_procedures(self) -> bool:
         # ClickHouse doesn't have traditional stored procedures
         return False

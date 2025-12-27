@@ -31,6 +31,7 @@ dependencies = [
     "pyperclip>=1.8.2",
     "keyring>=24.0.0",
     "docker>=7.0.0",
+    "sqlparse>=0.5.0",
 ]
 dynamic = ["version"]
 

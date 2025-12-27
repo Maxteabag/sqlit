@@ -60,3 +60,7 @@ assets/favorites/*
 
 # Test environment files with secrets
 tests/.env
+
+# Test artifacts
+tests/integration/drivers/artifacts/
+__pycache__/

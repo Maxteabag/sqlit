@@ -267,3 +267,30 @@ def requires_auth(db_type: str) -> bool:
     """Check if this database type requires authentication."""
     spec = PROVIDERS.get(db_type)
     return spec.schema.requires_auth if spec else True
+
+
+def requires_database_selection(db_type: str) -> bool:
+    """Check if this database type requires a database to be specified.
+
+    Returns True for databases that don't support cross-database queries
+    (e.g., PostgreSQL, CockroachDB, D1) where each database is isolated.
+    """
+    try:
+        adapter = get_adapter_class(db_type)()
+        return not adapter.supports_cross_database_queries
+    except (ValueError, ImportError):
+        return False
+
+
+def validate_database_required(db_type: str, database: str | None) -> None:
+    """Validate that a database is specified when required.
+
+    Raises ValueError if the database type requires a database selection
+    but none is provided.
+    """
+    if requires_database_selection(db_type) and not database:
+        display_name = get_display_name(db_type)
+        raise ValueError(
+            f"{display_name} requires a database to be specified. "
+            f"Each database is isolated and cross-database queries are not supported."
+        )

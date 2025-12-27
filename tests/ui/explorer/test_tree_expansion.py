@@ -51,6 +51,7 @@ class MockAdapter:
     def __init__(self, tables: list[tuple[str, str]], default_schema: str = "public"):
         self._tables = tables
         self._default_schema = default_schema
+        self.supports_cross_database_queries = True  # Default to True for tests
 
     @property
     def default_schema(self) -> str:
@@ -61,6 +62,14 @@ class MockAdapter:
 
     def get_views(self, conn, database=None) -> list[tuple[str, str]]:
         return []
+
+
+class MockConfig:
+    """Mock connection config."""
+
+    def __init__(self, database: str | None = None, name: str = "test_connection"):
+        self.database = database
+        self.name = name
 
 
 class MockSession:
@@ -86,10 +95,17 @@ class TestTreeExpansion:
         mixin._session = MockSession(adapter)
         mixin._loading_nodes = set()
         mixin._expanded_paths = set()
+        mixin._active_database = "mydb"
         mixin.current_connection = MagicMock()
         mixin.current_adapter = adapter
+        mixin.current_config = MockConfig(database="mydb")
         mixin.object_tree = MockTree()
         mixin.call_later = lambda fn: None
+        # Mock methods called by set_default_database
+        mixin.notify = MagicMock()
+        mixin._update_status_bar = MagicMock()
+        mixin._update_database_labels = MagicMock()
+        mixin._load_schema_cache = MagicMock()
         return mixin, adapter
 
     def test_expand_folder_triggers_async_load(self):

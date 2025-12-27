@@ -19,7 +19,7 @@ class QueryHistoryScreen(ModalScreen):
     """Modal screen for query history selection."""
 
     BINDINGS = [
-        Binding("escape", "cancel", "Cancel"),
+        Binding("escape", "cancel", "Cancel", priority=True),
         Binding("q", "cancel", "Cancel"),
         Binding("enter", "select", "Select"),
         Binding("d", "delete", "Delete"),

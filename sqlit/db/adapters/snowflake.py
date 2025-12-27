@@ -38,6 +38,10 @@ class SnowflakeAdapter(CursorBasedAdapter):
         return True
 
     @property
+    def system_databases(self) -> frozenset[str]:
+        return frozenset({"SNOWFLAKE", "snowflake"})
+
+    @property
     def supports_stored_procedures(self) -> bool:
         return True
 

@@ -161,6 +161,11 @@ def main() -> int:
         action="store_true",
         help="Show startup timing in the status bar.",
     )
+    parser.add_argument(
+        "--debug-idle-scheduler",
+        action="store_true",
+        help="Show idle scheduler status in the status bar.",
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -284,6 +289,10 @@ def main() -> int:
         os.environ["SQLIT_DEBUG"] = "1"
     else:
         os.environ.pop("SQLIT_DEBUG", None)
+    if args.debug_idle_scheduler:
+        os.environ["SQLIT_DEBUG_IDLE_SCHEDULER"] = "1"
+    else:
+        os.environ.pop("SQLIT_DEBUG_IDLE_SCHEDULER", None)
     if args.profile_startup or args.debug:
         os.environ["SQLIT_STARTUP_MARK"] = str(startup_mark)
     else:

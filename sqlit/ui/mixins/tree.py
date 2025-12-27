@@ -165,7 +165,10 @@ class TreeMixin:
         try:
             if adapter.supports_multiple_databases:
                 specific_db = self.current_config.database
-                if specific_db and specific_db.lower() not in ("", "master"):
+                # Show a single database view when a specific database was configured.
+                # Otherwise, show the Databases folder to browse all databases.
+                show_single_db = specific_db and specific_db.lower() not in ("", "master")
+                if show_single_db:
                     self._add_database_object_nodes(active_node, specific_db)
                     active_node.expand()
                 else:
@@ -173,8 +176,16 @@ class TreeMixin:
                     dbs_node.data = FolderNode(folder_type="databases")
 
                     databases = self._run_db_call(adapter.get_databases, self.current_connection)
+                    active_db = None
+                    if hasattr(self, "_get_effective_database"):
+                        active_db = self._get_effective_database()
                     for db_name in databases:
-                        db_node = dbs_node.add(escape_markup(db_name))
+                        # Show active database with star and green text
+                        if active_db and db_name.lower() == active_db.lower():
+                            db_label = f"[#4ADE80]* {escape_markup(db_name)}[/]"
+                        else:
+                            db_label = escape_markup(db_name)
+                        db_node = dbs_node.add(db_label)
                         db_node.data = DatabaseNode(name=db_name)
                         db_node.allow_expand = True
                         self._add_database_object_nodes(db_node, db_name)
@@ -289,6 +300,10 @@ class TreeMixin:
 
         data = node.data
 
+        # When a database node is expanded, ensure we're connected to it
+        if self._get_node_kind(node) == "database":
+            self._ensure_database_connection(data.name)
+
         # Skip if already has children (not just loading placeholder)
         children = list(node.children)
         if children:
@@ -309,6 +324,10 @@ class TreeMixin:
 
         # Handle table/view column expansion
         if self._get_node_kind(node) in ("table", "view"):
+            # Ensure we're connected to the right database before loading
+            target_db = data.database
+            if target_db and not self._ensure_database_connection(target_db):
+                return  # Switch failed
             self._loading_nodes.add(node_path)
             loading_node = node.add_leaf("[dim italic]Loading...[/]")
             loading_node.data = LoadingNode()
@@ -317,6 +336,10 @@ class TreeMixin:
 
         # Handle folder expansion (database can be None for single-db adapters)
         if self._get_node_kind(node) == "folder":
+            # Ensure we're connected to the right database before loading
+            target_db = data.database
+            if target_db and not self._ensure_database_connection(target_db):
+                return  # Switch failed
             self._loading_nodes.add(node_path)
             loading_node = node.add_leaf("[dim italic]Loading...[/]")
             loading_node.data = LoadingNode()
@@ -337,7 +360,10 @@ class TreeMixin:
                 else:
                     adapter = self._session.adapter
                     conn = self._session.connection
-                    columns = self._run_db_call(adapter.get_columns, conn, obj_name, db_name, schema_name)
+                    db_arg = db_name
+                    if hasattr(self, "_get_metadata_db_arg"):
+                        db_arg = self._get_metadata_db_arg(db_name)
+                    columns = self._run_db_call(adapter.get_columns, conn, obj_name, db_arg, schema_name)
 
                 # Update UI from worker thread
                 self.call_from_thread(self._on_columns_loaded, node, db_name, schema_name, obj_name, columns)
@@ -372,6 +398,7 @@ class TreeMixin:
         """Spawn worker to load folder contents (tables/views/indexes/triggers/sequences/procedures)."""
         folder_type = data.folder_type
         db_name = data.database
+        cache_key = db_name or "__default__"
 
         def work() -> None:
             """Run in worker thread."""
@@ -381,16 +408,40 @@ class TreeMixin:
                 else:
                     adapter = self._session.adapter
                     conn = self._session.connection
+                    db_arg = db_name
+                    if hasattr(self, "_get_metadata_db_arg"):
+                        db_arg = self._get_metadata_db_arg(db_name)
+
+                    # Check shared cache first for tables/views/procedures
+                    obj_cache = getattr(self, "_db_object_cache", {})
 
                     if folder_type == "tables":
-                        items = [("table", s, t) for s, t in self._run_db_call(adapter.get_tables, conn, db_name)]
+                        if cache_key in obj_cache and "tables" in obj_cache[cache_key]:
+                            raw_data = obj_cache[cache_key]["tables"]
+                        else:
+                            raw_data = self._run_db_call(adapter.get_tables, conn, db_arg)
+                            # Store in shared cache
+                            if cache_key not in obj_cache:
+                                obj_cache[cache_key] = {}
+                            obj_cache[cache_key]["tables"] = raw_data
+                            self._db_object_cache = obj_cache
+                        items = [("table", s, t) for s, t in raw_data]
                     elif folder_type == "views":
-                        items = [("view", s, v) for s, v in self._run_db_call(adapter.get_views, conn, db_name)]
+                        if cache_key in obj_cache and "views" in obj_cache[cache_key]:
+                            raw_data = obj_cache[cache_key]["views"]
+                        else:
+                            raw_data = self._run_db_call(adapter.get_views, conn, db_arg)
+                            # Store in shared cache
+                            if cache_key not in obj_cache:
+                                obj_cache[cache_key] = {}
+                            obj_cache[cache_key]["views"] = raw_data
+                            self._db_object_cache = obj_cache
+                        items = [("view", s, v) for s, v in raw_data]
                     elif folder_type == "indexes":
                         if adapter.supports_indexes:
                             items = [
                                 ("index", i.name, i.table_name)
-                                for i in self._run_db_call(adapter.get_indexes, conn, db_name)
+                                for i in self._run_db_call(adapter.get_indexes, conn, db_arg)
                             ]
                         else:
                             items = []
@@ -398,7 +449,7 @@ class TreeMixin:
                         if adapter.supports_triggers:
                             items = [
                                 ("trigger", t.name, t.table_name)
-                                for t in self._run_db_call(adapter.get_triggers, conn, db_name)
+                                for t in self._run_db_call(adapter.get_triggers, conn, db_arg)
                             ]
                         else:
                             items = []
@@ -406,16 +457,22 @@ class TreeMixin:
                         if adapter.supports_sequences:
                             items = [
                                 ("sequence", s.name, "")
-                                for s in self._run_db_call(adapter.get_sequences, conn, db_name)
+                                for s in self._run_db_call(adapter.get_sequences, conn, db_arg)
                             ]
                         else:
                             items = []
                     elif folder_type == "procedures":
                         if adapter.supports_stored_procedures:
-                            items = [
-                                ("procedure", "", p)
-                                for p in self._run_db_call(adapter.get_procedures, conn, db_name)
-                            ]
+                            if cache_key in obj_cache and "procedures" in obj_cache[cache_key]:
+                                raw_data = obj_cache[cache_key]["procedures"]
+                            else:
+                                raw_data = self._run_db_call(adapter.get_procedures, conn, db_arg)
+                                # Store in shared cache
+                                if cache_key not in obj_cache:
+                                    obj_cache[cache_key] = {}
+                                obj_cache[cache_key]["procedures"] = raw_data
+                                self._db_object_cache = obj_cache
+                            items = [("procedure", "", p) for p in raw_data]
                         else:
                             items = []
                     else:
@@ -424,7 +481,11 @@ class TreeMixin:
                 # Update UI from worker thread
                 self.call_from_thread(self._on_folder_loaded, node, db_name, folder_type, items)
             except Exception as e:
-                self.call_from_thread(self._on_tree_load_error, node, f"Error loading: {e}")
+                # If we have a target database, try reconnecting as fallback (handles Azure SQL etc.)
+                if db_name:
+                    self.call_from_thread(self._fallback_reconnect_and_retry, node, data, db_name, e)
+                else:
+                    self.call_from_thread(self._on_tree_load_error, node, f"Error loading: {e}")
 
         self.run_worker(work, name=f"load-folder-{folder_type}", thread=True, exclusive=False)
 
@@ -530,6 +591,32 @@ class TreeMixin:
 
         self.notify(escape_markup(error_message), severity="error")
 
+    def _fallback_reconnect_and_retry(
+        self: AppProtocol, node: Any, data: FolderNode, db_name: str, original_error: Exception
+    ) -> None:
+        """Try reconnecting to database and retry loading. Show original error if this also fails."""
+        node_path = self._get_node_path(node)
+        self._loading_nodes.discard(node_path)
+
+        # Remove loading placeholder
+        for child in list(node.children):
+            if self._get_node_kind(child) == "loading":
+                child.remove()
+
+        # Try to reconnect
+        try:
+            self._reconnect_to_database(db_name)
+        except Exception:
+            # Reconnect failed - show original error
+            self.notify(escape_markup(f"Error loading: {original_error}"), severity="error")
+            return
+
+        # Reconnect succeeded - retry loading
+        self._loading_nodes.add(node_path)
+        loading_node = node.add_leaf("[dim italic]Loading...[/]")
+        loading_node.data = LoadingNode()
+        self._load_folder_async(node, data)
+
     def on_tree_node_selected(self: AppProtocol, event: Tree.NodeSelected) -> None:
         """Handle tree node selection (double-click/enter)."""
         # Ignore selection events when tree filter is active - the filter captures
@@ -557,6 +644,11 @@ class TreeMixin:
 
     def action_refresh_tree(self: AppProtocol) -> None:
         """Refresh the explorer."""
+        # Clear shared object cache so fresh data is fetched
+        self._db_object_cache = {}
+        # Clear column cache too so columns are re-fetched
+        if hasattr(self, "_schema_cache") and "columns" in self._schema_cache:
+            self._schema_cache["columns"] = {}
         self.refresh_tree()
         self.notify("Refreshed")
 
@@ -598,8 +690,11 @@ class TreeMixin:
         if self._get_node_kind(node) in ("table", "view"):
             # Store table info for edit_cell action
             try:
+                db_arg = data.database
+                if hasattr(self, "_get_metadata_db_arg"):
+                    db_arg = self._get_metadata_db_arg(data.database)
                 columns = self._session.adapter.get_columns(
-                    self._session.connection, data.name, data.database, data.schema
+                    self._session.connection, data.name, db_arg, data.schema
                 )
                 self._last_query_table = {
                     "database": data.database,
@@ -611,6 +706,8 @@ class TreeMixin:
                 self._last_query_table = None
 
             self.query_input.text = self.current_adapter.build_select_query(data.name, 100, data.database, data.schema)
+            # Set target database for query execution (needed for Azure SQL)
+            self._query_target_database = data.database
             self.action_execute_query()
             return
 
@@ -635,8 +732,11 @@ class TreeMixin:
             return
 
         try:
+            db_arg = data.database
+            if hasattr(self, "_get_metadata_db_arg"):
+                db_arg = self._get_metadata_db_arg(data.database)
             info = self._session.adapter.get_index_definition(
-                self._session.connection, data.name, data.table_name, data.database
+                self._session.connection, data.name, data.table_name, db_arg
             )
             self._display_object_info("Index", info)
         except Exception as e:
@@ -648,8 +748,11 @@ class TreeMixin:
             return
 
         try:
+            db_arg = data.database
+            if hasattr(self, "_get_metadata_db_arg"):
+                db_arg = self._get_metadata_db_arg(data.database)
             info = self._session.adapter.get_trigger_definition(
-                self._session.connection, data.name, data.table_name, data.database
+                self._session.connection, data.name, data.table_name, db_arg
             )
             self._display_object_info("Trigger", info)
         except Exception as e:
@@ -661,8 +764,11 @@ class TreeMixin:
             return
 
         try:
+            db_arg = data.database
+            if hasattr(self, "_get_metadata_db_arg"):
+                db_arg = self._get_metadata_db_arg(data.database)
             info = self._session.adapter.get_sequence_definition(
-                self._session.connection, data.name, data.database
+                self._session.connection, data.name, db_arg
             )
             self._display_object_info("Sequence", info)
         except Exception as e:
@@ -700,3 +806,184 @@ class TreeMixin:
         definition = info.get("definition")
         if definition:
             self.query_input.text = f"/*\n{definition}\n*/"
+
+    def _ensure_database_connection(self: AppProtocol, target_db: str) -> bool:
+        """Ensure we're connected to the target database, switching if needed.
+
+        For adapters that don't support cross-database queries (PostgreSQL, etc.),
+        this will switch the connection if we're not already connected to the
+        target database.
+
+        Args:
+            target_db: The database name we need to be connected to.
+
+        Returns:
+            True if we're connected to the target database (or adapter supports
+            cross-db queries), False if switch failed.
+        """
+        if not self.current_adapter or not self.current_config:
+            return False
+
+        # For cross-db adapters, try USE approach first (no reconnection needed).
+        # Note: While MSSQL generally supports cross-database queries, some variants
+        # like Azure SQL have restrictions. If USE fails, we fall back to reconnection.
+        if self.current_adapter.supports_cross_database_queries:
+            current_active = getattr(self, "_active_database", None)
+            if not current_active or current_active.lower() != target_db.lower():
+                try:
+                    self.set_default_database(target_db)
+                except Exception:
+                    # USE approach failed - fall back to reconnection
+                    self._reconnect_to_database(target_db)
+            return True
+
+        # For non-cross-db adapters, check if already connected to target database
+        current_db = self.current_config.database
+        if current_db and current_db.lower() == target_db.lower():
+            return True
+
+        # Need to reconnect - set_default_database handles this
+        self.set_default_database(target_db)
+
+        # Verify switch succeeded
+        return (
+            self.current_config.database is not None
+            and self.current_config.database.lower() == target_db.lower()
+        )
+
+    def _reconnect_to_database(self: AppProtocol, db_name: str) -> None:
+        """Reconnect to a different database without re-rendering the tree.
+
+        Used for PostgreSQL and other databases that don't support cross-database
+        queries. Creates a new connection to the specified database while keeping
+        the tree structure intact.
+        """
+        if not self._session:
+            return
+
+        if hasattr(self, "_clear_query_target_database"):
+            self._clear_query_target_database()
+
+        try:
+            self._session.switch_database(db_name)
+
+            # Update app state to match session
+            self.current_config = self._session.config
+            self.current_connection = self._session.connection
+
+            # Update UI
+            self.notify(f"Switched to database: {db_name}")
+            self._update_status_bar()
+            self._update_database_labels()
+
+            # Clear caches and reload schema for autocomplete
+            self._db_object_cache = {}
+            self._load_schema_cache()
+
+        except Exception as e:
+            self.notify(f"Failed to connect to {db_name}: {e}", severity="error")
+
+    def set_default_database(self: AppProtocol, db_name: str | None) -> None:
+        """Set or clear the active database for the current connection.
+
+        This is the shared function used by both the USE query handler and
+        the explorer 'Use as default' action.
+
+        For databases that support cross-database queries (SQL Server, MySQL, etc.),
+        this just sets _active_database so queries use the right context.
+
+        For databases that don't support cross-database queries (PostgreSQL, etc.),
+        this will reconnect to the selected database since each connection is
+        database-specific.
+
+        Args:
+            db_name: The database name to set as active, or None to clear.
+        """
+        if not self.current_config or not self.current_adapter:
+            self.notify("Not connected", severity="error")
+            return
+
+        if hasattr(self, "_clear_query_target_database"):
+            self._clear_query_target_database()
+
+        # Check if adapter supports cross-database queries
+        if not self.current_adapter.supports_cross_database_queries and db_name:
+            # For PostgreSQL, CockroachDB, etc. - need to reconnect to the new database
+            # Check if we're already connected to this database
+            current_db = self.current_config.database
+            if current_db and current_db.lower() == db_name.lower():
+                # Already connected to this database, just update UI
+                self._active_database = db_name
+                self._update_status_bar()
+                self._update_database_labels()
+                return
+
+            # Reconnect to the new database without re-rendering the tree
+            self._reconnect_to_database(db_name)
+            return
+
+        # For databases that support cross-database queries, just update the active database
+        self._active_database = db_name
+        if db_name:
+            self.notify(f"Switched to database: {db_name}")
+        else:
+            self.notify("Cleared default database")
+        self._update_status_bar()
+        self._update_database_labels()
+        # Reload schema cache for autocomplete with new database context
+        self._load_schema_cache()
+
+    def _update_database_labels(self: AppProtocol) -> None:
+        """Update database node labels to show the active database with a star."""
+        if not self.current_config or not self.current_adapter:
+            return
+
+        active_db = None
+        if hasattr(self, "_get_effective_database"):
+            active_db = self._get_effective_database()
+
+        # Find the Databases folder and update labels
+        for conn_node in self.object_tree.root.children:
+            if self._get_node_kind(conn_node) != "connection":
+                continue
+
+            # Check if this is the active connection
+            if not (conn_node.data and conn_node.data.config.name == self.current_config.name):
+                continue
+
+            # Find Databases folder
+            for child in conn_node.children:
+                if self._get_node_kind(child) == "folder" and child.data.folder_type == "databases":
+                    # Update each database node
+                    for db_node in child.children:
+                        if self._get_node_kind(db_node) == "database":
+                            db_name = db_node.data.name
+                            is_active = active_db and db_name.lower() == active_db.lower()
+                            if is_active:
+                                db_node.set_label(f"[#4ADE80]* {escape_markup(db_name)}[/]")
+                            else:
+                                db_node.set_label(escape_markup(db_name))
+                    break
+            break
+
+    def action_use_database(self: AppProtocol) -> None:
+        """Toggle the selected database as the default for the current connection."""
+        node = self.object_tree.cursor_node
+
+        if not node or self._get_node_kind(node) != "database":
+            return
+
+        if not self.current_connection or not self.current_config:
+            self.notify("Not connected", severity="error")
+            return
+
+        db_name = node.data.name
+        current_active = None
+        if hasattr(self, "_get_effective_database"):
+            current_active = self._get_effective_database()
+
+        # Toggle: if already active, clear it; otherwise set it
+        if current_active and current_active.lower() == db_name.lower():
+            self.set_default_database(None)
+        else:
+            self.set_default_database(db_name)

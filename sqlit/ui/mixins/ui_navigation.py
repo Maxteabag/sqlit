@@ -276,6 +276,10 @@ class UINavigationMixin:
         launch_str = f"[dim]Launched in {launch_ms:.0f}ms[/]" if show_launch else ""
         launch_plain = f"Launched in {launch_ms:.0f}ms" if show_launch else ""
 
+        # Combine right-side content
+        right_str = launch_str
+        right_plain = launch_plain
+
         if notification:
             # Normal/warning notifications on right side
             import re
@@ -300,7 +304,7 @@ class UINavigationMixin:
                 status.update(f"{left_content}{' ' * gap}{notif_str}")
             else:
                 status.update(f"{left_content}  {notif_str}")
-        elif launch_str:
+        elif right_str:
             import re
 
             left_plain = re.sub(r"\[.*?\]", "", left_content)
@@ -309,13 +313,54 @@ class UINavigationMixin:
             except Exception:
                 total_width = 80
 
-            gap = total_width - len(left_plain) - len(launch_plain)
+            gap = total_width - len(left_plain) - len(right_plain)
             if gap > 2:
-                status.update(f"{left_content}{' ' * gap}{launch_str}")
+                status.update(f"{left_content}{' ' * gap}{right_str}")
             else:
-                status.update(f"{left_content}  {launch_str}")
+                status.update(f"{left_content}  {right_str}")
         else:
             status.update(left_content)
+
+    def _update_idle_scheduler_bar(self: AppProtocol) -> None:
+        """Update the idle scheduler debug bar."""
+        if not getattr(self, "_debug_idle_scheduler", False):
+            return
+
+        try:
+            bar = self.idle_scheduler_bar
+        except Exception:
+            return
+
+        from ...idle_scheduler import get_idle_scheduler
+
+        scheduler = get_idle_scheduler()
+        if not scheduler:
+            bar.update("[dim]Idle Scheduler: Not initialized[/]")
+            return
+
+        pending = scheduler.pending_jobs
+        is_idle = scheduler.is_idle
+        completed = scheduler._jobs_completed
+        work_time = scheduler._total_work_time_ms
+
+        if pending > 0 and is_idle:
+            status = "[bold cyan]⚡ WORKING[/]"
+            details = f"[bold]{pending}[/] jobs pending"
+        elif pending > 0 and not is_idle:
+            status = "[yellow]⏸ POSTPONED[/]"
+            details = f"[bold]{pending}[/] jobs waiting for you to stop"
+        elif is_idle:
+            status = "[dim]💤 IDLE[/]"
+            details = "waiting for work"
+        else:
+            status = "[dim]👆 USER ACTIVE[/]"
+            details = "no pending work"
+
+        bar.update(
+            f"{status}  │  {details}  │  "
+            f"[dim]{completed} completed[/]  │  "
+            f"[dim]{work_time:.0f}ms worked[/]"
+        )
 
     def notify(
         self: AppProtocol,
@@ -360,19 +405,19 @@ class UINavigationMixin:
 
     def _show_error_in_results(self: AppProtocol, message: str, timestamp: str) -> None:
         """Display error message in the results table."""
-        import textwrap
+        import re
 
         error_text = f"[{timestamp}] {message}" if timestamp else message
 
-        # Wrap to table width (minus some padding), minimum 40 chars
-        wrap_width = max(40, self.results_table.size.width - 4)
-        wrapped = textwrap.fill(error_text, width=wrap_width)
+        # Replace newlines and collapse multiple whitespace to single space
+        # DataTable cells only show one line, so we flatten the error
+        error_text = re.sub(r"\s+", " ", error_text).strip()
 
         self._last_result_columns = ["Error"]
-        self._last_result_rows = [(wrapped,)]
+        self._last_result_rows = [(error_text,)]
         self._last_result_row_count = 1
 
-        self._replace_results_table(["Error"], [(wrapped,)])  # type: ignore[attr-defined]
+        self._replace_results_table(["Error"], [(error_text,)])  # type: ignore[attr-defined]
         self._update_footer_bindings()
 
     def action_toggle_explorer(self: AppProtocol) -> None:

@@ -65,7 +65,7 @@ class ConnectionScreen(ModalScreen):
     _INSTALL_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     BINDINGS = [
-        Binding("escape", "cancel", "Cancel"),
+        Binding("escape", "cancel", "Cancel", priority=True),
         Binding("ctrl+s", "save", "Save", priority=True),
         Binding("ctrl+t", "test_connection", "Test", priority=True),
         Binding("ctrl+i", "install_driver", "Install driver", show=False, priority=True),

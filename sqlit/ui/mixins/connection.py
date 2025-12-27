@@ -18,7 +18,7 @@ def _needs_db_password(config: ConnectionConfig) -> bool:
     """Check if the connection needs a database password prompt.
 
     Returns True if password is None (not set) and the database type uses passwords.
-    Note: Empty string "" means explicitly set to empty (no prompt needed).
+    An empty string password ("") is considered explicitly set and does not need a prompt.
     """
     from ...db.providers import is_file_based
 
@@ -26,7 +26,7 @@ def _needs_db_password(config: ConnectionConfig) -> bool:
     if is_file_based(config.db_type):
         return False
 
-    # Check if password is not set (None means prompt needed)
+    # Only prompt if password is None (not set), not for empty string (explicitly empty)
     return config.password is None
 
 
@@ -34,7 +34,7 @@ def _needs_ssh_password(config: ConnectionConfig) -> bool:
     """Check if the connection needs an SSH password prompt.
 
     Returns True if SSH is enabled with password auth and password is None (not set).
-    Note: Empty string "" means explicitly set to empty (no prompt needed).
+    An empty string password ("") is considered explicitly set and does not need a prompt.
     """
     if not config.ssh_enabled:
         return False
@@ -42,6 +42,7 @@ def _needs_ssh_password(config: ConnectionConfig) -> bool:
     if config.ssh_auth_type != "password":
         return False
 
+    # Only prompt if password is None (not set), not for empty string (explicitly empty)
     return config.ssh_password is None
 
 
@@ -214,12 +215,18 @@ class ConnectionMixin:
             self.current_ssh_tunnel = session.tunnel
             is_saved = any(c.name == config.name for c in self.connections)
             self._direct_connection_config = None if is_saved else config
+            self._active_database = None
+            reconnected = False
 
             self.refresh_tree()
             self.call_after_refresh(self._select_connected_node)
-            self._load_schema_cache()
+            if not reconnected:
+                self._load_schema_cache()
             self._update_status_bar()
             self._update_section_labels()
+            # Update database labels to show star on active database
+            if hasattr(self, "_update_database_labels"):
+                self.call_after_refresh(self._update_database_labels)
             if self.current_adapter:
                 warnings = self.current_adapter.get_post_connect_warnings(config)
                 for message in warnings:
@@ -267,6 +274,8 @@ class ConnectionMixin:
         self.current_adapter = None
         self.current_ssh_tunnel = None
         self._direct_connection_config = None
+        self._active_database = None
+        self._clear_query_target_database()
         self.refresh_tree()
         self._update_section_labels()
 
@@ -286,6 +295,29 @@ class ConnectionMixin:
             self._disconnect_silent()
             self.status_bar.update("Disconnected")
             self.notify("Disconnected")
+
+    def _get_effective_database(self: AppProtocol) -> str | None:
+        """Return the active database for the current connection context."""
+        if not self.current_adapter or not self.current_config:
+            return None
+        if self.current_adapter.supports_cross_database_queries:
+            db_name = getattr(self, "_active_database", None) or self.current_config.database
+            return db_name or None
+        db_name = self.current_config.database
+        return db_name or None
+
+    def _get_metadata_db_arg(self: AppProtocol, database: str | None) -> str | None:
+        """Return database arg for metadata calls when cross-db queries are supported."""
+        if not database or not self.current_adapter:
+            return None
+        if self.current_adapter.supports_cross_database_queries:
+            return database
+        return None
+
+    def _clear_query_target_database(self: AppProtocol) -> None:
+        """Clear any pending per-query database override."""
+        if hasattr(self, "_query_target_database"):
+            self._query_target_database = None
 
     def action_new_connection(self: AppProtocol) -> None:
         from ..screens import ConnectionScreen

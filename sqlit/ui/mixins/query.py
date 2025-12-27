@@ -125,7 +125,6 @@ class QueryMixin:
         """Run query asynchronously using a cancellable dedicated connection."""
         import asyncio
         import time
-        from dataclasses import replace
 
         from ...services import CancellableQuery, QueryResult, QueryService
         from ...services.query import parse_use_statement
@@ -138,14 +137,27 @@ class QueryMixin:
             self._stop_query_spinner()
             return
 
+        # If we have a target database from clicking a table in the tree,
+        # use that database for the query execution (needed for Azure SQL)
+        target_db = getattr(self, "_query_target_database", None)
+        if target_db and target_db != config.database:
+            config = adapter.apply_database_override(config, target_db)
+        # Clear target database after use - it's only for the auto-generated query
+        self._query_target_database = None
+
+        # Apply active database to query execution (from USE statement or 'u' key)
+        active_db = None
+        if hasattr(self, "_get_effective_database"):
+            active_db = self._get_effective_database()
+        if active_db and active_db != config.database and not target_db:
+            config = adapter.apply_database_override(config, active_db)
+
         # Handle USE database statements
         db_name = parse_use_statement(query)
         if db_name is not None:
-            self.current_config = replace(config, database=db_name)
             self._stop_query_spinner()
             self._display_non_query_result(0, 0)
-            self.notify(f"Switched to database: {db_name}")
-            self._update_status_bar()
+            self.set_default_database(db_name)  # type: ignore[attr-defined]
             if keep_insert_mode:
                 self._restore_insert_mode()
             return
@@ -309,12 +321,7 @@ class QueryMixin:
 
     def _display_query_error(self: AppProtocol, error_message: str) -> None:
         """Display query error (called on main thread)."""
-        self._last_result_columns = ["Error"]
-        self._last_result_rows = [(error_message,)]
-        self._last_result_row_count = 1
-
-        # escape_markup is handled in _replace_results_table
-        self._replace_results_table(["Error"], [(error_message,)])
+        # notify(severity="error") handles displaying the error in results via _show_error_in_results
         self.notify(f"Query error: {error_message}", severity="error")
 
     def _restore_insert_mode(self: AppProtocol) -> None:

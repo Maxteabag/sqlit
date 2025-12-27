@@ -601,8 +601,42 @@ class TreeOnTableState(State):
         return node is not None and _get_node_kind(node) in ("table", "view")
 
 
+class TreeOnDatabaseState(State):
+    """Tree focused on a database node (in multi-database servers)."""
+
+    help_category = "Explorer"
+
+    def _setup_actions(self) -> None:
+        pass  # Expanding a database now sets it as active automatically
+
+    def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+        left: list[DisplayBinding] = []
+        seen: set[str] = set()
+
+        left.append(DisplayBinding(key="enter", label="Use database", action="toggle_node"))
+        seen.add("toggle_node")
+        left.append(DisplayBinding(key="f", label="Refresh", action="refresh_tree"))
+        seen.add("refresh_tree")
+
+        right: list[DisplayBinding] = []
+        if self.parent:
+            _, parent_right = self.parent.get_display_bindings(app)
+            for binding in parent_right:
+                if binding.action not in seen:
+                    right.append(binding)
+                    seen.add(binding.action)
+
+        return left, right
+
+    def is_active(self, app: SSMSTUI) -> bool:
+        if not app.object_tree.has_focus:
+            return False
+        node = app.object_tree.cursor_node
+        return node is not None and _get_node_kind(node) == "database"
+
+
 class TreeOnFolderState(State):
-    """Tree focused on a folder, database, or schema node."""
+    """Tree focused on a folder or schema node."""
 
     def _setup_actions(self) -> None:
         pass  # Just inherits from parent
@@ -630,7 +664,7 @@ class TreeOnFolderState(State):
         if not app.object_tree.has_focus:
             return False
         node = app.object_tree.cursor_node
-        return node is not None and _get_node_kind(node) in ("folder", "database", "schema")
+        return node is not None and _get_node_kind(node) in ("folder", "schema")
 
 
 class TreeOnObjectState(State):
@@ -906,6 +940,7 @@ class UIStateMachine:
         self.tree_focused = TreeFocusedState(parent=self.main_screen)
         self.tree_filter_active = TreeFilterActiveState(parent=self.main_screen)
         self.tree_on_connection = TreeOnConnectionState(parent=self.tree_focused)
+        self.tree_on_database = TreeOnDatabaseState(parent=self.tree_focused)
         self.tree_on_table = TreeOnTableState(parent=self.tree_focused)
         self.tree_on_folder = TreeOnFolderState(parent=self.tree_focused)
         self.tree_on_object = TreeOnObjectState(parent=self.tree_focused)
@@ -924,6 +959,7 @@ class UIStateMachine:
             self.leader_pending,
             self.tree_filter_active,  # Before tree_focused (more specific when filter active)
             self.tree_on_connection,
+            self.tree_on_database,  # For database nodes (multi-database servers)
             self.tree_on_table,
             self.tree_on_folder,
             self.tree_on_object,  # For index/trigger/sequence nodes

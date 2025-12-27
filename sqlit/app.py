@@ -16,26 +16,21 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.lazy import Lazy
 from textual.screen import ModalScreen
-from textual.theme import Theme
 from textual.timer import Timer
-from textual.widgets import Static, TextArea, Tree
+from textual.widgets import Static, Tree
+
+from .widgets import QueryTextArea
 from textual.worker import Worker
 
 from .config import (
     ConnectionConfig,
     load_connections,
-    load_settings,
-    save_settings,
 )
 from .db import DatabaseAdapter
 from .mock_settings import apply_mock_environment, build_mock_profile_from_settings
 from .mocks import MockProfile
-from .omarchy import (
-    DEFAULT_THEME,
-    get_current_theme_name,
-    get_matching_textual_theme,
-    is_omarchy_installed,
-)
+from .theme_manager import ThemeManager
+from .omarchy import DEFAULT_THEME
 from .state_machine import (
     UIStateMachine,
     get_leader_bindings,
@@ -58,6 +53,7 @@ from .widgets import (
     TreeFilterInput,
     VimMode,
 )
+from .idle_scheduler import init_idle_scheduler, on_user_activity, IdleScheduler
 
 
 class SSMSTUI(
@@ -74,31 +70,6 @@ class SSMSTUI(
     """Main SSMS TUI application."""
 
     TITLE = "sqlit"
-
-    _SQLIT_THEMES = [
-        Theme(
-            name="sqlit",
-            primary="#97CB93",
-            secondary="#6D8DC4",
-            accent="#6D8DC4",
-            warning="#f59e0b",
-            error="#BE728C",
-            success="#4ADE80",
-            foreground="#a9b1d6",
-            background="#1A1B26",
-            surface="#24283B",
-            panel="#414868",
-            dark=True,
-            variables={
-                "border": "#7a7f99",
-                "border-blurred": "#7a7f99",
-                "footer-background": "#24283B",
-                "footer-key-foreground": "#7FA1DE",
-                "button-color-foreground": "#1A1B26",
-                "input-selection-background": "#2a3144 40%",
-            },
-        ),
-    ]
 
     CSS = """
     Screen {
@@ -240,6 +211,17 @@ class SSMSTUI(
         padding: 0 1;
     }
 
+    #idle-scheduler-bar {
+        height: 1;
+        background: $primary-darken-3;
+        padding: 0 1;
+        display: none;
+    }
+
+    #idle-scheduler-bar.visible {
+        display: block;
+    }
+
     #sidebar,
     #query-area,
     #results-area {
@@ -328,6 +310,7 @@ class SSMSTUI(
         self._startup_connection = startup_connection
         self._startup_connect_config: ConnectionConfig | None = None
         self._debug_mode = os.environ.get("SQLIT_DEBUG") == "1"
+        self._debug_idle_scheduler = os.environ.get("SQLIT_DEBUG_IDLE_SCHEDULER") == "1"
         self._startup_profile = os.environ.get("SQLIT_PROFILE_STARTUP") == "1"
         self._startup_mark = self._parse_startup_mark(os.environ.get("SQLIT_STARTUP_MARK"))
         self._startup_init_time = time.perf_counter()
@@ -373,6 +356,7 @@ class SSMSTUI(
         self._query_worker: Worker[Any] | None = None
         self._query_executing: bool = False
         self._cancellable_query: Any | None = None
+        self._theme_manager = ThemeManager(self)
         self._spinner_index: int = 0
         self._spinner_timer: Timer | None = None
         # Schema indexing state
@@ -385,9 +369,9 @@ class SSMSTUI(
         self._state_machine = UIStateMachine()
         self._session_factory: Any | None = None
         self._last_query_table: dict | None = None
-        # Omarchy theme sync state
-        self._omarchy_theme_watcher: Timer | None = None
-        self._omarchy_last_theme_name: str | None = None
+        self._query_target_database: str | None = None  # Target DB for auto-generated queries
+        # Idle scheduler for background work
+        self._idle_scheduler: IdleScheduler | None = None
 
         if mock_profile:
             self._session_factory = self._create_mock_session_factory(mock_profile)
@@ -419,8 +403,8 @@ class SSMSTUI(
         return self.query_one("#object-tree", Tree)
 
     @property
-    def query_input(self) -> TextArea:
-        return self.query_one("#query-input", TextArea)
+    def query_input(self) -> QueryTextArea:
+        return self.query_one("#query-input", QueryTextArea)
 
     @property
     def results_table(self) -> SqlitDataTable:
@@ -447,6 +431,10 @@ class SSMSTUI(
     @property
     def status_bar(self) -> Static:
         return self.query_one("#status-bar", Static)
+
+    @property
+    def idle_scheduler_bar(self) -> Static:
+        return self.query_one("#idle-scheduler-bar", Static)
 
     @property
     def autocomplete_dropdown(self) -> Any:
@@ -541,7 +529,7 @@ class SSMSTUI(
 
                 with Vertical(id="main-panel"):
                     with Container(id="query-area"):
-                        yield TextArea(
+                        yield QueryTextArea(
                             "",
                             language="sql",
                             id="query-input",
@@ -553,6 +541,7 @@ class SSMSTUI(
                         yield ResultsFilterInput(id="results-filter")
                         yield Lazy(SqlitDataTable(id="results-table", zebra_stripes=True, show_header=False))
 
+            yield Static("", id="idle-scheduler-bar")
             yield Static("Not connected", id="status-bar")
 
         yield ContextFooter()
@@ -563,14 +552,20 @@ class SSMSTUI(
         self._startup_stamp("on_mount_start")
         self._restart_argv = self._compute_restart_argv()
 
-        for theme in self._SQLIT_THEMES:
-            self.register_theme(theme)
+        # Initialize and start idle scheduler
+        self._idle_scheduler = init_idle_scheduler(self)
+        self._idle_scheduler.start()
 
-        settings = load_settings()
+        # Show idle scheduler debug bar if enabled
+        if self._debug_idle_scheduler:
+            self.idle_scheduler_bar.add_class("visible")
+            self._idle_scheduler_bar_timer = self.set_interval(0.1, self._update_idle_scheduler_bar)
+
+        self._theme_manager.register_builtin_themes()
+        self._theme_manager.register_textarea_themes()
+
+        settings = self._theme_manager.initialize()
         self._startup_stamp("settings_loaded")
-
-        # Initialize Omarchy theme sync
-        self._init_omarchy_theme(settings)
 
         self._expanded_paths = set(settings.get("expanded_nodes", []))
         self._startup_stamp("settings_applied")
@@ -754,31 +749,19 @@ class SSMSTUI(
 
     def watch_theme(self, old_theme: str, new_theme: str) -> None:
         """Save theme whenever it changes."""
-        settings = load_settings()
-        settings["theme"] = new_theme
-        save_settings(settings)
+        self._theme_manager.on_theme_changed(new_theme)
 
-    def _init_omarchy_theme(self, settings: dict) -> None:
-        """Initialize theme on startup, with Omarchy matching if installed.
+    def get_custom_theme_names(self) -> set[str]:
+        return self._theme_manager.get_custom_theme_names()
 
-        Strategy:
-        1. If Omarchy is installed, try to match the Omarchy theme to a Textual theme
-        2. If a match is found, use it and start watching for changes
-        3. If no match or Omarchy not installed, use saved theme or default
-        """
-        saved_theme = settings.get("theme")
+    def add_custom_theme(self, theme_name: str) -> str:
+        return self._theme_manager.add_custom_theme(theme_name)
 
-        # Check if Omarchy is installed
-        if not is_omarchy_installed():
-            # No Omarchy, use saved theme or default
-            self._apply_theme_safe(saved_theme or DEFAULT_THEME)
-            return
+    def open_custom_theme_in_editor(self, theme_name: str) -> None:
+        self._theme_manager.open_custom_theme_in_editor(theme_name)
 
-        # Omarchy is installed - match theme and start watcher
-        matched_theme = get_matching_textual_theme(self.available_themes)
-        self._omarchy_last_theme_name = get_current_theme_name()
-        self._apply_theme_safe(matched_theme)
-        self._start_omarchy_watcher()
+    def get_custom_theme_path(self, theme_name: str) -> Path:
+        return self._theme_manager.get_custom_theme_path(theme_name)
 
     def _apply_theme_safe(self, theme_name: str) -> None:
         """Apply a theme with fallback to default on error."""
@@ -789,33 +772,3 @@ class SSMSTUI(
                 self.theme = DEFAULT_THEME
             except Exception:
                 self.theme = "sqlit"
-
-    def _start_omarchy_watcher(self) -> None:
-        """Start watching for Omarchy theme changes."""
-        if self._omarchy_theme_watcher is not None:
-            return  # Already watching
-
-        # Check for theme changes every 2 seconds
-        self._omarchy_theme_watcher = self.set_interval(2.0, self._check_omarchy_theme_change)
-
-    def _stop_omarchy_watcher(self) -> None:
-        """Stop watching for Omarchy theme changes."""
-        if self._omarchy_theme_watcher is not None:
-            self._omarchy_theme_watcher.stop()
-            self._omarchy_theme_watcher = None
-
-    def _check_omarchy_theme_change(self) -> None:
-        """Check if the Omarchy theme has changed and apply if so."""
-        current_name = get_current_theme_name()
-        if current_name is None:
-            return
-
-        # Check if theme name changed
-        if current_name != self._omarchy_last_theme_name:
-            self._omarchy_last_theme_name = current_name
-            self._apply_omarchy_theme()
-
-    def _apply_omarchy_theme(self) -> None:
-        """Match and apply the current Omarchy theme."""
-        matched_theme = get_matching_textual_theme(self.available_themes)
-        self._apply_theme_safe(matched_theme)

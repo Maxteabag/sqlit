@@ -18,7 +18,7 @@ class PasswordInputScreen(ModalScreen):
     """
 
     BINDINGS = [
-        Binding("escape", "cancel", "Cancel"),
+        Binding("escape", "cancel", "Cancel", priority=True),
         Binding("enter", "submit", "Submit", show=False),
     ]
 

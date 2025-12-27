@@ -60,6 +60,11 @@ class D1Adapter(DatabaseAdapter):
         """D1 is SQLite-based and does not support stored procedures."""
         return False
 
+    @property
+    def supports_cross_database_queries(self) -> bool:
+        """D1 databases are isolated; cross-database queries not supported."""
+        return False
+
     def connect(self, config: ConnectionConfig) -> D1Connection:
         """Establishes a 'connection' to D1 by preparing authenticated session."""
         requests = import_driver_module(

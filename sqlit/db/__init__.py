@@ -88,6 +88,7 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "SchemaField": ("sqlit.db.schema", "SchemaField"),
     "SelectOption": ("sqlit.db.schema", "SelectOption"),
     # Adapters (through sqlit.db.adapters, which itself lazy-loads)
+    "AzureSQLAdapter": ("sqlit.db.adapters", "AzureSQLAdapter"),
     "CockroachDBAdapter": ("sqlit.db.adapters", "CockroachDBAdapter"),
     "DuckDBAdapter": ("sqlit.db.adapters", "DuckDBAdapter"),
     "FirebirdAdapter": ("sqlit.db.adapters", "FirebirdAdapter"),

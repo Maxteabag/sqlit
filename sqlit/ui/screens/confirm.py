@@ -17,7 +17,7 @@ class ConfirmScreen(ModalScreen):
     BINDINGS = [
         Binding("y", "yes", "Yes", show=False),
         Binding("n", "no", "No", show=False),
-        Binding("escape", "cancel", "Cancel", show=False),
+        Binding("escape", "cancel", "Cancel", show=False, priority=True),
         Binding("enter", "select_option", "Select", show=False),
     ]
 

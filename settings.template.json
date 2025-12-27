@@ -1,6 +1,7 @@
 {
   "_note": "Copy to .sqlit/settings.json (gitignored) and run: sqlit --settings .sqlit/settings.json",
   "theme": "tokyo-night",
+  "custom_themes": [],
   "expanded_nodes": [],
   "allow_plaintext_credentials": false,
   "mock": {
