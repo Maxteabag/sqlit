@@ -106,6 +106,10 @@ class ConnectionSession:
         # Get adapter and connect
         adapter = get_adapter_fn(config.db_type)
         connection = adapter.connect(connect_config)
+        try:
+            adapter.detect_capabilities(connection, config)
+        except Exception:
+            pass
 
         return cls(connection, adapter, config, tunnel)
 

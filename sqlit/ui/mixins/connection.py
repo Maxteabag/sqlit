@@ -216,11 +216,23 @@ class ConnectionMixin:
             self._direct_connection_config = None if is_saved else config
 
             # Load cached active database preference (separate from config.database)
+            reconnected = False
             self._active_database = get_database_preference(config.name)
+            if (
+                self._active_database
+                and self.current_adapter
+                and not self.current_adapter.supports_cross_database_queries
+            ):
+                current_db = self.current_config.database
+                if not current_db or current_db.lower() != self._active_database.lower():
+                    if hasattr(self, "_reconnect_to_database"):
+                        self._reconnect_to_database(self._active_database)
+                        reconnected = True
 
             self.refresh_tree()
             self.call_after_refresh(self._select_connected_node)
-            self._load_schema_cache()
+            if not reconnected:
+                self._load_schema_cache()
             self._update_status_bar()
             self._update_section_labels()
             # Update database labels to show star on active database
@@ -274,6 +286,7 @@ class ConnectionMixin:
         self.current_ssh_tunnel = None
         self._direct_connection_config = None
         self._active_database = None
+        self._clear_query_target_database()
         self.refresh_tree()
         self._update_section_labels()
 
@@ -293,6 +306,29 @@ class ConnectionMixin:
             self._disconnect_silent()
             self.status_bar.update("Disconnected")
             self.notify("Disconnected")
+
+    def _get_effective_database(self: AppProtocol) -> str | None:
+        """Return the active database for the current connection context."""
+        if not self.current_adapter or not self.current_config:
+            return None
+        if self.current_adapter.supports_cross_database_queries:
+            db_name = getattr(self, "_active_database", None) or self.current_config.database
+            return db_name or None
+        db_name = self.current_config.database
+        return db_name or None
+
+    def _get_metadata_db_arg(self: AppProtocol, database: str | None) -> str | None:
+        """Return database arg for metadata calls when cross-db queries are supported."""
+        if not database or not self.current_adapter:
+            return None
+        if self.current_adapter.supports_cross_database_queries:
+            return database
+        return None
+
+    def _clear_query_target_database(self: AppProtocol) -> None:
+        """Clear any pending per-query database override."""
+        if hasattr(self, "_query_target_database"):
+            self._query_target_database = None
 
     def action_new_connection(self: AppProtocol) -> None:
         from ..screens import ConnectionScreen

@@ -13,6 +13,9 @@ if TYPE_CHECKING:
 class SQLServerAdapter(DatabaseAdapter):
     """Adapter for Microsoft SQL Server using the mssql-python driver."""
 
+    def __init__(self) -> None:
+        self._supports_cross_database_queries_override: bool | None = None
+
     @classmethod
     def badge_label(cls) -> str:
         return "MSSQL"
@@ -41,6 +44,12 @@ class SQLServerAdapter(DatabaseAdapter):
 
     @property
     def supports_multiple_databases(self) -> bool:
+        return True
+
+    @property
+    def supports_cross_database_queries(self) -> bool:
+        if self._supports_cross_database_queries_override is not None:
+            return self._supports_cross_database_queries_override
         return True
 
     @property
@@ -116,6 +125,19 @@ class SQLServerAdapter(DatabaseAdapter):
             config.set_option("trusted_connection", False)
 
         return config
+
+    def detect_capabilities(self, conn: Any, config: ConnectionConfig) -> None:
+        """Detect Azure SQL variants that don't support cross-database queries."""
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') AS int)")
+            row = cursor.fetchone()
+            if row:
+                engine_edition = int(row[0])
+                if engine_edition in (5, 6):
+                    self._supports_cross_database_queries_override = False
+        except Exception:
+            pass
 
     def _build_connection_string(self, config: ConnectionConfig) -> str:
         """Build mssql-python connection string from config.

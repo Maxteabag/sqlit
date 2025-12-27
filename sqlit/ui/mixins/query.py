@@ -146,7 +146,9 @@ class QueryMixin:
         self._query_target_database = None
 
         # Apply active database to query execution (from USE statement or 'u' key)
-        active_db = getattr(self, "_active_database", None)
+        active_db = None
+        if hasattr(self, "_get_effective_database"):
+            active_db = self._get_effective_database()
         if active_db and active_db != config.database and not target_db:
             config = adapter.apply_database_override(config, active_db)
 

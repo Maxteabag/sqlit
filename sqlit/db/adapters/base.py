@@ -275,6 +275,10 @@ class DatabaseAdapter(ABC):
         """Validate provider-specific config values."""
         return None
 
+    def detect_capabilities(self, conn: Any, config: ConnectionConfig) -> None:
+        """Detect runtime capabilities after establishing a connection."""
+        return None
+
     def get_auth_type(self, config: ConnectionConfig) -> Any | None:
         """Return the provider-specific auth type, if applicable."""
         return None

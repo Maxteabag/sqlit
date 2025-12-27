@@ -145,8 +145,11 @@ class AutocompleteMixin:
                 column_names = []
             else:
                 try:
+                    db_arg = database
+                    if hasattr(self, "_get_metadata_db_arg"):
+                        db_arg = self._get_metadata_db_arg(database)
                     columns = self._run_db_call(
-                        adapter.get_columns, connection, actual_table_name, database, schema_name
+                        adapter.get_columns, connection, actual_table_name, db_arg, schema_name
                     )
                     column_names = [c.name for c in columns]
                 except Exception:
@@ -481,12 +484,13 @@ class AutocompleteMixin:
         self._schema_completed_jobs = 0
 
         if adapter.supports_multiple_databases:
-            # Use active database (user preference) if set, otherwise fall back to config
-            db = getattr(self, "_active_database", None) or config.database
+            db = None
+            if hasattr(self, "_get_effective_database"):
+                db = self._get_effective_database()
             if db:
                 # Single database specified - load immediately
                 self._on_databases_loaded([db])
-            else:
+            elif adapter.supports_cross_database_queries:
                 # Need to fetch database list - offload to thread
                 def work() -> None:
                     try:
@@ -498,6 +502,8 @@ class AutocompleteMixin:
                         self.call_from_thread(self._on_databases_error, e)
 
                 self.run_worker(work, thread=True, name="get-databases")
+            else:
+                self._stop_schema_spinner()
         else:
             # No multiple databases - just proceed with None
             self._on_databases_loaded([None])
@@ -524,12 +530,13 @@ class AutocompleteMixin:
         def get_databases_job() -> None:
             """First job: dispatch thread to get list of databases."""
             if adapter.supports_multiple_databases:
-                # Use active database (user preference) if set, otherwise fall back to config
-                db = getattr(self, "_active_database", None) or config.database
+                db = None
+                if hasattr(self, "_get_effective_database"):
+                    db = self._get_effective_database()
                 if db:
                     # Single database specified - no need for DB call
                     self._on_databases_loaded([db])
-                else:
+                elif adapter.supports_cross_database_queries:
                     # Need to fetch database list - offload to thread
                     def work() -> None:
                         try:
@@ -541,6 +548,8 @@ class AutocompleteMixin:
                             self.call_from_thread(self._on_databases_error, e)
 
                     self.run_worker(work, thread=True, name="get-databases")
+                else:
+                    self._stop_schema_spinner()
             else:
                 # No multiple databases - just proceed with None
                 self._on_databases_loaded([None])
@@ -596,7 +605,10 @@ class AutocompleteMixin:
         # Offload DB call to thread
         def work() -> None:
             try:
-                tables = adapter.get_tables(connection, database)
+                db_arg = database
+                if hasattr(self, "_get_metadata_db_arg"):
+                    db_arg = self._get_metadata_db_arg(database)
+                tables = adapter.get_tables(connection, db_arg)
                 # Store in shared cache and process on main thread
                 self.call_from_thread(self._on_tables_loaded, tables, database, cache_key)
             except Exception as e:
@@ -672,7 +684,10 @@ class AutocompleteMixin:
         # Offload DB call to thread
         def work() -> None:
             try:
-                views = adapter.get_views(connection, database)
+                db_arg = database
+                if hasattr(self, "_get_metadata_db_arg"):
+                    db_arg = self._get_metadata_db_arg(database)
+                views = adapter.get_views(connection, db_arg)
                 self.call_from_thread(self._on_views_loaded, views, database, cache_key)
             except Exception as e:
                 self.call_from_thread(self._on_views_error, e, database)
@@ -747,7 +762,10 @@ class AutocompleteMixin:
         # Offload DB call to thread
         def work() -> None:
             try:
-                procedures = adapter.get_procedures(connection, database)
+                db_arg = database
+                if hasattr(self, "_get_metadata_db_arg"):
+                    db_arg = self._get_metadata_db_arg(database)
+                procedures = adapter.get_procedures(connection, db_arg)
                 self.call_from_thread(self._on_procedures_loaded, procedures, database, cache_key)
             except Exception as e:
                 self.call_from_thread(self._on_procedures_error, e, database)
@@ -853,23 +871,29 @@ class AutocompleteMixin:
         try:
             databases: list[str | None]
             if adapter.supports_multiple_databases:
-                # Use active database (user preference) if set, otherwise fall back to config
-                db = getattr(self, "_active_database", None) or config.database
+                db = None
+                if hasattr(self, "_get_effective_database"):
+                    db = self._get_effective_database()
                 if db:
                     # Active/default database is set - only load that one
                     databases = [db]
-                else:
+                elif adapter.supports_cross_database_queries:
                     # No default database - load all non-system databases
                     all_dbs = await run_db_call(adapter.get_databases, connection)
                     system_dbs = {s.lower() for s in adapter.system_databases}
                     databases = [d for d in all_dbs if d.lower() not in system_dbs]
+                else:
+                    databases = []
             else:
                 databases = [None]
 
             for database in databases:
                 try:
                     # Get tables
-                    tables = await run_db_call(adapter.get_tables, connection, database)
+                    db_arg = database
+                    if hasattr(self, "_get_metadata_db_arg"):
+                        db_arg = self._get_metadata_db_arg(database)
+                    tables = await run_db_call(adapter.get_tables, connection, db_arg)
                     for schema_name, table_name in tables:
                         # Use simple name if we have a default database, full qualifier otherwise
                         if len(databases) == 1:
@@ -896,7 +920,7 @@ class AutocompleteMixin:
                                 table_metadata[full_name.lower()] = (schema_name, table_name, database)
 
                     # Get views
-                    views = await run_db_call(adapter.get_views, connection, database)
+                    views = await run_db_call(adapter.get_views, connection, db_arg)
                     for schema_name, view_name in views:
                         # Use simple name if we have a default database, full qualifier otherwise
                         if len(databases) == 1:
@@ -924,7 +948,7 @@ class AutocompleteMixin:
 
                     # Get procedures
                     if adapter.supports_stored_procedures:
-                        procedures = await run_db_call(adapter.get_procedures, connection, database)
+                        procedures = await run_db_call(adapter.get_procedures, connection, db_arg)
                         schema_cache["procedures"].extend(procedures)
 
                 except Exception:

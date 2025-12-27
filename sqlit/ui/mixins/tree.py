@@ -182,12 +182,9 @@ class TreeMixin:
                     dbs_node.data = FolderNode(folder_type="databases")
 
                     databases = self._run_db_call(adapter.get_databases, self.current_connection)
-                    # For non-cross-db adapters, use config.database as active
-                    # For cross-db adapters, use _active_database
-                    if adapter.supports_cross_database_queries:
-                        active_db = getattr(self, "_active_database", None)
-                    else:
-                        active_db = self.current_config.database
+                    active_db = None
+                    if hasattr(self, "_get_effective_database"):
+                        active_db = self._get_effective_database()
                     for db_name in databases:
                         # Show active database with star and green text
                         if active_db and db_name.lower() == active_db.lower():
@@ -369,7 +366,10 @@ class TreeMixin:
                 else:
                     adapter = self._session.adapter
                     conn = self._session.connection
-                    columns = self._run_db_call(adapter.get_columns, conn, obj_name, db_name, schema_name)
+                    db_arg = db_name
+                    if hasattr(self, "_get_metadata_db_arg"):
+                        db_arg = self._get_metadata_db_arg(db_name)
+                    columns = self._run_db_call(adapter.get_columns, conn, obj_name, db_arg, schema_name)
 
                 # Update UI from worker thread
                 self.call_from_thread(self._on_columns_loaded, node, db_name, schema_name, obj_name, columns)
@@ -414,6 +414,9 @@ class TreeMixin:
                 else:
                     adapter = self._session.adapter
                     conn = self._session.connection
+                    db_arg = db_name
+                    if hasattr(self, "_get_metadata_db_arg"):
+                        db_arg = self._get_metadata_db_arg(db_name)
 
                     # Check shared cache first for tables/views/procedures
                     obj_cache = getattr(self, "_db_object_cache", {})
@@ -422,7 +425,7 @@ class TreeMixin:
                         if cache_key in obj_cache and "tables" in obj_cache[cache_key]:
                             raw_data = obj_cache[cache_key]["tables"]
                         else:
-                            raw_data = self._run_db_call(adapter.get_tables, conn, db_name)
+                            raw_data = self._run_db_call(adapter.get_tables, conn, db_arg)
                             # Store in shared cache
                             if cache_key not in obj_cache:
                                 obj_cache[cache_key] = {}
@@ -433,7 +436,7 @@ class TreeMixin:
                         if cache_key in obj_cache and "views" in obj_cache[cache_key]:
                             raw_data = obj_cache[cache_key]["views"]
                         else:
-                            raw_data = self._run_db_call(adapter.get_views, conn, db_name)
+                            raw_data = self._run_db_call(adapter.get_views, conn, db_arg)
                             # Store in shared cache
                             if cache_key not in obj_cache:
                                 obj_cache[cache_key] = {}
@@ -444,7 +447,7 @@ class TreeMixin:
                         if adapter.supports_indexes:
                             items = [
                                 ("index", i.name, i.table_name)
-                                for i in self._run_db_call(adapter.get_indexes, conn, db_name)
+                                for i in self._run_db_call(adapter.get_indexes, conn, db_arg)
                             ]
                         else:
                             items = []
@@ -452,7 +455,7 @@ class TreeMixin:
                         if adapter.supports_triggers:
                             items = [
                                 ("trigger", t.name, t.table_name)
-                                for t in self._run_db_call(adapter.get_triggers, conn, db_name)
+                                for t in self._run_db_call(adapter.get_triggers, conn, db_arg)
                             ]
                         else:
                             items = []
@@ -460,7 +463,7 @@ class TreeMixin:
                         if adapter.supports_sequences:
                             items = [
                                 ("sequence", s.name, "")
-                                for s in self._run_db_call(adapter.get_sequences, conn, db_name)
+                                for s in self._run_db_call(adapter.get_sequences, conn, db_arg)
                             ]
                         else:
                             items = []
@@ -469,7 +472,7 @@ class TreeMixin:
                             if cache_key in obj_cache and "procedures" in obj_cache[cache_key]:
                                 raw_data = obj_cache[cache_key]["procedures"]
                             else:
-                                raw_data = self._run_db_call(adapter.get_procedures, conn, db_name)
+                                raw_data = self._run_db_call(adapter.get_procedures, conn, db_arg)
                                 # Store in shared cache
                                 if cache_key not in obj_cache:
                                     obj_cache[cache_key] = {}
@@ -693,8 +696,11 @@ class TreeMixin:
         if self._get_node_kind(node) in ("table", "view"):
             # Store table info for edit_cell action
             try:
+                db_arg = data.database
+                if hasattr(self, "_get_metadata_db_arg"):
+                    db_arg = self._get_metadata_db_arg(data.database)
                 columns = self._session.adapter.get_columns(
-                    self._session.connection, data.name, data.database, data.schema
+                    self._session.connection, data.name, db_arg, data.schema
                 )
                 self._last_query_table = {
                     "database": data.database,
@@ -732,8 +738,11 @@ class TreeMixin:
             return
 
         try:
+            db_arg = data.database
+            if hasattr(self, "_get_metadata_db_arg"):
+                db_arg = self._get_metadata_db_arg(data.database)
             info = self._session.adapter.get_index_definition(
-                self._session.connection, data.name, data.table_name, data.database
+                self._session.connection, data.name, data.table_name, db_arg
             )
             self._display_object_info("Index", info)
         except Exception as e:
@@ -745,8 +754,11 @@ class TreeMixin:
             return
 
         try:
+            db_arg = data.database
+            if hasattr(self, "_get_metadata_db_arg"):
+                db_arg = self._get_metadata_db_arg(data.database)
             info = self._session.adapter.get_trigger_definition(
-                self._session.connection, data.name, data.table_name, data.database
+                self._session.connection, data.name, data.table_name, db_arg
             )
             self._display_object_info("Trigger", info)
         except Exception as e:
@@ -758,8 +770,11 @@ class TreeMixin:
             return
 
         try:
+            db_arg = data.database
+            if hasattr(self, "_get_metadata_db_arg"):
+                db_arg = self._get_metadata_db_arg(data.database)
             info = self._session.adapter.get_sequence_definition(
-                self._session.connection, data.name, data.database
+                self._session.connection, data.name, db_arg
             )
             self._display_object_info("Sequence", info)
         except Exception as e:
@@ -854,6 +869,9 @@ class TreeMixin:
         if not self._session:
             return
 
+        if hasattr(self, "_clear_query_target_database"):
+            self._clear_query_target_database()
+
         try:
             self._session.switch_database(db_name)
 
@@ -898,6 +916,9 @@ class TreeMixin:
             self.notify("Not connected", severity="error")
             return
 
+        if hasattr(self, "_clear_query_target_database"):
+            self._clear_query_target_database()
+
         # Check if adapter supports cross-database queries
         if not self.current_adapter.supports_cross_database_queries and db_name:
             # For PostgreSQL, CockroachDB, etc. - need to reconnect to the new database
@@ -932,11 +953,9 @@ class TreeMixin:
         if not self.current_config or not self.current_adapter:
             return
 
-        # For non-cross-db adapters, use config.database; otherwise use _active_database
-        if self.current_adapter.supports_cross_database_queries:
-            active_db = getattr(self, "_active_database", None)
-        else:
-            active_db = self.current_config.database
+        active_db = None
+        if hasattr(self, "_get_effective_database"):
+            active_db = self._get_effective_database()
 
         # Find the Databases folder and update labels
         for conn_node in self.object_tree.root.children:
@@ -974,7 +993,9 @@ class TreeMixin:
             return
 
         db_name = node.data.name
-        current_active = getattr(self, "_active_database", None)
+        current_active = None
+        if hasattr(self, "_get_effective_database"):
+            current_active = self._get_effective_database()
 
         # Toggle: if already active, clear it; otherwise set it
         if current_active and current_active.lower() == db_name.lower():
