@@ -31,6 +31,7 @@ __all__ = [
     "SQLServerAdapter",
     "SupabaseAdapter",
     "TursoAdapter",
+    "AthenaAdapter",
     # Factory helpers
     "get_adapter",
     "get_supported_adapter_db_types",
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
     from .sqlite import SQLiteAdapter
     from .supabase import SupabaseAdapter
     from .turso import TursoAdapter
+    from .athena import AthenaAdapter
 
 
 def get_adapter(db_type: str) -> DatabaseAdapter:

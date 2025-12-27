@@ -25,7 +25,7 @@
 ---
 
 ### Connect
-Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, and Turso.
+Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, and Athena.
 
 ![Database Providers](demos/demo-providers.gif)
 
@@ -138,6 +138,8 @@ sqlit connections add cockroachdb --name "MyCockroach" --server "localhost" --po
 sqlit connections add sqlite --name "MyLocalDB" --file-path "/path/to/database.db"
 sqlit connections add turso --name "MyTurso" --server "libsql://your-db.turso.io" --password "your-auth-token"
 sqlit connections add firebird --name "MyFirebird" --server "localhost" --username "user" --password "pass" --database "employee"
+sqlit connections add athena --name "MyAthena" --athena-region-name "us-east-1" --athena-s3-staging-dir "s3://my-bucket/results/" --athena-auth-method "profile" --athena-profile-name "default"
+sqlit connections add athena --name "MyAthenaKeys" --athena-region-name "us-east-1" --athena-s3-staging-dir "s3://my-bucket/results/" --athena-auth-method "keys" --username "ACCESS_KEY" --password "SECRET_KEY"
 
 # Connect via SSH tunnel
 sqlit connections add postgresql --name "RemoteDB" --server "db-host" --username "dbuser" --password "dbpass" \
@@ -249,6 +251,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Cloudflare D1                       | `requests`                   | `pipx inject sqlit-tui requests`                   | `python -m pip install requests`                   |
 | Snowflake                           | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` |
 | Firebird                            | `firebirdsql`                | `pipx inject sqlit-tui firebirdsql`                | `python -m pip install firebirdsql`                |
+| Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   |
 
 ### SSH Tunnel Support
 
