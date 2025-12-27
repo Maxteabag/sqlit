@@ -50,6 +50,7 @@ all = [
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",
     "snowflake-connector-python>=3.7.0",
+    "pyathena>=3.22.0",
 ]
 postgres = ["psycopg2-binary>=2.9.0"]
 cockroachdb = ["psycopg2-binary>=2.9.0"]
@@ -63,6 +64,7 @@ d1 = ["requests>=2.32.4"]  # min avoids known CVEs
 turso = ["libsql>=0.1.0"]
 firebird = ["firebirdsql>=1.3.5"]
 snowflake = ["snowflake-connector-python>=3.7.0"]
+athena = ["pyathena>=3.22.0"]
 ssh = [
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",

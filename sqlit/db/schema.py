@@ -553,6 +553,71 @@ SNOWFLAKE_SCHEMA = ConnectionSchema(
 )
 
 
+ATHENA_SCHEMA = ConnectionSchema(
+    db_type="athena",
+    display_name="AWS Athena",
+    fields=(
+        SchemaField(
+            name="athena_region_name",
+            label="Region",
+            required=True,
+            default="us-east-1",
+        ),
+        SchemaField(
+            name="athena_work_group",
+            label="WorkGroup",
+            required=True,
+            default="primary",
+            description="Athena WorkGroup",
+        ),
+        SchemaField(
+            name="athena_s3_staging_dir",
+            label="S3 Staging Dir",
+            placeholder="s3://your-bucket/path/",
+            required=True,
+            description="S3 location for query results",
+        ),
+        SchemaField(
+            name="athena_auth_method",
+            label="Auth Method",
+            field_type=FieldType.SELECT,
+            options=(
+                SelectOption("profile", "AWS Profile"),
+                SelectOption("keys", "Access Keys"),
+            ),
+            default="profile",
+        ),
+        SchemaField(
+            name="athena_profile_name",
+            label="Profile Name",
+            placeholder="default",
+            required=True,
+            default="default",
+            description="AWS CLI profile name",
+            visible_when=lambda v: v.get("athena_auth_method") == "profile",
+        ),
+        SchemaField(
+            name="username",
+            label="Access Key",
+            placeholder="AWS Access Key ID",
+            required=True,
+            group="credentials",
+            visible_when=lambda v: v.get("athena_auth_method") == "keys",
+        ),
+        SchemaField(
+            name="password",
+            label="Secret Key",
+            field_type=FieldType.PASSWORD,
+            placeholder="AWS Secret Access Key",
+            required=True,
+            group="credentials",
+            visible_when=lambda v: v.get("athena_auth_method") == "keys",
+        ),
+    ),
+    supports_ssh=False,
+)
+
+
 def get_connection_schema(db_type: str) -> ConnectionSchema:
     from .providers import get_connection_schema as _get_connection_schema
 

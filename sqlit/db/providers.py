@@ -30,6 +30,7 @@ from .schema import (
     SQLITE_SCHEMA,
     SUPABASE_SCHEMA,
     TURSO_SCHEMA,
+    ATHENA_SCHEMA,
     ConnectionSchema,
 )
 
@@ -100,6 +101,10 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "snowflake": ProviderSpec(
         schema=SNOWFLAKE_SCHEMA,
         adapter_path=("sqlit.db.adapters.snowflake", "SnowflakeAdapter"),
+    ),
+    "athena": ProviderSpec(
+        schema=ATHENA_SCHEMA,
+        adapter_path=("sqlit.db.adapters.athena", "AthenaAdapter"),
     ),
 }
 

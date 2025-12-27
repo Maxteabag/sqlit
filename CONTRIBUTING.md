@@ -102,7 +102,13 @@ The database tests can be configured with these environment variables:
 | `FIREBIRD_PORT` | `3050` | Firebird port |
 | `FIREBIRD_USER` | `testuser` | Firebird username |
 | `FIREBIRD_PASSWORD` | `TestPassword123!` | Firebird password |
-| `FIREBIRD_DATABASE` | `/var/lib/firebird/data/test_sqlit.fdb` | Firebird database path or alias | 
+| `FIREBIRD_DATABASE` | `/var/lib/firebird/data/test_sqlit.fdb` | Firebird database path or alias |
+
+**AWS Athena:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AWS_PROFILE` | `default` | AWS CLI profile to use (must be configured in `~/.aws/credentials`) |
+| `AWS_REGION` | `us-east-1` | AWS Region |
 
 ### CockroachDB Quickstart (Docker)
 
