@@ -50,6 +50,16 @@ class AthenaAdapter(CursorBasedAdapter):
         return False
 
     @property
+    def supports_cross_database_queries(self) -> bool:
+        """Athena supports cross-database queries using database.table syntax."""
+        return True
+
+    @property
+    def system_databases(self) -> frozenset[str]:
+        """Athena system databases to exclude from user listings."""
+        return frozenset({"information_schema"})
+
+    @property
     def default_schema(self) -> str:
         return "default"
 
@@ -75,7 +85,7 @@ class AthenaAdapter(CursorBasedAdapter):
             connect_args["aws_secret_access_key"] = config.password
         else:
             connect_args["profile_name"] = config.options.get("athena_profile_name", "default")
-            
+
         # Optional WorkGroup
         if "athena_work_group" in config.options:
             connect_args["work_group"] = config.options["athena_work_group"]
@@ -123,7 +133,7 @@ class AthenaAdapter(CursorBasedAdapter):
             # A view row element looks like this: ('col_name            \tstring   ',)
             col_name, data_type = [e.strip() for e in row[0].split("\t")[:2]]
             columns.append(ColumnInfo(name=col_name, data_type=data_type, is_primary_key=False))
-            
+
         return columns
 
     def quote_identifier(self, name: str) -> str:
