@@ -187,7 +187,7 @@ class UINavigationMixin:
     def _update_status_bar(self: AppProtocol) -> None:
         """Update status bar with connection and vim mode info."""
         from ...widgets import VimMode
-        from .query import SPINNER_FRAMES
+        from ..spinner import SPINNER_FRAMES
 
         try:
             status = self.status_bar
@@ -206,8 +206,8 @@ class UINavigationMixin:
         if getattr(self, "_query_executing", False):
             conn_info = ""
         elif connecting_config is not None:
-            spinner_idx = getattr(self, "_connect_spinner_index", 0)
-            spinner = SPINNER_FRAMES[spinner_idx % len(SPINNER_FRAMES)]
+            connect_spinner = getattr(self, "_connect_spinner", None)
+            spinner = connect_spinner.frame if connect_spinner else SPINNER_FRAMES[0]
             source_emoji = connecting_config.get_source_emoji()
             conn_info = f"[#FBBF24]{spinner} Connecting to {source_emoji}{connecting_config.name}[/]"
         elif getattr(self, "_connection_failed", False):
@@ -225,26 +225,24 @@ class UINavigationMixin:
         status_parts = []
 
         # Check if schema is indexing
-        if getattr(self, "_schema_indexing", False):
-            spinner_idx = getattr(self, "_schema_spinner_index", 0)
-            spinner = SPINNER_FRAMES[spinner_idx % len(SPINNER_FRAMES)]
-            status_parts.append(f"[bold cyan]{spinner} Indexing...[/]")
+        schema_spinner = getattr(self, "_schema_spinner", None)
+        if schema_spinner and schema_spinner.running:
+            status_parts.append(f"[bold cyan]{schema_spinner.frame} Indexing...[/]")
 
         # Check if query is executing
-        if getattr(self, "_query_executing", False):
+        query_spinner = getattr(self, "_query_spinner", None)
+        if query_spinner and query_spinner.running:
             import time
 
             from ...utils import format_duration_ms
 
-            spinner_idx = getattr(self, "_spinner_index", 0)
-            spinner = SPINNER_FRAMES[spinner_idx % len(SPINNER_FRAMES)]
             start_time = getattr(self, "_query_start_time", None)
             if start_time:
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 elapsed_str = format_duration_ms(elapsed_ms, always_seconds=True)
-                status_parts.append(f"[bold yellow]{spinner} Executing [{elapsed_str}][/] [dim]^z to cancel[/]")
+                status_parts.append(f"[bold yellow]{query_spinner.frame} Executing [{elapsed_str}][/] [dim]^z to cancel[/]")
             else:
-                status_parts.append(f"[bold yellow]{spinner} Executing[/] [dim]^z to cancel[/]")
+                status_parts.append(f"[bold yellow]{query_spinner.frame} Executing[/] [dim]^z to cancel[/]")
 
         status_str = "  ".join(status_parts)
         if status_str:

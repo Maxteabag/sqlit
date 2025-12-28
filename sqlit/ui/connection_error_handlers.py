@@ -35,7 +35,52 @@ class MissingDriverHandler:
         )
 
 
+@dataclass(frozen=True)
+class AzureFirewallHandler:
+    """Handle Azure SQL firewall errors by offering to add a firewall rule."""
+
+    def can_handle(self, error: Exception) -> bool:
+        from ..services.cloud_detector import is_firewall_error
+
+        return is_firewall_error(str(error))
+
+    def handle(self, app: AppProtocol, error: Exception, config: ConnectionConfig) -> None:
+        from ..services.cloud_detector import parse_ip_from_firewall_error
+        from .screens import AzureFirewallScreen
+
+        # Only handle if this is an Azure connection with required metadata
+        if config.source != "azure":
+            return
+
+        server_name = config.get_option("azure_server_name")
+        resource_group = config.get_option("azure_resource_group")
+        subscription_id = config.get_option("azure_subscription_id")
+
+        if not server_name or not resource_group:
+            return
+
+        ip_address = parse_ip_from_firewall_error(str(error))
+        if not ip_address:
+            return
+
+        def on_result(added: bool) -> None:
+            if added:
+                # Retry connection after firewall rule added
+                app.connect_to_server(config)
+
+        app.push_screen(
+            AzureFirewallScreen(
+                server_name=server_name,
+                resource_group=resource_group,
+                subscription_id=subscription_id,
+                ip_address=ip_address,
+            ),
+            on_result,
+        )
+
+
 _DEFAULT_HANDLERS: tuple[ConnectionErrorHandler, ...] = (
+    AzureFirewallHandler(),
     MissingDriverHandler(),
 )
 

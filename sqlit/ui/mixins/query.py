@@ -6,18 +6,16 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 from rich.markup import escape as escape_markup
-from textual.timer import Timer
 from textual.worker import Worker
 from textual_fastdatatable import ArrowBackend
 
 from ..protocols import AppProtocol
+from ..spinner import Spinner
 from ...widgets import SqlitDataTable
 from ...utils import format_duration_ms
 
 if TYPE_CHECKING:
     from ...services import QueryService
-
-SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 # Row limits for rendering
 MAX_FETCH_ROWS = 100000
@@ -38,7 +36,7 @@ class QueryMixin:
     _query_worker: Worker[Any] | None = None
     _schema_worker: Worker[Any] | None = None
     _cancellable_query: Any | None = None
-    _spinner_timer: Timer | None = None
+    _query_spinner: Spinner | None = None
     _query_cursor_cache: dict[str, tuple[int, int]] | None = None  # query text -> cursor (row, col)
     _results_table_counter: int = 0  # Counter for unique table IDs
 
@@ -100,25 +98,17 @@ class QueryMixin:
 
         self._query_executing = True
         self._query_start_time = time.perf_counter()
-        self._spinner_index = 0
-        self._update_status_bar()
-        if hasattr(self, "_spinner_timer") and self._spinner_timer is not None:
-            self._spinner_timer.stop()
-        self._spinner_timer = self.set_interval(1 / 30, self._animate_spinner)  # 30fps
+        if self._query_spinner is not None:
+            self._query_spinner.stop()
+        self._query_spinner = Spinner(self, on_tick=lambda _: self._update_status_bar(), fps=30)
+        self._query_spinner.start()
 
     def _stop_query_spinner(self: AppProtocol) -> None:
         """Stop the query execution spinner animation."""
         self._query_executing = False
-        if hasattr(self, "_spinner_timer") and self._spinner_timer is not None:
-            self._spinner_timer.stop()
-            self._spinner_timer = None
-        self._update_status_bar()
-
-    def _animate_spinner(self: AppProtocol) -> None:
-        """Update spinner animation frame."""
-        if not self._query_executing:
-            return
-        self._spinner_index = (self._spinner_index + 1) % len(SPINNER_FRAMES)
+        if self._query_spinner is not None:
+            self._query_spinner.stop()
+            self._query_spinner = None
         self._update_status_bar()
 
     async def _run_query_async(self: AppProtocol, query: str, keep_insert_mode: bool) -> None:

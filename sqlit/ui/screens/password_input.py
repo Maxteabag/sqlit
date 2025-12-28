@@ -111,7 +111,7 @@ class PasswordInputScreen(ModalScreen):
                     value="",
                     placeholder="",
                     id="password-input",
-                    password=True,
+                    password=False,
                 )
 
     def on_mount(self) -> None:

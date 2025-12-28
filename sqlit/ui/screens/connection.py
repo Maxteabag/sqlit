@@ -14,7 +14,6 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal
 from textual.events import ScreenResume, ScreenSuspend
 from textual.screen import ModalScreen
-from textual.timer import Timer
 from textual.widgets import (
     Button,
     Input,
@@ -52,17 +51,13 @@ from ...fields import (
 from ...install_strategy import detect_strategy
 from ...validation import ValidationState, validate_connection_form
 from ...widgets import Dialog
-
-
-_TEST_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+from ..spinner import Spinner, SPINNER_FRAMES
 
 
 class ConnectionScreen(ModalScreen):
     """Modal screen for adding/editing a connection."""
 
     AUTO_FOCUS = "#conn-name"
-
-    _INSTALL_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
@@ -271,12 +266,10 @@ class ConnectionScreen(ModalScreen):
         self._missing_ssh_driver_error: Any = None  # Stores MissingDriverError for SSH tunnel
         self._install_error: Any = None
         self._install_in_progress: bool = False
-        self._install_spinner_timer: Timer | None = None
-        self._install_spinner_index: int = 0
+        self._install_spinner: Spinner | None = None
         # Test connection spinner state
         self._test_in_progress: bool = False
-        self._test_spinner_timer: Timer | None = None
-        self._test_spinner_index: int = 0
+        self._test_spinner: Spinner | None = None
         self._test_start_time: float = 0.0
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
@@ -497,10 +490,10 @@ class ConnectionScreen(ModalScreen):
 
         if self._install_in_progress and self._install_error:
             error = self._install_error
-            spinner = self._INSTALL_SPINNER_FRAMES[self._install_spinner_index % len(self._INSTALL_SPINNER_FRAMES)]
+            spinner_frame = self._install_spinner.frame if self._install_spinner else SPINNER_FRAMES[0]
             test_status.update(
                 f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
-                f"[dim]{spinner} Installing…[/]"
+                f"[dim]{spinner_frame} Installing…[/]"
             )
             dialog.border_subtitle = "[bold]Installing…[/]  Cancel <esc>"
             return
@@ -548,8 +541,8 @@ class ConnectionScreen(ModalScreen):
                 test_status.update("")
             dialog.border_subtitle = "[bold]Test ^t[/]  Save ^s  Cancel <esc>"
 
-    def _tick_install_spinner(self) -> None:
-        self._install_spinner_index += 1
+    def _tick_install_spinner(self, _: str) -> None:
+        """Handle install spinner tick - just update the UI."""
         self._update_driver_status_ui()
 
     def _start_test_spinner(self) -> None:
@@ -558,25 +551,17 @@ class ConnectionScreen(ModalScreen):
 
         self._test_in_progress = True
         self._test_start_time = time.perf_counter()
-        self._test_spinner_index = 0
-        self._update_test_status()
-        if self._test_spinner_timer is not None:
-            self._test_spinner_timer.stop()
-        self._test_spinner_timer = self.set_interval(1 / 30, self._tick_test_spinner)
+        if self._test_spinner is not None:
+            self._test_spinner.stop()
+        self._test_spinner = Spinner(self, on_tick=lambda _: self._update_test_status(), fps=30)
+        self._test_spinner.start()
 
     def _stop_test_spinner(self) -> None:
         """Stop the connection test spinner animation."""
         self._test_in_progress = False
-        if self._test_spinner_timer is not None:
-            self._test_spinner_timer.stop()
-            self._test_spinner_timer = None
-
-    def _tick_test_spinner(self) -> None:
-        """Update test spinner animation frame."""
-        if not self._test_in_progress:
-            return
-        self._test_spinner_index = (self._test_spinner_index + 1) % len(_TEST_SPINNER_FRAMES)
-        self._update_test_status()
+        if self._test_spinner is not None:
+            self._test_spinner.stop()
+            self._test_spinner = None
 
     def _update_test_status(self) -> None:
         """Update the test status display with current spinner frame."""
@@ -589,8 +574,8 @@ class ConnectionScreen(ModalScreen):
 
         if self._test_in_progress:
             elapsed = time.perf_counter() - self._test_start_time
-            spinner = _TEST_SPINNER_FRAMES[self._test_spinner_index]
-            test_status.update(f"{spinner} Testing ({elapsed:.1f}s)...")
+            spinner_frame = self._test_spinner.frame if self._test_spinner else SPINNER_FRAMES[0]
+            test_status.update(f"{spinner_frame} Testing ({elapsed:.1f}s)...")
         # When not in progress, status is updated by success/error handlers
 
     def _get_restart_cache_path(self) -> Path:
@@ -637,11 +622,11 @@ class ConnectionScreen(ModalScreen):
 
         self._install_in_progress = True
         self._install_error = error
-        self._install_spinner_index = 0
         self._post_install_message = None
-        self._update_driver_status_ui()
-        if self._install_spinner_timer is None:
-            self._install_spinner_timer = self.set_interval(0.12, self._tick_install_spinner)
+        if self._install_spinner is not None:
+            self._install_spinner.stop()
+        self._install_spinner = Spinner(self, on_tick=self._tick_install_spinner, fps=8)
+        self._install_spinner.start()
 
         # Cache the form state so we can restore after restart.
         self._write_restart_cache()
@@ -652,12 +637,9 @@ class ConnectionScreen(ModalScreen):
         Installer(self.app).install_in_background(error, on_complete=on_complete)
 
     def _stop_install_spinner(self) -> None:
-        if self._install_spinner_timer is not None:
-            try:
-                self._install_spinner_timer.stop()
-            except Exception:
-                pass
-            self._install_spinner_timer = None
+        if self._install_spinner is not None:
+            self._install_spinner.stop()
+            self._install_spinner = None
 
     def _on_missing_driver_install_complete(self, success: bool, output: str, error: Any) -> None:
         from ..screens import MessageScreen

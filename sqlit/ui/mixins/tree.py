@@ -8,7 +8,7 @@ from rich.markup import escape as escape_markup
 from textual.widgets import Tree
 
 from ..protocols import AppProtocol
-from .query import SPINNER_FRAMES
+from ..spinner import SPINNER_FRAMES
 from ...db.providers import get_badge_label, get_connection_display_info
 from ..tree_nodes import (
     ColumnNode,
@@ -58,8 +58,8 @@ class TreeMixin:
         return f"{source_emoji}[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})"
 
     def _connect_spinner_frame(self) -> str:
-        idx = getattr(self, "_connect_spinner_index", 0)
-        return SPINNER_FRAMES[idx % len(SPINNER_FRAMES)]
+        spinner = getattr(self, "_connect_spinner", None)
+        return spinner.frame if spinner else SPINNER_FRAMES[0]
 
     def _get_node_kind(self, node: Any) -> str:
         data = getattr(node, "data", None)

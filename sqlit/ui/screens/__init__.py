@@ -1,5 +1,6 @@
 """Modal screens for sqlit."""
 
+from .azure_firewall import AzureFirewallScreen
 from .confirm import ConfirmScreen
 from .connection import ConnectionScreen
 from .connection_picker import ConnectionPickerScreen
@@ -14,6 +15,7 @@ from .theme import ThemeScreen
 from .value_view import ValueViewScreen
 
 __all__ = [
+    "AzureFirewallScreen",
     "ConfirmScreen",
     "ConnectionScreen",
     "ConnectionPickerScreen",

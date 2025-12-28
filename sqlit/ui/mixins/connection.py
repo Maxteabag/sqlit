@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ..protocols import AppProtocol
-from .query import SPINNER_FRAMES
+from ..spinner import Spinner
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
     from ...db import DatabaseAdapter
+    from ...services.cloud_detector import AzureSqlServer
     from ...services.docker_detector import DetectedContainer
-    from ..screens.connection_picker import DockerConnectionResult
+    from ..screens.connection_picker import AzureConnectionResult, DockerConnectionResult
 
 
 def _needs_db_password(config: ConnectionConfig) -> bool:
@@ -24,6 +25,11 @@ def _needs_db_password(config: ConnectionConfig) -> bool:
 
     # File-based databases (SQLite, DuckDB) don't need passwords
     if is_file_based(config.db_type):
+        return False
+
+    # Microsoft Entra auth types that don't need passwords
+    auth_type = config.get_option("auth_type")
+    if auth_type in ("ad_default", "ad_integrated", "windows"):
         return False
 
     # Check if password is not set (None means prompt needed)
@@ -51,8 +57,7 @@ class ConnectionMixin:
     current_config: ConnectionConfig | None = None
     current_adapter: DatabaseAdapter | None = None
     _connecting_config: ConnectionConfig | None = None
-    _connect_spinner_timer = None
-    _connect_spinner_index = 0
+    _connect_spinner: Spinner | None = None
 
     def _populate_credentials_if_missing(self: AppProtocol, config: ConnectionConfig) -> None:
         """Populate missing credentials from the credentials service."""
@@ -156,22 +161,21 @@ class ConnectionMixin:
 
     def _start_connect_spinner(self: AppProtocol) -> None:
         """Start the connection spinner animation."""
-        self._connect_spinner_index = 0
-        if hasattr(self, "_connect_spinner_timer") and self._connect_spinner_timer is not None:
-            self._connect_spinner_timer.stop()
-        self._connect_spinner_timer = self.set_interval(1 / 30, self._animate_connect_spinner)
+        if self._connect_spinner is not None:
+            self._connect_spinner.stop()
+        self._connect_spinner = Spinner(self, on_tick=lambda _: self._on_connect_spinner_tick(), fps=30)
+        self._connect_spinner.start()
 
     def _stop_connect_spinner(self: AppProtocol) -> None:
         """Stop the connection spinner animation."""
-        if hasattr(self, "_connect_spinner_timer") and self._connect_spinner_timer is not None:
-            self._connect_spinner_timer.stop()
-            self._connect_spinner_timer = None
+        if self._connect_spinner is not None:
+            self._connect_spinner.stop()
+            self._connect_spinner = None
 
-    def _animate_connect_spinner(self: AppProtocol) -> None:
-        """Update connecting spinner animation frame."""
+    def _on_connect_spinner_tick(self: AppProtocol) -> None:
+        """Update UI on connect spinner tick."""
         if not getattr(self, "_connecting_config", None):
             return
-        self._connect_spinner_index = (self._connect_spinner_index + 1) % len(SPINNER_FRAMES)
         self._update_connecting_indicator()
         try:
             self._update_status_bar()
@@ -507,9 +511,14 @@ class ConnectionMixin:
             return
 
         result_kind = getattr(result, "get_result_kind", None)
-        if callable(result_kind) and result_kind() == "docker":
-            self._handle_docker_container_result(result)
-            return
+        if callable(result_kind):
+            kind = result_kind()
+            if kind == "docker":
+                self._handle_docker_container_result(result)
+                return
+            elif kind == "azure":
+                self._handle_azure_resource_result(result)
+                return
 
         # Handle saved connection selection
         config = next((c for c in self.connections if c.name == result), None)
@@ -563,3 +572,15 @@ class ConnectionMixin:
             if conn.name == container.container_name:
                 return conn
         return None
+
+    def _handle_azure_resource_result(self: AppProtocol, result: AzureConnectionResult) -> None:
+        """Handle an Azure SQL resource selection from the connection picker."""
+        from ...services.cloud_detector import azure_server_to_connection_config
+
+        server = result.server
+        database = result.database
+        use_sql_auth = result.use_sql_auth
+        config = azure_server_to_connection_config(server, database, use_sql_auth)
+
+        # Connect - will prompt for password if using SQL auth
+        self.connect_to_server(config)
