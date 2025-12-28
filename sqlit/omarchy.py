@@ -27,6 +27,13 @@ THEME_ALIASES: dict[str, str] = {
     "catppuccin": "catppuccin-mocha",
     # Flexoki light variant
     "flexoki-light": "flexoki",
+    # Handle space/underscore variations in omarchy theme names
+    "matte black": "matte-black",
+    "matte_black": "matte-black",
+    "osaka jade": "osaka-jade",
+    "osaka_jade": "osaka-jade",
+    # Ethereal doesn't have an exact match, use rose-pine as closest
+    "ethereal": "rose-pine",
 }
 
 

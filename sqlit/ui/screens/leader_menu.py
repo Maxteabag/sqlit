@@ -84,6 +84,12 @@ class LeaderMenuScreen(ModalScreen):
     def action_dismiss(self) -> None:  # type: ignore[override]
         self.dismiss(None)
 
+    def on_key(self, event: Any) -> None:
+        """Handle key events - explicit ESC handling."""
+        if event.key == "escape":
+            self.dismiss(None)
+            event.stop()
+
     def _run_and_dismiss(self, action_name: str) -> None:
         """Run an app action and dismiss the menu."""
         self.dismiss(action_name)

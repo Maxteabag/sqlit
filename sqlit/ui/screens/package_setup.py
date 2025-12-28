@@ -21,7 +21,7 @@ class PackageSetupScreen(ModalScreen):
     BINDINGS = [
         Binding("i", "install", "Install"),
         Binding("y", "yank", "Yank"),
-        Binding("escape", "cancel", "Cancel"),
+        Binding("escape", "cancel", "Cancel", priority=True),
     ]
 
     CSS = """

@@ -67,8 +67,8 @@ class TestContextualKeybindings:
 
         with (
             patch("sqlit.app.load_connections", mock_connections.load_all),
-            patch("sqlit.app.load_settings", mock_settings.load_all),
-            patch("sqlit.app.save_settings", mock_settings.save_all),
+            patch("sqlit.theme_manager.load_settings", mock_settings.load_all),
+            patch("sqlit.theme_manager.save_settings", mock_settings.save_all),
         ):
             app = SSMSTUI()
 

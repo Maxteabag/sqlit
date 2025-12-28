@@ -154,6 +154,22 @@ class AppProtocol(Protocol):
         """Set the theme."""
         ...
 
+    def get_custom_theme_names(self) -> set[str]:
+        """Return custom theme names."""
+        ...
+
+    def add_custom_theme(self, theme_name: str) -> str:
+        """Add a custom theme by name."""
+        ...
+
+    def get_custom_theme_path(self, theme_name: str) -> Any:
+        """Get the custom theme path for a theme name."""
+        ...
+
+    def open_custom_theme_in_editor(self, theme_name: str) -> None:
+        """Open a custom theme in an external editor."""
+        ...
+
     # === SSMSTUI widget properties ===
 
     @property

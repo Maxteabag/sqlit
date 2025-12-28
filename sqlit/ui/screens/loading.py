@@ -16,7 +16,7 @@ class LoadingScreen(ModalScreen[None]):
     """Screen to display a loading message with a spinner."""
 
     BINDINGS = [
-        Binding("escape", "cancel", "Cancel", show=False),
+        Binding("escape", "cancel", "Cancel", show=False, priority=True),
     ]
 
     def __init__(self, message: str, *, on_cancel: Callable[[], None] | None = None):

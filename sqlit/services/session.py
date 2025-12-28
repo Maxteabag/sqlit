@@ -106,6 +106,10 @@ class ConnectionSession:
         # Get adapter and connect
         adapter = get_adapter_fn(config.db_type)
         connection = adapter.connect(connect_config)
+        try:
+            adapter.detect_capabilities(connection, config)
+        except Exception:
+            pass
 
         return cls(connection, adapter, config, tunnel)
 
@@ -159,6 +163,57 @@ class ConnectionSession:
 
             self._executor = DatabaseExecutor(self)
         return self._executor
+
+    def switch_database(self, database: str) -> None:
+        """Switch to a different database without recreating the session.
+
+        This is used for databases like PostgreSQL that don't support
+        cross-database queries. It closes the current connection and
+        opens a new one to the specified database, reusing the SSH tunnel.
+
+        Args:
+            database: The database name to switch to.
+
+        Raises:
+            RuntimeError: If the session has been closed.
+            Any database-specific connection errors.
+        """
+        if self._closed:
+            raise RuntimeError("Cannot switch database on closed session")
+
+        # Create new config with the database
+        new_config = replace(self._config, database=database)
+
+        # Determine connection config (use tunnel if present)
+        if self._tunnel:
+            # Reuse tunnel - get local bind address
+            local_host, local_port = self._tunnel.local_bind_address
+            connect_config = replace(new_config, server=local_host, port=str(local_port))
+        else:
+            connect_config = new_config
+
+        # Close old connection (but keep tunnel)
+        if self._connection is not None:
+            try:
+                close_fn = getattr(self._connection, "close", None)
+                if callable(close_fn):
+                    close_fn()
+            except Exception:
+                pass
+
+        # Open new connection
+        self._connection = self._adapter.connect(connect_config)
+        self._config = new_config
+
+    @connection.setter
+    def connection(self, value: Any) -> None:
+        """Set the raw database connection object."""
+        self._connection = value
+
+    @config.setter
+    def config(self, value: ConnectionConfig) -> None:
+        """Set the connection configuration."""
+        self._config = value
 
     def close(self) -> None:
         """Close the session and release all resources.

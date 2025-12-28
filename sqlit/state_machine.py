@@ -607,16 +607,14 @@ class TreeOnDatabaseState(State):
     help_category = "Explorer"
 
     def _setup_actions(self) -> None:
-        self.allows("use_database", key="u", label="Use as default", help="Set as default database")
+        pass  # Expanding a database now sets it as active automatically
 
     def get_display_bindings(self, app: SSMSTUI) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
         seen: set[str] = set()
 
-        left.append(DisplayBinding(key="enter", label="Expand", action="toggle_node"))
+        left.append(DisplayBinding(key="enter", label="Use database", action="toggle_node"))
         seen.add("toggle_node")
-        left.append(DisplayBinding(key="u", label="Use as default", action="use_database"))
-        seen.add("use_database")
         left.append(DisplayBinding(key="f", label="Refresh", action="refresh_tree"))
         seen.add("refresh_tree")
 
