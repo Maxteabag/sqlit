@@ -52,7 +52,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test
+        run: uv sync --group test --no-dev
 
       - name: Run unit tests
         run: |
@@ -88,7 +88,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test
+        run: uv sync --group test --no-dev
 
       - name: Run SQLite integration tests
         run: uv run pytest tests/test_sqlite.py -v --timeout=60
@@ -125,7 +125,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra mssql
+        run: uv sync --group test --no-dev --extra mssql
 
       - name: Wait for SQL Server to be ready
         run: |
@@ -178,7 +178,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra postgres
+        run: uv sync --group test --no-dev --extra postgres
 
       - name: Run PostgreSQL integration tests
         env:
@@ -222,7 +222,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra mysql
+        run: uv sync --group test --no-dev --extra mysql
 
       - name: Run MySQL integration tests
         env:
@@ -265,7 +265,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra oracle
+        run: uv sync --group test --no-dev --extra oracle
 
       - name: Run Oracle integration tests
         env:
@@ -314,7 +314,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra mariadb
+        run: uv sync --group test --no-dev --extra mariadb
 
       - name: Run MariaDB integration tests
         env:
@@ -343,7 +343,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra duckdb
+        run: uv sync --group test --no-dev --extra duckdb
 
       - name: Run DuckDB integration tests
         run: uv run pytest tests/test_duckdb.py -v --timeout=60
@@ -364,7 +364,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra cockroachdb
+        run: uv sync --group test --no-dev --extra cockroachdb
 
       - name: Start CockroachDB
         run: |
@@ -415,7 +415,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra firebird
+        run: uv sync --group test --no-dev --extra firebird
 
       - name: Run Firebird integration tests
         env:
@@ -442,7 +442,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra clickhouse
+        run: uv sync --group test --no-dev --extra clickhouse
 
       - name: Start ClickHouse
         run: |
@@ -485,7 +485,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra ssh --extra postgres
+        run: uv sync --group test --no-dev --extra ssh --extra postgres
 
       - name: Create Docker network
         run: docker network create ssh-test-net
@@ -567,7 +567,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group test --extra turso
+        run: uv sync --group test --no-dev --extra turso
 
       - name: Start Turso (libsql-server)
         run: |
