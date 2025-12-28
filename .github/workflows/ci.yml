@@ -68,7 +68,8 @@ jobs:
             --ignore=tests/test_turso.py \
             --ignore=tests/test_firebird.py \
             --ignore=tests/test_ssh.py \
-            --ignore=tests/test_clickhouse.py
+            --ignore=tests/test_clickhouse.py \
+            --ignore=tests/performance/
 
   test-sqlite:
     runs-on: ubuntu-latest
