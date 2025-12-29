@@ -319,6 +319,49 @@ def get_azure_status() -> AzureStatus:
     return AzureStatus.AVAILABLE
 
 
+@dataclass
+class AzureAccount:
+    """Current Azure account info."""
+
+    username: str  # Email or service principal name
+    tenant_name: str | None = None
+
+
+def get_azure_account() -> AzureAccount | None:
+    """Get the currently logged-in Azure account info.
+
+    Returns:
+        AzureAccount if logged in, None otherwise.
+    """
+    success, output = _run_az_command(
+        ["account", "show", "--query", "{user:user.name, tenant:tenantDisplayName}", "-o", "json"],
+        timeout=10,
+    )
+    if not success:
+        return None
+
+    try:
+        data = json.loads(output)
+        return AzureAccount(
+            username=data.get("user", ""),
+            tenant_name=data.get("tenant"),
+        )
+    except (json.JSONDecodeError, KeyError):
+        return None
+
+
+def azure_logout() -> bool:
+    """Log out from Azure CLI.
+
+    Returns:
+        True if logout succeeded, False otherwise.
+    """
+    success, _ = _run_az_command(["logout"], timeout=10)
+    if success:
+        clear_azure_cache()
+    return success
+
+
 def get_azure_subscriptions() -> list[AzureSubscription]:
     """Get list of Azure subscriptions the user has access to.
 

@@ -19,7 +19,7 @@ from ...widgets import Dialog, FilterInput
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
-    from ...services.cloud_detector import AzureSqlServer, AzureStatus, AzureSubscription
+    from ...services.cloud_detector import AzureAccount, AzureSqlServer, AzureStatus, AzureSubscription
     from ...services.docker_detector import DetectedContainer, DockerStatus
 
 
@@ -52,14 +52,16 @@ class ConnectionPickerScreen(ModalScreen):
     BINDINGS = [
         Binding("escape", "cancel_or_close_filter", "Cancel"),
         Binding("enter", "select", "Select"),
-        Binding("s", "save_docker", "Save", show=True),
-        Binding("n", "new_connection", "New", show=True),
+        Binding("s", "save_docker", "Save", show=False),
+        Binding("n", "new_connection", "New", show=False),
         Binding("f", "refresh", "Refresh", show=False),
-        Binding("slash", "open_filter", "Search", show=True),
+        Binding("slash", "open_filter", "Search", show=False),
         Binding("up", "move_up", "Up", show=False),
         Binding("down", "move_down", "Down", show=False),
         Binding("backspace", "backspace", "Backspace", show=False),
         Binding("tab", "switch_tab", "Switch Tab", show=False),
+        Binding("l", "azure_logout", "Logout", show=False),
+        Binding("w", "azure_switch", "Switch", show=False),
     ]
 
     CSS = """
@@ -76,8 +78,7 @@ class ConnectionPickerScreen(ModalScreen):
     }
 
     #picker-list {
-        height: auto;
-        max-height: 20;
+        height: 20;
         background: $surface;
         border: none;
         padding: 0;
@@ -118,7 +119,8 @@ class ConnectionPickerScreen(ModalScreen):
     AZURE_PREFIX = "azure:"
 
     # Tab names
-    TAB_LOCAL = "local"
+    TAB_CONNECTIONS = "connections"
+    TAB_DOCKER = "docker"
     TAB_CLOUD = "cloud"
 
     def __init__(self, connections: list[ConnectionConfig]):
@@ -126,12 +128,13 @@ class ConnectionPickerScreen(ModalScreen):
         self.connections = connections
         self.search_text = ""
         self._filter_active = False
-        self._current_tab = self.TAB_LOCAL  # Start on Local tab
+        self._current_tab = self.TAB_CONNECTIONS  # Start on Connections tab
         # Docker state
         self._docker_containers: list[DetectedContainer] = []
         self._docker_status_message: str | None = None
         self._loading_docker = False
         # Azure state
+        self._azure_account: AzureAccount | None = None
         self._azure_subscriptions: list[AzureSubscription] = []
         self._azure_servers: list[AzureSqlServer] = []
         self._azure_status: AzureStatus | None = None
@@ -154,17 +157,22 @@ class ConnectionPickerScreen(ModalScreen):
     def _update_dialog_title(self) -> None:
         """Update dialog title to show current tab."""
         dialog = self.query_one("#picker-dialog", Dialog)
-        if self._current_tab == self.TAB_LOCAL:
-            dialog.border_title = "[bold]Local[/] │ [dim]Cloud[/]  [dim]<tab>[/]"
+        if self._current_tab == self.TAB_CONNECTIONS:
+            dialog.border_title = "[bold]Connections[/] │ [dim]Docker[/] │ [dim]Cloud[/]  [dim]<tab>[/]"
+        elif self._current_tab == self.TAB_DOCKER:
+            dialog.border_title = "[dim]Connections[/] │ [bold]Docker[/] │ [dim]Cloud[/]  [dim]<tab>[/]"
         else:
-            dialog.border_title = "[dim]Local[/] │ [bold]Cloud[/]  [dim]<tab>[/]"
+            dialog.border_title = "[dim]Connections[/] │ [dim]Docker[/] │ [bold]Cloud[/]  [dim]<tab>[/]"
 
     def _update_shortcuts(self) -> None:
         """Update dialog shortcuts based on current selection."""
         option = self._get_highlighted_option()
         show_save = False
+        show_azure_account = False
 
-        if option and self._is_docker_option(option):
+        if option and option.id == "_azure_account":
+            show_azure_account = True
+        elif option and self._is_docker_option(option):
             container_id = str(option.id)[len(self.DOCKER_PREFIX):]
             container = self._get_container_by_id(container_id)
             if container and not self._is_container_saved(container):
@@ -175,10 +183,13 @@ class ConnectionPickerScreen(ModalScreen):
             if server and not self._is_azure_connection_saved(server, database, use_sql_auth):
                 show_save = True
 
-        shortcuts = [("Select", "enter")]
-        if show_save:
-            shortcuts.append(("Save", "s"))
-        shortcuts.append(("New", "n"))
+        if show_azure_account:
+            shortcuts = [("Logout", "l"), ("Switch", "w")]
+        else:
+            shortcuts = [("Select", "enter")]
+            if show_save:
+                shortcuts.append(("Save", "s"))
+            shortcuts.append(("New", "n"))
 
         dialog = self.query_one("#picker-dialog", Dialog)
         subtitle = "\u00a0·\u00a0".join(
@@ -241,40 +252,49 @@ class ConnectionPickerScreen(ModalScreen):
             AzureStatus,
             cache_subscriptions_and_servers,
             detect_azure_sql_resources,
+            get_azure_account,
             get_azure_subscriptions,
             get_cached_subscriptions,
         )
 
-        # Try cache first for subscriptions
-        subscriptions = get_cached_subscriptions()
-        if subscriptions is None:
-            subscriptions = get_azure_subscriptions()
+        try:
+            # Get current account info
+            account = get_azure_account()
 
-        # Get default subscription ID for caching
-        default_sub_id = ""
-        for sub in subscriptions:
-            if sub.is_default:
-                default_sub_id = sub.id
-                break
+            # Try cache first for subscriptions
+            subscriptions = get_cached_subscriptions()
+            if subscriptions is None:
+                subscriptions = get_azure_subscriptions()
 
-        # Detect servers (uses cache internally if available)
-        status, servers = detect_azure_sql_resources(default_sub_id, use_cache=True)
+            # Get default subscription ID for caching
+            default_sub_id = ""
+            for sub in subscriptions:
+                if sub.is_default:
+                    default_sub_id = sub.id
+                    break
 
-        # Cache results for next time
-        if subscriptions and default_sub_id:
-            cache_subscriptions_and_servers(subscriptions, servers, default_sub_id)
+            # Detect servers (uses cache internally if available)
+            status, servers = detect_azure_sql_resources(default_sub_id, use_cache=True)
 
-        self.app.call_from_thread(self._on_azure_loaded, status, subscriptions, servers)
+            # Cache results for next time
+            if subscriptions and default_sub_id:
+                cache_subscriptions_and_servers(subscriptions, servers, default_sub_id)
+
+            self.app.call_from_thread(self._on_azure_loaded, status, account, subscriptions, servers)
+        except Exception as e:
+            self.app.call_from_thread(self._on_azure_error, str(e))
 
     def _on_azure_loaded(
         self,
         status: AzureStatus,
+        account: AzureAccount | None,
         subscriptions: list[AzureSubscription],
         servers: list[AzureSqlServer],
     ) -> None:
         """Callback when Azure resources are loaded."""
         self._loading_azure = False
         self._azure_status = status
+        self._azure_account = account
         self._azure_subscriptions = subscriptions
         self._azure_servers = servers
 
@@ -289,6 +309,15 @@ class ConnectionPickerScreen(ModalScreen):
 
         # Auto-load databases for all servers in parallel
         self._auto_load_all_databases()
+
+    def _on_azure_error(self, error: str) -> None:
+        """Callback when Azure detection fails."""
+        from ...services.cloud_detector import AzureStatus
+
+        self._loading_azure = False
+        self._azure_status = AzureStatus.ERROR
+        self._rebuild_list()
+        self.notify(f"Azure error: {error}", severity="error")
 
     def _load_azure_for_subscription(self, subscription_id: str) -> None:
         """Load Azure resources for a specific subscription."""
@@ -307,15 +336,18 @@ class ConnectionPickerScreen(ModalScreen):
             detect_azure_sql_resources,
         )
 
-        status, servers = detect_azure_sql_resources(subscription_id, use_cache=True)
+        try:
+            status, servers = detect_azure_sql_resources(subscription_id, use_cache=True)
 
-        # Cache servers for this subscription
-        if self._azure_subscriptions:
-            cache_subscriptions_and_servers(
-                self._azure_subscriptions, servers, subscription_id
-            )
+            # Cache servers for this subscription
+            if self._azure_subscriptions:
+                cache_subscriptions_and_servers(
+                    self._azure_subscriptions, servers, subscription_id
+                )
 
-        self.app.call_from_thread(self._on_azure_subscription_loaded, status, servers)
+            self.app.call_from_thread(self._on_azure_subscription_loaded, status, servers)
+        except Exception as e:
+            self.app.call_from_thread(self._on_azure_error, str(e))
 
     def _on_azure_subscription_loaded(
         self, status: AzureStatus, servers: list[AzureSqlServer]
@@ -350,13 +382,15 @@ class ConnectionPickerScreen(ModalScreen):
 
     def _build_options(self, pattern: str) -> list[Option]:
         """Build option list with fuzzy highlighting and sections based on current tab."""
-        if self._current_tab == self.TAB_LOCAL:
-            return self._build_local_options(pattern)
+        if self._current_tab == self.TAB_CONNECTIONS:
+            return self._build_connections_options(pattern)
+        elif self._current_tab == self.TAB_DOCKER:
+            return self._build_docker_options(pattern)
         else:
             return self._build_cloud_options(pattern)
 
-    def _build_local_options(self, pattern: str) -> list[Option]:
-        """Build options for the Local tab (Saved + Docker)."""
+    def _build_connections_options(self, pattern: str) -> list[Option]:
+        """Build options for the Connections tab (Saved connections only)."""
         options: list[Option] = []
 
         # Filter saved connections
@@ -377,23 +411,55 @@ class ConnectionPickerScreen(ModalScreen):
                     Option(f"{source_emoji}{display} [{db_type}] [dim]({info})[/]", id=conn.name)
                 )
 
-        # Filter Docker containers - separate running and exited
+        # Add Saved section
+        options.append(Option("[bold]Saved[/]", id="_header_saved", disabled=True))
+
+        if saved_options:
+            options.extend(saved_options)
+        else:
+            options.append(
+                Option("[dim](no saved connections)[/]", id="_empty_saved", disabled=True)
+            )
+
+        return options
+
+    def _build_docker_options(self, pattern: str) -> list[Option]:
+        """Build options for the Docker tab (containers only)."""
+        options: list[Option] = []
+
+        # Filter saved Docker connections
+        saved_options = []
+        for conn in self.connections:
+            if conn.source != "docker":
+                continue
+            matches, indices = fuzzy_match(pattern, conn.name)
+            if matches or not pattern:
+                display = highlight_matches(conn.name, indices)
+                db_type = conn.db_type.upper() if conn.db_type else "DB"
+                info = get_connection_display_info(conn)
+                saved_options.append(
+                    Option(f"🐳 {display} [{db_type}] [dim]({info})[/]", id=conn.name)
+                )
+
+        # Filter Docker containers - separate running and exited, exclude saved ones
         running_options = []
         exited_options = []
         for container in self._docker_containers:
+            is_saved = self._is_container_saved(container)
+            if is_saved:
+                continue  # Skip saved containers, they're in the Saved section
+
             matches, indices = fuzzy_match(pattern, container.container_name)
             if matches or not pattern:
                 display = highlight_matches(container.container_name, indices)
                 db_label = container.get_display_name().split("(")[-1].rstrip(")")
                 port_info = f":{container.port}" if container.port else ""
 
-                is_saved = self._is_container_saved(container)
                 if container.is_running:
                     if container.connectable:
-                        saved_indicator = "✓ saved" if is_saved else "[dim]not saved[/]"
                         running_options.append(
                             Option(
-                                f"🐳 {display} [{db_label}] [dim](localhost{port_info})[/] {saved_indicator}",
+                                f"🐳 {display} [{db_label}] [dim](localhost{port_info})[/]",
                                 id=f"{self.DOCKER_PREFIX}{container.container_id}",
                             )
                         )
@@ -406,29 +472,27 @@ class ConnectionPickerScreen(ModalScreen):
                             )
                         )
                 else:
-                    # Exited containers - muted gold styling, selectable but not connectable
-                    saved_indicator = "[#CEBB91]✓ saved[/]" if is_saved else ""
-                    suffix = f" {saved_indicator}" if saved_indicator else ""
+                    # Exited containers - dim styling, selectable but not connectable
                     exited_options.append(
                         Option(
-                            f"[#CEBB91]🐳 {display} [{db_label}] (Exited)[/]{suffix}",
+                            f"[dim]🐳 {display} [{db_label}] (Stopped)[/]",
                             id=f"{self.DOCKER_PREFIX}{container.container_id}",
                         )
                     )
 
         # Add Saved section
-        options.append(Option("[bold]Saved[/]", id="_header_saved", disabled=True))
+        options.append(Option("[bold]Saved[/]", id="_header_docker_saved", disabled=True))
 
         if saved_options:
             options.extend(saved_options)
         else:
             options.append(
-                Option("[dim](no saved connections)[/]", id="_empty_saved", disabled=True)
+                Option("[dim](no saved Docker connections)[/]", id="_empty_docker_saved", disabled=True)
             )
 
-        # Add Docker section (running containers)
-        options.append(Option("", id="_spacer", disabled=True))
-        options.append(Option("[bold]Docker[/]", id="_header_docker", disabled=True))
+        # Add Running section
+        options.append(Option("", id="_spacer1", disabled=True))
+        options.append(Option("[bold]Running[/]", id="_header_docker", disabled=True))
 
         if self._loading_docker:
             options.append(Option("[dim italic]Loading...[/]", id="_docker_loading", disabled=True))
@@ -443,10 +507,10 @@ class ConnectionPickerScreen(ModalScreen):
                 Option("[dim](no running containers)[/]", id="_docker_empty", disabled=True)
             )
 
-        # Add Docker unavailable section (exited containers)
+        # Add Stopped section (exited containers)
         if exited_options:
             options.append(Option("", id="_spacer2", disabled=True))
-            options.append(Option("[bold]Docker unavailable[/]", id="_header_docker_unavailable", disabled=True))
+            options.append(Option("[bold]Stopped[/]", id="_header_docker_unavailable", disabled=True))
             options.extend(exited_options)
 
         return options
@@ -473,19 +537,12 @@ class ConnectionPickerScreen(ModalScreen):
             )
             options.append(
                 Option(
-                    "  [dim]Install: https://aka.ms/installazurecli[/]",
+                    "    [dim]Install: https://aka.ms/installazurecli[/]",
                     id="_azure_install_hint",
                     disabled=True,
                 )
             )
         elif self._azure_status == AzureStatus.NOT_LOGGED_IN:
-            options.append(
-                Option(
-                    "  [yellow]⚠ Not logged in to Azure[/]",
-                    id="_azure_not_logged_in",
-                    disabled=True,
-                )
-            )
             options.append(
                 Option(
                     "  🔑 Login to Azure...",
@@ -502,27 +559,39 @@ class ConnectionPickerScreen(ModalScreen):
             )
             options.append(
                 Option(
-                    "  [dim]Try running 'az account show' in terminal[/]",
+                    "    [dim]Try running 'az account show' in terminal[/]",
                     id="_azure_error_hint",
                     disabled=True,
                 )
             )
         elif self._azure_subscriptions:
-            # Show all subscriptions - active one is green with star, others are grey
+            # Show account info as child of Azure
+            if self._azure_account:
+                account_display = self._azure_account.username
+                if len(account_display) > 40:
+                    account_display = account_display[:37] + "..."
+                options.append(
+                    Option(
+                        f"  👤 {account_display}",
+                        id="_azure_account",
+                    )
+                )
+
+            # Show subscriptions as children of account (indented)
             for i, sub in enumerate(self._azure_subscriptions):
-                sub_display = f"{sub.name[:45]}..." if len(sub.name) > 45 else sub.name
+                sub_display = f"{sub.name[:40]}..." if len(sub.name) > 40 else sub.name
                 is_active = i == self._current_subscription_index
                 if is_active:
                     options.append(
                         Option(
-                            f"  [green]🔑 ★ {sub_display}[/]",
+                            f"    [green]🔑 ★ {sub_display}[/]",
                             id=f"_azure_sub_{i}",
                         )
                     )
                 else:
                     options.append(
                         Option(
-                            f"  [dim]🔑 {sub_display}[/]",
+                            f"    [dim]🔑 {sub_display}[/]",
                             id=f"_azure_sub_{i}",
                         )
                     )
@@ -542,7 +611,7 @@ class ConnectionPickerScreen(ModalScreen):
                         # Show server with loading indicator
                         azure_options.append(
                             Option(
-                                f"    {display} [dim italic]loading...[/]",
+                                f"      {display} [dim italic]loading...[/]",
                                 id=f"_azure_server_loading_{server.name}",
                                 disabled=True,
                             )
@@ -551,7 +620,7 @@ class ConnectionPickerScreen(ModalScreen):
                         # Show server as header (collapsed indicator)
                         azure_options.append(
                             Option(
-                                f"    {display}",
+                                f"      {display}",
                                 id=f"_azure_server_{server.name}",
                                 disabled=True,
                             )
@@ -564,27 +633,41 @@ class ConnectionPickerScreen(ModalScreen):
                                 # Check saved status for each auth type
                                 ad_saved = self._is_azure_connection_saved(server, db, False)
                                 sql_saved = self._is_azure_connection_saved(server, db, True)
-                                # Entra ID (AD) auth option
-                                ad_indicator = " ✓ saved" if ad_saved else ""
-                                azure_options.append(
-                                    Option(
-                                        f"        📁 {db_display} [dim]Entra[/]{ad_indicator}",
-                                        id=f"{self.AZURE_PREFIX}{server.name}:{db}:ad",
+                                # Entra ID (AD) auth option - dim if saved
+                                if ad_saved:
+                                    azure_options.append(
+                                        Option(
+                                            f"        [dim]📁 {db_display} Entra ✓[/]",
+                                            id=f"{self.AZURE_PREFIX}{server.name}:{db}:ad",
+                                        )
                                     )
-                                )
-                                # SQL Server auth option
-                                sql_indicator = " [dim]✓ saved[/]" if sql_saved else ""
-                                azure_options.append(
-                                    Option(
-                                        f"        [dim]📁 {db_display} SQL Auth[/]{sql_indicator}",
-                                        id=f"{self.AZURE_PREFIX}{server.name}:{db}:sql",
+                                else:
+                                    azure_options.append(
+                                        Option(
+                                            f"        📁 {db_display} [dim]Entra[/]",
+                                            id=f"{self.AZURE_PREFIX}{server.name}:{db}:ad",
+                                        )
                                     )
-                                )
+                                # SQL Server auth option - dim if saved
+                                if sql_saved:
+                                    azure_options.append(
+                                        Option(
+                                            f"        [dim]📁 {db_display} SQL Auth ✓[/]",
+                                            id=f"{self.AZURE_PREFIX}{server.name}:{db}:sql",
+                                        )
+                                    )
+                                else:
+                                    azure_options.append(
+                                        Option(
+                                            f"        📁 {db_display} [dim]SQL Auth[/]",
+                                            id=f"{self.AZURE_PREFIX}{server.name}:{db}:sql",
+                                        )
+                                    )
                     else:
                         # No databases loaded yet - will auto-load
                         azure_options.append(
                             Option(
-                                f"    {display} [dim](no databases)[/]",
+                                f"      {display} [dim](no databases)[/]",
                                 id=f"_azure_server_empty_{server.name}",
                                 disabled=True,
                             )
@@ -594,21 +677,25 @@ class ConnectionPickerScreen(ModalScreen):
                 options.extend(azure_options)
             else:
                 options.append(
-                    Option("[dim]      (no SQL servers in this subscription)[/]", id="_azure_no_servers", disabled=True)
+                    Option("[dim]        (no SQL servers in this subscription)[/]", id="_azure_no_servers", disabled=True)
                 )
         else:
-            # Logged in but no subscriptions
+            # Logged in but no subscriptions - show account with option to switch
+            if self._azure_account:
+                account_display = self._azure_account.username
+                if len(account_display) > 40:
+                    account_display = account_display[:37] + "..."
+                options.append(
+                    Option(
+                        f"  👤 {account_display}",
+                        id="_azure_account",
+                    )
+                )
             options.append(
                 Option(
-                    "  [yellow]⚠ No subscriptions found[/]",
+                    "    [yellow]⚠ No subscriptions found[/]",
                     id="_azure_no_subs",
                     disabled=True,
-                )
-            )
-            options.append(
-                Option(
-                    "  🔑 Login with a different account...",
-                    id="_azure_login",
                 )
             )
 
@@ -835,6 +922,10 @@ class ConnectionPickerScreen(ModalScreen):
             self._start_azure_login()
             return
 
+        # Azure account - use l/w keybindings, enter does nothing
+        if option.id == "_azure_account":
+            return
+
         # Load databases for a server
         if option.id and str(option.id).startswith("_azure_load_dbs_"):
             server_name = str(option.id).replace("_azure_load_dbs_", "")
@@ -962,39 +1053,88 @@ class ConnectionPickerScreen(ModalScreen):
         import subprocess
 
         try:
-            # az login opens browser - don't capture output so browser can open
+            # az login opens browser - capture output to avoid TUI conflicts
             result = subprocess.run(
                 ["az", "login"],
+                capture_output=True,
                 timeout=300,  # 5 min timeout for login
             )
-            # Verify login by checking az account show
-            verify = subprocess.run(
-                ["az", "account", "show"],
-                capture_output=True,
-                timeout=10,
-            )
-            success = verify.returncode == 0
-        except Exception:
-            success = False
-
-        self.app.call_from_thread(self._on_azure_login_complete, success)
+            if result.returncode == 0:
+                self.app.call_from_thread(self._on_azure_login_complete, True)
+            else:
+                error = result.stderr.decode() if result.stderr else "Login failed"
+                self.app.call_from_thread(self._on_azure_login_error, error)
+        except subprocess.TimeoutExpired:
+            self.app.call_from_thread(self._on_azure_login_error, "Login timed out")
+        except Exception as e:
+            self.app.call_from_thread(self._on_azure_login_error, str(e))
 
     def _on_azure_login_complete(self, success: bool) -> None:
         """Callback when Azure login completes."""
         if success:
             self.notify("Azure login successful! Loading resources...")
             self._load_azure_async()
+
+    def _on_azure_login_error(self, error: str) -> None:
+        """Callback when Azure login fails."""
+        self._loading_azure = False
+        self._rebuild_list()
+        # Truncate long error messages
+        if len(error) > 100:
+            error = error[:100] + "..."
+        self.notify(f"Azure login failed: {error}", severity="error")
+
+    def action_azure_logout(self) -> None:
+        """Logout from Azure (only when account is highlighted)."""
+        option = self._get_highlighted_option()
+        if option and option.id == "_azure_account":
+            self._start_azure_logout()
+
+    def action_azure_switch(self) -> None:
+        """Switch Azure account (only when account is highlighted)."""
+        option = self._get_highlighted_option()
+        if option and option.id == "_azure_account":
+            self._start_azure_login()
+
+    def _start_azure_logout(self) -> None:
+        """Start Azure CLI logout process."""
+        self.notify("Logging out from Azure...")
+        self._loading_azure = True
+        self._rebuild_list()
+        self.run_worker(self._azure_logout_worker, thread=True)
+
+    def _azure_logout_worker(self) -> None:
+        """Worker to run az logout."""
+        from ...services.cloud_detector import azure_logout
+
+        success = azure_logout()
+        self.app.call_from_thread(self._on_azure_logout_complete, success)
+
+    def _on_azure_logout_complete(self, success: bool) -> None:
+        """Callback when Azure logout completes."""
+        self._loading_azure = False
+        self._azure_account = None
+        self._azure_subscriptions = []
+        self._azure_servers = []
+
+        if success:
+            from ...services.cloud_detector import AzureStatus
+
+            self._azure_status = AzureStatus.NOT_LOGGED_IN
+            self.notify("Logged out from Azure")
         else:
-            self.notify("Azure login failed or was cancelled", severity="warning")
-            self._loading_azure = False
-            self._rebuild_list()
+            self.notify("Failed to logout from Azure", severity="warning")
+
+        self._rebuild_list()
 
     def action_switch_tab(self) -> None:
-        """Switch between Local and Cloud tabs."""
-        if self._current_tab == self.TAB_LOCAL:
+        """Switch between Connections, Docker and Cloud tabs."""
+        if self._current_tab == self.TAB_CONNECTIONS:
+            self._current_tab = self.TAB_DOCKER
+        elif self._current_tab == self.TAB_DOCKER:
             self._current_tab = self.TAB_CLOUD
         else:
-            self._current_tab = self.TAB_LOCAL
+            self._current_tab = self.TAB_CONNECTIONS
 
         self._update_dialog_title()
         self._rebuild_list()
@@ -1177,6 +1317,10 @@ class ConnectionPickerScreen(ModalScreen):
                 # Azure login action
                 if option.id == "_azure_login":
                     self._start_azure_login()
+                    return
+
+                # Azure account - use l/w keybindings, click does nothing
+                if option.id == "_azure_account":
                     return
 
                 # Load databases for a server
