@@ -96,7 +96,8 @@ class TestDockerContainerPicker:
     async def test_connection_picker_shows_docker_containers(self):
         """Test that Docker containers appear in the connection picker."""
         connections = [
-            create_test_connection("saved-postgres", "postgresql"),
+            # Use different port to avoid matching mock containers
+            create_test_connection("saved-postgres", "postgresql", port="5433"),
         ]
         mock_connections = MockConnectionStore(connections)
         mock_settings = MockSettingsStore({"theme": "tokyo-night"})
@@ -153,6 +154,10 @@ class TestDockerContainerPicker:
                 assert len(picker._docker_containers) == 2
                 assert picker._docker_containers[0].container_name == "test-postgres"
                 assert picker._docker_containers[1].container_name == "test-mysql"
+
+                # Switch to Docker tab (Tab once from Connections)
+                await pilot.press("tab")
+                await pilot.pause()
 
                 # Verify option list contains Docker section
                 from textual.widgets import OptionList
@@ -310,6 +315,10 @@ class TestDockerContainerPicker:
                     None,
                 )
                 assert picker is not None
+
+                # Switch to Docker tab (Tab once from Connections)
+                await pilot.press("tab")
+                await pilot.pause()
 
                 # Navigate to Docker container (skip headers and saved section)
                 from textual.widgets import OptionList
