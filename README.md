@@ -25,7 +25,7 @@
 ---
 
 ### Connect
-Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, and Athena.
+Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, Athena, BigQuery and Redshift.
 
 ![Database Providers](demos/demo-providers.gif)
 
@@ -35,7 +35,7 @@ Syntax highlighting. History. Vim-style keybindings.
 ![Query History](demos/demo-history.gif)
 
 ### Results
-Load millions of rows. Inspect data, filter by content, fuzzy search, no more squinting eyes looking for what you need!
+Load millions of rows. Inspect data, filter by content, fuzzy search.
 
 ![Filter results](demos/demo-filter/demo-filter.gif)
 
@@ -56,6 +56,8 @@ Automatically finds running database containers. Press 'Enter' to connect, sqlit
 
 **Docker integration:** Auto-detect running database containers
 
+**Cloud CLI integration:** Easily browse and connect to your external databases through Azure, AWS and GCP CLI's
+
 **SSH tunnels:** Connect to remote databases securely with password or key auth
 
 **Secure credentials:** Passwords stored in your OS keyring
@@ -70,7 +72,7 @@ Automatically finds running database containers. Press 'Enter' to connect, sqlit
 
 **Browse databases:** Tables, views, procedures, indexes, triggers, sequences
 
-**Autocomplete:** Tables, columns, and procedures
+**Autocomplete:** Sophisticated SQL completion engine for tables, columns, and procedures
 
 **CLI mode:** Execute SQL from the command line
 
@@ -82,7 +84,7 @@ Automatically finds running database containers. Press 'Enter' to connect, sqlit
 
 ## Motivation
 
-Throughout my career, the undesputed truth was that SSMS was the only respectable way to access a database. It didn't matter that I wasn't a DBA, or that I didn't need complex performance graphs. I was expected to install a gigabyte-heavy behemoth that took ages to launch all for the mere purpose of running a few queries to update and view a couple of rows.
+Throughout my career, the undesputed truth was that heavy GUI's like SSMS was the only respectable way to access a database. It didn't matter that I wasn't a DBA, or that I didn't need complex performance graphs. I was expected to install a gigabyte-heavy behemoth that took ages to launch all for the mere purpose of running a few queries to update and view a couple of rows.
 
 When I switched to Linux, I was suddenly unable to return to the devil I know, and I asked myself: _how do I access my data now?_
 
