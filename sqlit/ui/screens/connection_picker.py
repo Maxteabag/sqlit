@@ -9,18 +9,19 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.events import Key
 from textual.screen import ModalScreen
-from textual.worker import Worker
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
 from ...db.providers import get_connection_display_info
+from ...services.cloud import ProviderState, ProviderStatus, get_providers
 from ...utils import fuzzy_match, highlight_matches
 from ...widgets import Dialog, FilterInput
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
-    from ...services.cloud_detector import AzureAccount, AzureSqlServer, AzureStatus, AzureSubscription
-    from ...services.docker_detector import DetectedContainer, DockerStatus
+    from ...services.cloud import CloudProvider
+    from ...services.cloud_detector import AzureSqlServer
+    from ...services.docker_detector import DetectedContainer
 
 
 @dataclass
@@ -133,13 +134,11 @@ class ConnectionPickerScreen(ModalScreen):
         self._docker_containers: list[DetectedContainer] = []
         self._docker_status_message: str | None = None
         self._loading_docker = False
-        # Azure state
-        self._azure_account: AzureAccount | None = None
-        self._azure_subscriptions: list[AzureSubscription] = []
-        self._azure_servers: list[AzureSqlServer] = []
-        self._azure_status: AzureStatus | None = None
-        self._loading_azure = False
-        self._current_subscription_index: int = 0
+        # Cloud provider states
+        self._cloud_providers: list[CloudProvider] = get_providers()
+        self._cloud_states: dict[str, ProviderState] = {
+            p.id: ProviderState() for p in self._cloud_providers
+        }
 
     def compose(self) -> ComposeResult:
         with Dialog(id="picker-dialog", title="Connect"):
@@ -147,11 +146,11 @@ class ConnectionPickerScreen(ModalScreen):
             yield OptionList(id="picker-list")
 
     def on_mount(self) -> None:
-        """Load Docker containers and Azure resources when screen mounts."""
+        """Load Docker containers and cloud resources when screen mounts."""
         self._update_dialog_title()
         self._rebuild_list()
         self._load_containers_async()
-        self._load_azure_async()
+        self._load_cloud_providers_async()
         self._update_shortcuts()
 
     def _update_dialog_title(self) -> None:
@@ -168,23 +167,41 @@ class ConnectionPickerScreen(ModalScreen):
         """Update dialog shortcuts based on current selection."""
         option = self._get_highlighted_option()
         show_save = False
-        show_azure_account = False
+        provider_shortcuts: list[tuple[str, str]] = []
 
-        if option and option.id == "_azure_account":
-            show_azure_account = True
-        elif option and self._is_docker_option(option):
-            container_id = str(option.id)[len(self.DOCKER_PREFIX):]
-            container = self._get_container_by_id(container_id)
-            if container and not self._is_container_saved(container):
-                show_save = True
-        elif option and self._is_azure_option(option):
-            server_name, database, use_sql_auth = self._parse_azure_option_id(str(option.id))
-            server = self._get_azure_server_by_name(server_name)
-            if server and not self._is_azure_connection_saved(server, database, use_sql_auth):
-                show_save = True
+        if option:
+            option_id = str(option.id) if option.id else ""
 
-        if show_azure_account:
-            shortcuts = [("Logout", "l"), ("Switch", "w")]
+            # Check cloud providers for custom shortcuts
+            for provider in self._cloud_providers:
+                if provider.is_my_option(option_id):
+                    state = self._cloud_states.get(provider.id, ProviderState())
+                    provider_shortcuts = provider.get_shortcuts(option_id, state)
+                    # Check if this option can be saved
+                    if option_id.startswith(provider.prefix):
+                        result = provider.handle_action(
+                            "check_save", option_id, state, self.connections
+                        )
+                        if result.config and result.action != "none":
+                            # Check if not already saved
+                            show_save = not any(
+                                c.name == result.config.name or (
+                                    c.server == result.config.server and
+                                    c.database == result.config.database
+                                )
+                                for c in self.connections
+                            )
+                    break
+
+            # Check Docker options
+            if not provider_shortcuts and self._is_docker_option(option):
+                container_id = str(option.id)[len(self.DOCKER_PREFIX):]
+                container = self._get_container_by_id(container_id)
+                if container and not self._is_container_saved(container):
+                    show_save = True
+
+        if provider_shortcuts:
+            shortcuts = provider_shortcuts
         else:
             shortcuts = [("Select", "enter")]
             if show_save:
@@ -241,130 +258,51 @@ class ConnectionPickerScreen(ModalScreen):
         self._rebuild_list()
         self._update_shortcuts()
 
-    def _load_azure_async(self) -> None:
-        """Start async loading of Azure resources."""
-        self._loading_azure = True
+    def _load_cloud_providers_async(self) -> None:
+        """Start async loading of all cloud providers."""
+        # Set all providers to loading state
+        for provider in self._cloud_providers:
+            self._cloud_states[provider.id] = ProviderState(loading=True)
+
         self._rebuild_list()
-        self.run_worker(self._detect_azure_worker, thread=True)
 
-    def _detect_azure_worker(self) -> None:
-        """Worker function to detect Azure resources off-thread."""
-        from ...services.cloud_detector import (
-            AzureStatus,
-            cache_subscriptions_and_servers,
-            detect_azure_sql_resources,
-            get_azure_account,
-            get_azure_subscriptions,
-            get_cached_subscriptions,
-        )
+        # Start discovery for each provider in parallel
+        for provider in self._cloud_providers:
+            self.run_worker(
+                lambda p=provider: self._discover_provider_worker(p),
+                thread=True,
+            )
 
+    def _discover_provider_worker(self, provider: CloudProvider) -> None:
+        """Worker function to discover resources for a provider."""
         try:
-            # Get current account info
-            account = get_azure_account()
-
-            # Try cache first for subscriptions
-            subscriptions = get_cached_subscriptions()
-            if subscriptions is None:
-                subscriptions = get_azure_subscriptions()
-
-            # Get default subscription ID for caching
-            default_sub_id = ""
-            for sub in subscriptions:
-                if sub.is_default:
-                    default_sub_id = sub.id
-                    break
-
-            # Detect servers (uses cache internally if available)
-            status, servers = detect_azure_sql_resources(default_sub_id, use_cache=True)
-
-            # Cache results for next time
-            if subscriptions and default_sub_id:
-                cache_subscriptions_and_servers(subscriptions, servers, default_sub_id)
-
-            self.app.call_from_thread(self._on_azure_loaded, status, account, subscriptions, servers)
+            state = ProviderState(loading=True)
+            new_state = provider.discover(state)
+            self.app.call_from_thread(self._on_provider_loaded, provider.id, new_state)
         except Exception as e:
-            self.app.call_from_thread(self._on_azure_error, str(e))
+            self.app.call_from_thread(self._on_provider_error, provider.id, str(e))
 
-    def _on_azure_loaded(
-        self,
-        status: AzureStatus,
-        account: AzureAccount | None,
-        subscriptions: list[AzureSubscription],
-        servers: list[AzureSqlServer],
-    ) -> None:
-        """Callback when Azure resources are loaded."""
-        self._loading_azure = False
-        self._azure_status = status
-        self._azure_account = account
-        self._azure_subscriptions = subscriptions
-        self._azure_servers = servers
-
-        # Find the default subscription index
-        for i, sub in enumerate(subscriptions):
-            if sub.is_default:
-                self._current_subscription_index = i
-                break
-
+    def _on_provider_loaded(self, provider_id: str, state: ProviderState) -> None:
+        """Callback when a provider finishes discovery."""
+        self._cloud_states[provider_id] = state
         self._rebuild_list()
         self._update_shortcuts()
 
-        # Auto-load databases for all servers in parallel
-        self._auto_load_all_databases()
+        # Auto-load databases for Azure servers
+        if provider_id == "azure":
+            self._auto_load_all_databases()
 
-    def _on_azure_error(self, error: str) -> None:
-        """Callback when Azure detection fails."""
-        from ...services.cloud_detector import AzureStatus
+    def _on_provider_error(self, provider_id: str, error: str) -> None:
+        """Callback when provider discovery fails."""
+        from ...services.cloud import ProviderStatus
 
-        self._loading_azure = False
-        self._azure_status = AzureStatus.ERROR
-        self._rebuild_list()
-        self.notify(f"Azure error: {error}", severity="error")
-
-    def _load_azure_for_subscription(self, subscription_id: str) -> None:
-        """Load Azure resources for a specific subscription."""
-        self._loading_azure = True
-        self._azure_servers = []
-        self._rebuild_list()
-        self.run_worker(
-            lambda: self._detect_azure_subscription_worker(subscription_id),
-            thread=True,
+        self._cloud_states[provider_id] = ProviderState(
+            status=ProviderStatus.ERROR,
+            loading=False,
+            error=error,
         )
-
-    def _detect_azure_subscription_worker(self, subscription_id: str) -> None:
-        """Worker function to detect Azure resources for specific subscription."""
-        from ...services.cloud_detector import (
-            cache_subscriptions_and_servers,
-            detect_azure_sql_resources,
-        )
-
-        try:
-            status, servers = detect_azure_sql_resources(subscription_id, use_cache=True)
-
-            # Cache servers for this subscription
-            if self._azure_subscriptions:
-                cache_subscriptions_and_servers(
-                    self._azure_subscriptions, servers, subscription_id
-                )
-
-            self.app.call_from_thread(self._on_azure_subscription_loaded, status, servers)
-        except Exception as e:
-            self.app.call_from_thread(self._on_azure_error, str(e))
-
-    def _on_azure_subscription_loaded(
-        self, status: AzureStatus, servers: list[AzureSqlServer]
-    ) -> None:
-        """Callback when Azure resources for a subscription are loaded."""
-        self._loading_azure = False
-        self._azure_status = status
-        self._azure_servers = servers
-
         self._rebuild_list()
-        # Keep current subscription selected after switch
-        self._select_option_by_id(f"_azure_sub_{self._current_subscription_index}")
-        self._update_shortcuts()
-
-        # Auto-load databases for all servers in parallel
-        self._auto_load_all_databases()
+        self.notify(f"Cloud error: {error}", severity="error")
 
     def _is_container_saved(self, container: DetectedContainer) -> bool:
         """Check if a Docker container matches a saved connection."""
@@ -517,191 +455,17 @@ class ConnectionPickerScreen(ModalScreen):
         return options
 
     def _build_cloud_options(self, pattern: str) -> list[Option]:
-        """Build options for the Cloud tab (Azure, AWS, GCP)."""
-        from ...services.cloud_detector import AzureStatus
-
+        """Build options for the Cloud tab by delegating to providers."""
         options: list[Option] = []
 
-        # Azure section
-        options.append(Option("[bold]Azure[/]", id="_header_azure", disabled=True))
+        for i, provider in enumerate(self._cloud_providers):
+            # Add spacing between providers
+            if i > 0:
+                options.append(Option("", id=f"_spacer_{provider.id}", disabled=True))
 
-        # Handle different Azure CLI states
-        if self._loading_azure:
-            options.append(Option("[dim italic]  Loading...[/]", id="_azure_loading", disabled=True))
-        elif self._azure_status == AzureStatus.CLI_NOT_INSTALLED:
-            options.append(
-                Option(
-                    "  [dim](Azure CLI not installed)[/]",
-                    id="_azure_cli_missing",
-                    disabled=True,
-                )
-            )
-        elif self._azure_status == AzureStatus.NOT_LOGGED_IN:
-            options.append(
-                Option(
-                    "  🔑 Login to Azure...",
-                    id="_azure_login",
-                )
-            )
-        elif self._azure_status == AzureStatus.ERROR:
-            options.append(
-                Option(
-                    "  [red]⚠ Azure CLI error[/]",
-                    id="_azure_error",
-                    disabled=True,
-                )
-            )
-            options.append(
-                Option(
-                    "    [dim]Try running 'az account show' in terminal[/]",
-                    id="_azure_error_hint",
-                    disabled=True,
-                )
-            )
-        elif self._azure_subscriptions:
-            # Show account info as child of Azure
-            if self._azure_account:
-                account_display = self._azure_account.username
-                if len(account_display) > 40:
-                    account_display = account_display[:37] + "..."
-                options.append(
-                    Option(
-                        f"  👤 {account_display}",
-                        id="_azure_account",
-                    )
-                )
-
-            # Show subscriptions as children of account (indented)
-            for i, sub in enumerate(self._azure_subscriptions):
-                sub_display = f"{sub.name[:40]}..." if len(sub.name) > 40 else sub.name
-                is_active = i == self._current_subscription_index
-                if is_active:
-                    options.append(
-                        Option(
-                            f"    [green]🔑 ★ {sub_display}[/]",
-                            id=f"_azure_sub_{i}",
-                        )
-                    )
-                else:
-                    options.append(
-                        Option(
-                            f"    [dim]🔑 {sub_display}[/]",
-                            id=f"_azure_sub_{i}",
-                        )
-                    )
-
-            # Show servers under active subscription (hierarchical)
-            azure_options = []
-            for server in self._azure_servers:
-                matches, indices = fuzzy_match(pattern, server.name)
-                if matches or not pattern:
-                    display = highlight_matches(server.name, indices)
-
-                    # Check if databases are loaded (from server object or being loaded)
-                    server_key = f"{server.name}:{server.resource_group}"
-                    is_loading = server_key in getattr(self, "_loading_databases", set())
-
-                    if is_loading:
-                        # Show server with loading indicator
-                        azure_options.append(
-                            Option(
-                                f"      {display} [dim italic]loading...[/]",
-                                id=f"_azure_server_loading_{server.name}",
-                                disabled=True,
-                            )
-                        )
-                    elif server.databases:
-                        # Show server as header (collapsed indicator)
-                        azure_options.append(
-                            Option(
-                                f"      {display}",
-                                id=f"_azure_server_{server.name}",
-                                disabled=True,
-                            )
-                        )
-                        # Show databases indented under server
-                        for db in server.databases:
-                            db_matches, db_indices = fuzzy_match(pattern, db)
-                            if db_matches or not pattern:
-                                db_display = highlight_matches(db, db_indices) if pattern else db
-                                # Check saved status for each auth type
-                                ad_saved = self._is_azure_connection_saved(server, db, False)
-                                sql_saved = self._is_azure_connection_saved(server, db, True)
-                                # Entra ID (AD) auth option - dim if saved
-                                if ad_saved:
-                                    azure_options.append(
-                                        Option(
-                                            f"        [dim]📁 {db_display} Entra ✓[/]",
-                                            id=f"{self.AZURE_PREFIX}{server.name}:{db}:ad",
-                                        )
-                                    )
-                                else:
-                                    azure_options.append(
-                                        Option(
-                                            f"        📁 {db_display} [dim]Entra[/]",
-                                            id=f"{self.AZURE_PREFIX}{server.name}:{db}:ad",
-                                        )
-                                    )
-                                # SQL Server auth option - dim if saved
-                                if sql_saved:
-                                    azure_options.append(
-                                        Option(
-                                            f"        [dim]📁 {db_display} SQL Auth ✓[/]",
-                                            id=f"{self.AZURE_PREFIX}{server.name}:{db}:sql",
-                                        )
-                                    )
-                                else:
-                                    azure_options.append(
-                                        Option(
-                                            f"        📁 {db_display} [dim]SQL Auth[/]",
-                                            id=f"{self.AZURE_PREFIX}{server.name}:{db}:sql",
-                                        )
-                                    )
-                    else:
-                        # No databases loaded yet - will auto-load
-                        azure_options.append(
-                            Option(
-                                f"      {display} [dim](no databases)[/]",
-                                id=f"_azure_server_empty_{server.name}",
-                                disabled=True,
-                            )
-                        )
-
-            if azure_options:
-                options.extend(azure_options)
-            else:
-                options.append(
-                    Option("[dim]        (no SQL servers in this subscription)[/]", id="_azure_no_servers", disabled=True)
-                )
-        else:
-            # Logged in but no subscriptions - show account with option to switch
-            if self._azure_account:
-                account_display = self._azure_account.username
-                if len(account_display) > 40:
-                    account_display = account_display[:37] + "..."
-                options.append(
-                    Option(
-                        f"  👤 {account_display}",
-                        id="_azure_account",
-                    )
-                )
-            options.append(
-                Option(
-                    "    [yellow]⚠ No subscriptions found[/]",
-                    id="_azure_no_subs",
-                    disabled=True,
-                )
-            )
-
-        # AWS section (placeholder)
-        options.append(Option("", id="_spacer_aws", disabled=True))
-        options.append(Option("[bold]AWS[/]", id="_header_aws", disabled=True))
-        options.append(Option("[dim]  (coming soon)[/]", id="_aws_empty", disabled=True))
-
-        # GCP section (placeholder)
-        options.append(Option("", id="_spacer_gcp", disabled=True))
-        options.append(Option("[bold]GCP[/]", id="_header_gcp", disabled=True))
-        options.append(Option("[dim]  (coming soon)[/]", id="_gcp_empty", disabled=True))
+            state = self._cloud_states.get(provider.id, ProviderState())
+            provider_options = provider.build_options(state, self.connections, pattern)
+            options.extend(provider_options)
 
         return options
 
@@ -872,26 +636,6 @@ class ConnectionPickerScreen(ModalScreen):
         """Check if an option represents a Docker container."""
         return option.id is not None and str(option.id).startswith(self.DOCKER_PREFIX)
 
-    def _is_azure_option(self, option: Option) -> bool:
-        """Check if an option represents an Azure resource."""
-        return option.id is not None and str(option.id).startswith(self.AZURE_PREFIX)
-
-    def _get_azure_server_by_name(self, server_name: str) -> AzureSqlServer | None:
-        """Find an Azure server by its name."""
-        for server in self._azure_servers:
-            if server.name == server_name:
-                return server
-        return None
-
-    def _parse_azure_option_id(self, option_id: str) -> tuple[str, str | None, bool]:
-        """Parse Azure option ID into (server_name, database_name, use_sql_auth)."""
-        # Format: azure:servername:dbname:ad or azure:servername:dbname:sql
-        parts = option_id[len(self.AZURE_PREFIX):].split(":")
-        server_name = parts[0]
-        database = parts[1] if len(parts) > 1 and parts[1] else None
-        use_sql_auth = parts[2] == "sql" if len(parts) > 2 else False
-        return server_name, database, use_sql_auth
-
     def _get_container_by_id(self, container_id: str) -> DetectedContainer | None:
         """Find a container by its ID."""
         for container in self._docker_containers:
@@ -905,61 +649,79 @@ class ConnectionPickerScreen(ModalScreen):
         if not option or option.disabled:
             return
 
-        # Subscription selector - activate the selected subscription
-        if option.id and str(option.id).startswith("_azure_sub_"):
-            sub_index = int(str(option.id).replace("_azure_sub_", ""))
-            self._activate_subscription(sub_index)
-            return
+        option_id = str(option.id) if option.id else ""
 
-        # Azure login action
-        if option.id == "_azure_login":
-            self._start_azure_login()
-            return
+        # Check if a cloud provider handles this option
+        for provider in self._cloud_providers:
+            if provider.is_my_option(option_id):
+                state = self._cloud_states.get(provider.id, ProviderState())
+                result = provider.handle_action("select", option_id, state, self.connections)
 
-        # Azure account - use l/w keybindings, enter does nothing
-        if option.id == "_azure_account":
-            return
+                if result.action == "login":
+                    self._start_provider_login(provider)
+                    return
+                elif result.action == "logout":
+                    self._start_provider_logout(provider)
+                    return
+                elif result.action == "switch_subscription":
+                    sub_index = result.metadata.get("subscription_index", 0)
+                    self._activate_subscription(provider, sub_index)
+                    return
+                elif result.action == "connect" and result.config:
+                    self.dismiss(AzureConnectionResult(
+                        server=self._get_server_from_config(result.config, state),
+                        database=result.config.database,
+                        use_sql_auth=result.config.options.get("auth_type") == "sql",
+                    ))
+                    return
+                elif result.action == "none":
+                    return
+                return
 
-        # Load databases for a server
-        if option.id and str(option.id).startswith("_azure_load_dbs_"):
-            server_name = str(option.id).replace("_azure_load_dbs_", "")
-            self._load_databases_for_server(server_name)
-            return
-
+        # Docker container
         if self._is_docker_option(option):
-            # Docker container - connect directly
-            container_id = str(option.id)[len(self.DOCKER_PREFIX) :]
+            container_id = str(option.id)[len(self.DOCKER_PREFIX):]
             container = self._get_container_by_id(container_id)
             if container:
                 if not container.is_running:
                     self.notify("Container is not running", severity="warning")
                     return
                 self.dismiss(DockerConnectionResult(container=container, action="connect"))
-        elif self._is_azure_option(option):
-            # Azure resource - connect with chosen auth method
-            server_name, database, use_sql_auth = self._parse_azure_option_id(str(option.id))
-            server = self._get_azure_server_by_name(server_name)
-            if server:
-                self.dismiss(AzureConnectionResult(server=server, database=database, use_sql_auth=use_sql_auth))
-        else:
-            # Saved connection
-            self.dismiss(option.id)
-
-    def _activate_subscription(self, index: int) -> None:
-        """Activate a subscription by index and load its servers."""
-        if index == self._current_subscription_index:
-            return  # Already active
-        if index < 0 or index >= len(self._azure_subscriptions):
             return
 
-        self._current_subscription_index = index
-        current_sub = self._azure_subscriptions[index]
+        # Saved connection
+        self.dismiss(option.id)
+
+    def _get_server_from_config(self, config: ConnectionConfig, state: ProviderState) -> AzureSqlServer | None:
+        """Get Azure server object from a config."""
+        servers = state.extra.get("servers", [])
+        for server in servers:
+            if server.fqdn == config.server:
+                return server
+        return None
+
+    def _activate_subscription(self, provider: CloudProvider, index: int) -> None:
+        """Activate a subscription by index and load its servers."""
+        state = self._cloud_states.get(provider.id, ProviderState())
+        subscriptions = state.extra.get("subscriptions", [])
+        current_index = state.extra.get("current_subscription_index", 0)
+
+        if index == current_index:
+            return  # Already active
+        if index < 0 or index >= len(subscriptions):
+            return
+
+        # Update state with new subscription index
+        current_sub = subscriptions[index]
         self.notify(f"Loading {current_sub.name}...")
-        self._load_azure_for_subscription(current_sub.id)
+        self._load_provider_for_subscription(provider, current_sub.id, index)
 
     def _auto_load_all_databases(self) -> None:
-        """Automatically load databases for all servers in parallel."""
-        if not self._azure_servers:
+        """Automatically load databases for all Azure servers in parallel."""
+        state = self._cloud_states.get("azure", ProviderState())
+        servers = state.extra.get("servers", [])
+
+        if not servers:
             return
 
         # Initialize loading set
@@ -967,7 +729,7 @@ class ConnectionPickerScreen(ModalScreen):
             self._loading_databases: set[str] = set()
 
         # Start loading for each server that doesn't have databases yet
-        for server in self._azure_servers:
+        for server in servers:
             if server.databases:
                 continue  # Already has databases (from cache)
 
@@ -1009,6 +771,15 @@ class ConnectionPickerScreen(ModalScreen):
             thread=True,
         )
 
+    def _get_azure_server_by_name(self, server_name: str) -> AzureSqlServer | None:
+        """Find an Azure server by its name."""
+        state = self._cloud_states.get("azure", ProviderState())
+        servers = state.extra.get("servers", [])
+        for server in servers:
+            if server.name == server_name:
+                return server
+        return None
+
     def _load_databases_worker(self, server: AzureSqlServer) -> None:
         """Worker to load databases for a server."""
         from ...services.cloud_detector import load_databases_for_server
@@ -1035,91 +806,182 @@ class ConnectionPickerScreen(ModalScreen):
         else:
             self.notify(f"No databases found on {server.name}", severity="warning")
 
-    def _start_azure_login(self) -> None:
-        """Start Azure CLI login process."""
-        self.notify("Opening browser for Azure login...")
-        self._loading_azure = True
+    def _start_provider_login(self, provider: CloudProvider) -> None:
+        """Start login process for a cloud provider."""
+        self.notify(f"Opening browser for {provider.name} login...")
+        self._cloud_states[provider.id] = ProviderState(loading=True)
         self._rebuild_list()
-        self.run_worker(self._azure_login_worker, thread=True)
+        self.run_worker(
+            lambda: self._provider_login_worker(provider),
+            thread=True,
+        )
 
-    def _azure_login_worker(self) -> None:
-        """Worker to run az login."""
-        import subprocess
-
+    def _provider_login_worker(self, provider: CloudProvider) -> None:
+        """Worker to run provider login."""
         try:
-            # az login opens browser - capture output to avoid TUI conflicts
-            result = subprocess.run(
-                ["az", "login"],
-                capture_output=True,
-                timeout=300,  # 5 min timeout for login
-            )
-            if result.returncode == 0:
-                self.app.call_from_thread(self._on_azure_login_complete, True)
-            else:
-                error = result.stderr.decode() if result.stderr else "Login failed"
-                self.app.call_from_thread(self._on_azure_login_error, error)
-        except subprocess.TimeoutExpired:
-            self.app.call_from_thread(self._on_azure_login_error, "Login timed out")
+            success = provider.login()
+            self.app.call_from_thread(self._on_provider_login_complete, provider, success)
         except Exception as e:
-            self.app.call_from_thread(self._on_azure_login_error, str(e))
+            self.app.call_from_thread(self._on_provider_login_error, provider, str(e))
 
-    def _on_azure_login_complete(self, success: bool) -> None:
-        """Callback when Azure login completes."""
+    def _on_provider_login_complete(self, provider: CloudProvider, success: bool) -> None:
+        """Callback when provider login completes."""
         if success:
-            self.notify("Azure login successful! Loading resources...")
-            self._load_azure_async()
+            self.notify(f"{provider.name} login successful! Loading resources...")
+            # Re-run discovery for this provider
+            self._cloud_states[provider.id] = ProviderState(loading=True)
+            self._rebuild_list()
+            self.run_worker(
+                lambda: self._discover_provider_worker(provider),
+                thread=True,
+            )
+        else:
+            self._cloud_states[provider.id] = ProviderState(
+                status=ProviderStatus.NOT_LOGGED_IN,
+                loading=False,
+            )
+            self._rebuild_list()
+            self.notify(f"{provider.name} login failed", severity="error")
 
-    def _on_azure_login_error(self, error: str) -> None:
-        """Callback when Azure login fails."""
-        self._loading_azure = False
+    def _on_provider_login_error(self, provider: CloudProvider, error: str) -> None:
+        """Callback when provider login fails."""
+        self._cloud_states[provider.id] = ProviderState(
+            status=ProviderStatus.ERROR,
+            loading=False,
+            error=error,
+        )
         self._rebuild_list()
-        # Truncate long error messages
         if len(error) > 100:
             error = error[:100] + "..."
-        self.notify(f"Azure login failed: {error}", severity="error")
+        self.notify(f"{provider.name} login failed: {error}", severity="error")
 
     def action_azure_logout(self) -> None:
         """Logout from Azure (only when account is highlighted)."""
         option = self._get_highlighted_option()
         if option and option.id == "_azure_account":
-            self._start_azure_logout()
+            provider = next((p for p in self._cloud_providers if p.id == "azure"), None)
+            if provider:
+                self._start_provider_logout(provider)
 
     def action_azure_switch(self) -> None:
         """Switch Azure account (only when account is highlighted)."""
         option = self._get_highlighted_option()
         if option and option.id == "_azure_account":
-            self._start_azure_login()
+            provider = next((p for p in self._cloud_providers if p.id == "azure"), None)
+            if provider:
+                self._start_provider_login(provider)
 
-    def _start_azure_logout(self) -> None:
-        """Start Azure CLI logout process."""
-        self.notify("Logging out from Azure...")
-        self._loading_azure = True
+    def _start_provider_logout(self, provider: CloudProvider) -> None:
+        """Start logout process for a cloud provider."""
+        self.notify(f"Logging out from {provider.name}...")
+        self._cloud_states[provider.id] = ProviderState(loading=True)
         self._rebuild_list()
-        self.run_worker(self._azure_logout_worker, thread=True)
+        self.run_worker(
+            lambda: self._provider_logout_worker(provider),
+            thread=True,
+        )
 
-    def _azure_logout_worker(self) -> None:
-        """Worker to run az logout."""
-        from ...services.cloud_detector import azure_logout
+    def _provider_logout_worker(self, provider: CloudProvider) -> None:
+        """Worker to run provider logout."""
+        success = provider.logout()
+        self.app.call_from_thread(self._on_provider_logout_complete, provider, success)
 
-        success = azure_logout()
-        self.app.call_from_thread(self._on_azure_logout_complete, success)
-
-    def _on_azure_logout_complete(self, success: bool) -> None:
-        """Callback when Azure logout completes."""
-        self._loading_azure = False
-        self._azure_account = None
-        self._azure_subscriptions = []
-        self._azure_servers = []
+    def _on_provider_logout_complete(self, provider: CloudProvider, success: bool) -> None:
+        """Callback when provider logout completes."""
+        from ...services.cloud import ProviderStatus
 
         if success:
-            from ...services.cloud_detector import AzureStatus
-
-            self._azure_status = AzureStatus.NOT_LOGGED_IN
-            self.notify("Logged out from Azure")
+            self._cloud_states[provider.id] = ProviderState(
+                status=ProviderStatus.NOT_LOGGED_IN,
+                loading=False,
+            )
+            self.notify(f"Logged out from {provider.name}")
         else:
-            self.notify("Failed to logout from Azure", severity="warning")
+            self._cloud_states[provider.id] = ProviderState(
+                status=ProviderStatus.ERROR,
+                loading=False,
+                error="Logout failed",
+            )
+            self.notify(f"Failed to logout from {provider.name}", severity="warning")
 
         self._rebuild_list()
+
+    def _load_provider_for_subscription(
+        self, provider: CloudProvider, subscription_id: str, new_index: int
+    ) -> None:
+        """Load resources for a specific subscription."""
+        # Update state to loading with new subscription index
+        state = self._cloud_states.get(provider.id, ProviderState())
+        state = ProviderState(
+            loading=True,
+            account=state.account,
+            extra={
+                **state.extra,
+                "current_subscription_index": new_index,
+            },
+        )
+        self._cloud_states[provider.id] = state
+        self._rebuild_list()
+
+        self.run_worker(
+            lambda: self._discover_subscription_worker(provider, subscription_id, new_index),
+            thread=True,
+        )
+
+    def _discover_subscription_worker(
+        self, provider: CloudProvider, subscription_id: str, new_index: int
+    ) -> None:
+        """Worker to discover resources for a specific subscription."""
+        from ...services.cloud_detector import (
+            cache_subscriptions_and_servers,
+            detect_azure_sql_resources,
+        )
+
+        try:
+            status, servers = detect_azure_sql_resources(subscription_id, use_cache=True)
+
+            # Get current state to preserve subscriptions
+            current_state = self._cloud_states.get(provider.id, ProviderState())
+            subscriptions = current_state.extra.get("subscriptions", [])
+
+            # Cache servers
+            if subscriptions:
+                cache_subscriptions_and_servers(subscriptions, servers, subscription_id)
+
+            self.app.call_from_thread(
+                self._on_subscription_loaded, provider, servers, subscriptions, new_index
+            )
+        except Exception as e:
+            self.app.call_from_thread(self._on_provider_error, provider.id, str(e))
+
+    def _on_subscription_loaded(
+        self,
+        provider: CloudProvider,
+        servers: list,
+        subscriptions: list,
+        new_index: int,
+    ) -> None:
+        """Callback when subscription resources are loaded."""
+        from ...services.cloud import ProviderStatus
+
+        current_state = self._cloud_states.get(provider.id, ProviderState())
+        self._cloud_states[provider.id] = ProviderState(
+            status=ProviderStatus.AVAILABLE,
+            account=current_state.account,
+            loading=False,
+            extra={
+                "subscriptions": subscriptions,
+                "servers": servers,
+                "current_subscription_index": new_index,
+            },
+        )
+
+        self._rebuild_list()
+        self._select_option_by_id(f"_azure_sub_{new_index}")
+        self._update_shortcuts()
+
+        # Auto-load databases
+        self._auto_load_all_databases()
 
     def action_switch_tab(self) -> None:
         """Switch between Connections, Docker and Cloud tabs."""
@@ -1135,34 +997,34 @@ class ConnectionPickerScreen(ModalScreen):
         self._update_shortcuts()
 
     def action_save_docker(self) -> None:
-        """Save the selected Docker container or Azure resource as a connection."""
+        """Save the selected Docker container or cloud resource as a connection."""
         option = self._get_highlighted_option()
         if not option or option.disabled:
             return
 
+        option_id = str(option.id) if option.id else ""
+
+        # Check if a cloud provider handles this option
+        for provider in self._cloud_providers:
+            if provider.is_my_option(option_id):
+                state = self._cloud_states.get(provider.id, ProviderState())
+                result = provider.handle_action("save", option_id, state, self.connections)
+
+                if result.action == "save" and result.config:
+                    self._save_cloud_connection(result.config, option_id)
+                elif result.action == "none":
+                    self.notify("Connection already saved", severity="warning")
+                return
+
+        # Docker container
         if self._is_docker_option(option):
-            container_id = str(option.id)[len(self.DOCKER_PREFIX) :]
+            container_id = str(option.id)[len(self.DOCKER_PREFIX):]
             container = self._get_container_by_id(container_id)
             if container:
-                # Check if already saved
                 if self._is_container_saved(container):
                     self.notify("Container already saved", severity="warning")
                     return
-                # Save the container as a connection
                 self._save_container(container)
-        elif self._is_azure_option(option):
-            server_name, database, use_sql_auth = self._parse_azure_option_id(str(option.id))
-            server = self._get_azure_server_by_name(server_name)
-            if server:
-                # Check if already saved
-                if self._is_azure_connection_saved(server, database, use_sql_auth):
-                    self.notify("Connection already saved", severity="warning")
-                    return
-                # Save the Azure connection
-                self._save_azure_connection(server, database, use_sql_auth)
-        else:
-            # For saved connections, 's' does nothing special
-            pass
 
     def _save_container(self, container: DetectedContainer) -> None:
         """Save a Docker container as a connection without closing the modal."""
@@ -1208,29 +1070,9 @@ class ConnectionPickerScreen(ModalScreen):
         # Restore cursor to the same container
         self._select_option_by_id(current_option_id)
 
-    def _is_azure_connection_saved(
-        self, server: AzureSqlServer, database: str | None, use_sql_auth: bool
-    ) -> bool:
-        """Check if an Azure connection matches a saved connection."""
-        auth_type = "sql" if use_sql_auth else "ad_default"
-        for conn in self.connections:
-            if (
-                conn.db_type == "mssql"
-                and conn.server == server.fqdn
-                and conn.database == (database or "master")
-                and conn.options.get("auth_type") == auth_type
-            ):
-                return True
-        return False
-
-    def _save_azure_connection(
-        self, server: AzureSqlServer, database: str | None, use_sql_auth: bool
-    ) -> None:
-        """Save an Azure connection without closing the modal."""
+    def _save_cloud_connection(self, config: ConnectionConfig, option_id: str) -> None:
+        """Save a cloud connection without closing the modal."""
         from ...config import save_connections
-        from ...services.cloud_detector import azure_server_to_connection_config
-
-        config = azure_server_to_connection_config(server, database, use_sql_auth)
 
         # Generate unique name if needed
         existing_names = {c.name for c in self.connections}
@@ -1256,10 +1098,6 @@ class ConnectionPickerScreen(ModalScreen):
             self.notify(f"Failed to save: {e}", severity="error")
             return
 
-        # Remember current option to restore cursor
-        auth_suffix = "sql" if use_sql_auth else "ad"
-        current_option_id = f"{self.AZURE_PREFIX}{server.name}:{database or ''}:{auth_suffix}"
-
         # Refresh the list to update saved indicators
         self._rebuild_list()
 
@@ -1268,7 +1106,7 @@ class ConnectionPickerScreen(ModalScreen):
             self.app.refresh_tree()
 
         # Restore cursor position
-        self._select_option_by_id(current_option_id)
+        self._select_option_by_id(option_id)
 
     def _select_option_by_id(self, option_id: str) -> None:
         """Select an option by its ID."""
@@ -1287,14 +1125,14 @@ class ConnectionPickerScreen(ModalScreen):
         self.dismiss("__new_connection__")
 
     def action_refresh(self) -> None:
-        """Refresh Docker containers and Azure resources (clears cache)."""
+        """Refresh Docker containers and cloud resources (clears cache)."""
         from ...services.cloud_detector import clear_azure_cache
 
-        # Clear the Azure cache to force fresh data
+        # Clear caches to force fresh data
         clear_azure_cache()
 
         self._load_containers_async()
-        self._load_azure_async()
+        self._load_cloud_providers_async()
         self.notify("Refreshing...")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -1302,36 +1140,35 @@ class ConnectionPickerScreen(ModalScreen):
         if event.option_list.id == "picker-list":
             option = event.option
             if option and not option.disabled:
-                # Subscription selector - activate the selected subscription
-                if option.id and str(option.id).startswith("_azure_sub_"):
-                    sub_index = int(str(option.id).replace("_azure_sub_", ""))
-                    self._activate_subscription(sub_index)
-                    return
+                option_id = str(option.id) if option.id else ""
 
-                # Azure login action
-                if option.id == "_azure_login":
-                    self._start_azure_login()
-                    return
+                # Check if a cloud provider handles this option
+                for provider in self._cloud_providers:
+                    if provider.is_my_option(option_id):
+                        state = self._cloud_states.get(provider.id, ProviderState())
+                        result = provider.handle_action("select", option_id, state, self.connections)
 
-                # Azure account - use l/w keybindings, click does nothing
-                if option.id == "_azure_account":
-                    return
+                        if result.action == "login":
+                            self._start_provider_login(provider)
+                        elif result.action == "switch_subscription":
+                            sub_index = result.metadata.get("subscription_index", 0)
+                            self._activate_subscription(provider, sub_index)
+                        elif result.action == "connect" and result.config:
+                            self.dismiss(AzureConnectionResult(
+                                server=self._get_server_from_config(result.config, state),
+                                database=result.config.database,
+                                use_sql_auth=result.config.options.get("auth_type") == "sql",
+                            ))
+                        # For "none" action or account clicks, do nothing
+                        return
 
-                # Load databases for a server
-                if option.id and str(option.id).startswith("_azure_load_dbs_"):
-                    server_name = str(option.id).replace("_azure_load_dbs_", "")
-                    self._load_databases_for_server(server_name)
-                    return
-
+                # Docker container
                 if self._is_docker_option(option):
-                    container_id = str(option.id)[len(self.DOCKER_PREFIX) :]
+                    container_id = str(option.id)[len(self.DOCKER_PREFIX):]
                     container = self._get_container_by_id(container_id)
                     if container:
                         self.dismiss(DockerConnectionResult(container=container, action="connect"))
-                elif self._is_azure_option(option):
-                    server_name, database, use_sql_auth = self._parse_azure_option_id(str(option.id))
-                    server = self._get_azure_server_by_name(server_name)
-                    if server:
-                        self.dismiss(AzureConnectionResult(server=server, database=database, use_sql_auth=use_sql_auth))
-                else:
-                    self.dismiss(option.id)
+                    return
+
+                # Saved connection
+                self.dismiss(option.id)
