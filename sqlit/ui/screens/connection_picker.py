@@ -370,7 +370,7 @@ class ConnectionPickerScreen(ModalScreen):
                 # Add source indicator emoji
                 source_emoji = ""
                 if conn.source == "azure":
-                    source_emoji = "☁️ "
+                    source_emoji = ""
                 elif conn.source == "docker":
                     source_emoji = "🐳 "
                 saved_options.append(
@@ -542,7 +542,7 @@ class ConnectionPickerScreen(ModalScreen):
                         # Show server with loading indicator
                         azure_options.append(
                             Option(
-                                f"    ☁️ {display} [dim italic]loading...[/]",
+                                f"    {display} [dim italic]loading...[/]",
                                 id=f"_azure_server_loading_{server.name}",
                                 disabled=True,
                             )
@@ -551,7 +551,7 @@ class ConnectionPickerScreen(ModalScreen):
                         # Show server as header (collapsed indicator)
                         azure_options.append(
                             Option(
-                                f"    ☁️ {display}",
+                                f"    {display}",
                                 id=f"_azure_server_{server.name}",
                                 disabled=True,
                             )
@@ -584,7 +584,7 @@ class ConnectionPickerScreen(ModalScreen):
                         # No databases loaded yet - will auto-load
                         azure_options.append(
                             Option(
-                                f"    ☁️ {display} [dim](no databases)[/]",
+                                f"    {display} [dim](no databases)[/]",
                                 id=f"_azure_server_empty_{server.name}",
                                 disabled=True,
                             )

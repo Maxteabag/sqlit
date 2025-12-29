@@ -829,11 +829,7 @@ class ConnectionScreen(ModalScreen):
                     if opt.value == value:
                         widget.highlighted = i
                         break
-            elif isinstance(widget, Select):
-                field_def = self._field_definitions.get(name)
-                if not field_def:
-                    continue
-                widget.value = self._resolve_select_value(field_def)
+            # Note: Select widgets get their value from construction, no need to set here
 
     def _rebuild_dynamic_fields(self, db_type: DatabaseType) -> None:
         self._current_db_type = db_type

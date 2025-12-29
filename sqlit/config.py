@@ -231,7 +231,7 @@ class ConnectionConfig:
 # Source emoji mapping
 SOURCE_EMOJIS: dict[str, str] = {
     "docker": "🐳 ",
-    "azure": "☁️ ",
+    "azure": "",
 }
 
 
