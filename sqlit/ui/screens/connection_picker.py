@@ -189,7 +189,8 @@ class ConnectionPickerScreen(ModalScreen):
             shortcuts = [("Select", "enter")]
             if show_save:
                 shortcuts.append(("Save", "s"))
-            shortcuts.append(("New", "n"))
+            if self._current_tab == self.TAB_CONNECTIONS:
+                shortcuts.append(("New", "n"))
 
         dialog = self.query_one("#picker-dialog", Dialog)
         subtitle = "\u00a0·\u00a0".join(
@@ -530,15 +531,8 @@ class ConnectionPickerScreen(ModalScreen):
         elif self._azure_status == AzureStatus.CLI_NOT_INSTALLED:
             options.append(
                 Option(
-                    "  [yellow]⚠ Azure CLI not installed[/]",
+                    "  [dim](Azure CLI not installed)[/]",
                     id="_azure_cli_missing",
-                    disabled=True,
-                )
-            )
-            options.append(
-                Option(
-                    "    [dim]Install: https://aka.ms/installazurecli[/]",
-                    id="_azure_install_hint",
                     disabled=True,
                 )
             )
