@@ -152,6 +152,11 @@ def main() -> int:
         help="Maximum rows to fetch and render (default: 10000). Use for performance testing.",
     )
     parser.add_argument(
+        "--mock-cloud",
+        action="store_true",
+        help="Use mock cloud provider data (Azure, AWS, GCP) for demos/screenshots.",
+    )
+    parser.add_argument(
         "--profile-startup",
         action="store_true",
         help="Log startup timing diagnostics to stderr.",
@@ -255,6 +260,11 @@ def main() -> int:
         help="Maximum rows to fetch (default: 1000, use 0 for unlimited)",
     )
 
+    # Docker discovery command
+    docker_parser = subparsers.add_parser("docker", help="Docker container discovery")
+    docker_subparsers = docker_parser.add_subparsers(dest="docker_command", help="Docker commands")
+    docker_subparsers.add_parser("list", help="List detected database containers")
+
     startup_mark = time.perf_counter()
     args = parser.parse_args(filtered_argv[1:])  # Skip program name
     if args.settings:
@@ -281,6 +291,10 @@ def main() -> int:
         os.environ["SQLIT_MAX_ROWS"] = str(args.max_rows)
     else:
         os.environ.pop("SQLIT_MAX_ROWS", None)
+    if args.mock_cloud:
+        os.environ["SQLIT_MOCK_CLOUD"] = "1"
+    else:
+        os.environ.pop("SQLIT_MOCK_CLOUD", None)
     if args.profile_startup:
         os.environ["SQLIT_PROFILE_STARTUP"] = "1"
     else:
@@ -387,6 +401,15 @@ def main() -> int:
 
     if args.command == "query":
         return cmd_query(args)
+
+    if args.command == "docker":
+        from .commands import cmd_docker_list
+
+        if args.docker_command == "list":
+            return cmd_docker_list(args)
+        else:
+            docker_parser.print_help()
+            return 1
 
     parser.print_help()
     return 1

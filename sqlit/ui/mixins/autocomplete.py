@@ -5,11 +5,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from textual.timer import Timer
 from textual.widgets import TextArea
 from textual.worker import Worker
 
 from ..protocols import AppProtocol
+from ..spinner import Spinner
 from ...sql_completion import (
     SQL_OPERATORS,
     SuggestionType,
@@ -28,7 +28,7 @@ class AutocompleteMixin:
     """Mixin providing SQL autocomplete functionality."""
 
     _schema_worker: Worker[Any] | None = None
-    _schema_spinner_timer: Timer | None = None
+    _schema_spinner: Spinner | None = None
     _schema_cache: dict[str, Any] = {}
     _table_metadata: dict[str, tuple[str, str, str | None]] = {}
     _autocomplete_debounce_timer: Timer | None = None
@@ -808,26 +808,17 @@ class AutocompleteMixin:
     def _start_schema_spinner(self: AppProtocol) -> None:
         """Start the schema indexing spinner animation."""
         self._schema_indexing = True
-        self._schema_spinner_index = 0
-        self._update_status_bar()
-        # Start timer to animate spinner
-        if hasattr(self, "_schema_spinner_timer") and self._schema_spinner_timer is not None:
-            self._schema_spinner_timer.stop()
-        self._schema_spinner_timer = self.set_interval(0.1, self._animate_schema_spinner)
+        if self._schema_spinner is not None:
+            self._schema_spinner.stop()
+        self._schema_spinner = Spinner(self, on_tick=lambda _: self._update_status_bar(), fps=10)
+        self._schema_spinner.start()
 
     def _stop_schema_spinner(self: AppProtocol) -> None:
         """Stop the schema indexing spinner animation."""
         self._schema_indexing = False
-        if hasattr(self, "_schema_spinner_timer") and self._schema_spinner_timer is not None:
-            self._schema_spinner_timer.stop()
-            self._schema_spinner_timer = None
-        self._update_status_bar()
-
-    def _animate_schema_spinner(self: AppProtocol) -> None:
-        """Update schema spinner animation frame."""
-        if not self._schema_indexing:
-            return
-        self._schema_spinner_index = (self._schema_spinner_index + 1) % len(SPINNER_FRAMES)
+        if self._schema_spinner is not None:
+            self._schema_spinner.stop()
+            self._schema_spinner = None
         self._update_status_bar()
 
     def action_cancel_schema_indexing(self: AppProtocol) -> None:

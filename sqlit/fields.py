@@ -117,6 +117,8 @@ def schema_field_to_definition(schema_field: SchemaField) -> FieldDefinition:
     width: str | int = "full"
     if schema_field.group == "server_port":
         width = "flex" if schema_field.name == "server" else 12
+    elif schema_field.group == "database_port":
+        width = "flex" if schema_field.name == "database" else 12
     elif schema_field.group == "credentials":
         width = "flex"
 

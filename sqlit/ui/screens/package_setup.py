@@ -6,20 +6,20 @@ from collections.abc import Callable
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Static
+from textual.widgets import OptionList, Static
+from textual.widgets.option_list import Option
 
 from ...db.exceptions import MissingDriverError
-from ...install_strategy import detect_strategy
+from ...install_strategy import detect_install_method, get_install_options
 from ...widgets import Dialog
 
 
 class PackageSetupScreen(ModalScreen):
-    """Screen that shows install instructions for a missing Python package."""
+    """Screen that shows install options for a missing Python package."""
 
     BINDINGS = [
-        Binding("i", "install", "Install"),
+        Binding("enter", "install", "Install", priority=True),
         Binding("y", "yank", "Yank"),
         Binding("escape", "cancel", "Cancel", priority=True),
     ]
@@ -40,89 +40,107 @@ class PackageSetupScreen(ModalScreen):
         margin-bottom: 1;
     }
 
-    #package-scroll {
+    #install-options {
         height: auto;
         max-height: 12;
         border: solid $primary-darken-2;
         background: $surface-darken-1;
-        padding: 1;
         margin-top: 1;
-        overflow-y: auto;
+    }
+
+    #install-options > .option-list--option {
+        padding: 0 1;
+    }
+
+    #install-options > .option-list--option-highlighted {
+        background: $primary-darken-1;
     }
     """
 
-    def __init__(self, error: MissingDriverError, *, on_install: Callable[[MissingDriverError], None]):
+    def __init__(
+        self,
+        error: MissingDriverError,
+        *,
+        on_success: Callable[[], None] | None = None,
+    ):
         super().__init__()
         self.error = error
-        self._on_install = on_install
-        self._instructions_text = ""
-        self._can_auto_install = True
+        self._on_success = on_success
+        self._install_options = get_install_options(error.package_name)
 
     def compose(self) -> ComposeResult:
-        strategy = detect_strategy(extra_name=self.error.extra_name, package_name=self.error.package_name)
         has_import_error = bool(getattr(self.error, "import_error", None))
-        self._can_auto_install = strategy.can_auto_install and not has_import_error
-        instructions = []
-        if has_import_error:
-            details = str(self.error.import_error).strip()
-            if details:
-                instructions.append("Import error:")
-                instructions.append(details)
-                instructions.append("")
-        instructions.append(strategy.manual_instructions.strip())
-        self._instructions_text = "\n".join(instructions).strip() + "\n"
-
-        shortcuts = [("Yank", "y"), ("Cancel", "<esc>")]
-        if self._can_auto_install:
-            shortcuts.insert(0, ("Install", "i"))
         title = "Driver import failed" if has_import_error else "Missing package"
-        if has_import_error:
-            message = (
-                f"The [bold]{self.error.driver_name}[/] driver is installed but failed to load.\n"
-                f"Package: [bold]{self.error.package_name}[/]"
-            )
-        else:
-            message = (
-                f"This connection requires the [bold]{self.error.driver_name}[/] driver.\n"
-                f"Package: [bold]{self.error.package_name}[/]"
-            )
-        with Dialog(id="package-dialog", title=title, shortcuts=shortcuts):
-            yield Static(
-                message,
-                id="package-message",
-            )
 
-            with VerticalScroll(id="package-scroll"):
-                yield Static(self._instructions_text.strip(), id="package-script")
+        message = (
+            f"This connection requires the [bold]{self.error.driver_name}[/] driver.\n"
+            f"Package: [bold]{self.error.package_name}[/]\n\n"
+            f"[bold]Install the driver using your preferred package manager:[/]"
+        )
+
+        shortcuts = [("Install", "<enter>"), ("Yank", "y"), ("Cancel", "<esc>")]
+
+        with Dialog(id="package-dialog", title=title, shortcuts=shortcuts):
+            yield Static(message, id="package-message")
+
+            detected = detect_install_method()
+            option_list = OptionList(id="install-options")
+            for opt in self._install_options:
+                if opt.label == detected:
+                    label = f"[bold]{opt.label:<8}[/] {opt.command}  [dim](Detected)[/]"
+                else:
+                    label = f"[bold]{opt.label:<8}[/] {opt.command}"
+                option_list.add_option(Option(label, id=opt.label))
+            option_list.highlighted = 0
+            yield option_list
 
     def on_mount(self) -> None:
-        self.query_one("#package-scroll", VerticalScroll).focus()
+        self.query_one("#install-options", OptionList).focus()
+
+    def _get_selected_option(self) -> str | None:
+        """Get the command for the currently selected option."""
+        option_list = self.query_one("#install-options", OptionList)
+        highlighted = option_list.highlighted
+        if highlighted is not None and highlighted < len(self._install_options):
+            return self._install_options[highlighted].command
+        return None
 
     def action_install(self) -> None:
-        if not self._can_auto_install:
-            try:
-                self.app.notify(
-                    "Automatic installation isn't available for this Python environment.",
-                    severity="warning",
-                    timeout=6,
-                )
-            except Exception:
-                pass
-            return
-        self._on_install(self.error)
+        from .install_progress import InstallProgressScreen
+
+        command = self._get_selected_option()
+        if command:
+
+            def on_install_complete(success: bool) -> None:
+                if success and self._on_success:
+                    # Caller handles success (e.g., connection screen caches form and restarts)
+                    self._on_success()
+                    self.dismiss(None)
+                elif success:
+                    # Default: show notification and restart
+                    self.app.notify(
+                        f"{self.error.driver_name} installed successfully. Restarting...",
+                        timeout=3,
+                    )
+                    self.dismiss(None)
+                    restart = getattr(self.app, "restart", None)
+                    if callable(restart):
+                        restart()
+                else:
+                    self.dismiss(None)
+
+            self.app.push_screen(
+                InstallProgressScreen(self.error.package_name, command),
+                on_install_complete,
+            )
 
     def action_yank(self) -> None:
         from ...widgets import flash_widget
 
-        self.app.copy_to_clipboard(self._instructions_text.strip())
-        flash_widget(self.query_one("#package-script", Static))
+        command = self._get_selected_option()
+        if command:
+            self.app.copy_to_clipboard(command)
+            flash_widget(self.query_one("#install-options", OptionList))
 
     def action_cancel(self) -> None:
         self.dismiss(None)
-
-    def check_action(self, action: str, parameters: tuple) -> bool | None:
-        if self.app.screen is not self:
-            return False
-        if action == "install" and not self._can_auto_install:
-            return False
-        return super().check_action(action, parameters)

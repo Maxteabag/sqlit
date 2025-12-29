@@ -28,10 +28,10 @@ class TestPasswordInputScreen:
             app.push_screen(screen)
             await pilot.pause()
 
-            # Check that the input field exists and is masked
+            # Check that the input field exists (password visible for usability)
             input_widget = screen.query_one("#password-input", Input)
             assert input_widget is not None
-            assert input_widget.password is True
+            assert input_widget.password is False
 
     @pytest.mark.asyncio
     async def test_password_input_submit_with_enter(self) -> None:
@@ -157,8 +157,8 @@ class TestPasswordInputScreen:
             assert "custom password" in str(description.render())
 
     @pytest.mark.asyncio
-    async def test_password_not_visible_in_input(self) -> None:
-        """Password characters are not visible when typing."""
+    async def test_password_visible_in_input(self) -> None:
+        """Password characters are visible when typing for usability."""
         from textual.app import App
 
         class TestApp(App):
@@ -174,8 +174,8 @@ class TestPasswordInputScreen:
             input_widget.value = "secret123"
             await pilot.pause()
 
-            # The password property should be True, which masks the input
-            assert input_widget.password is True
+            # Password is visible for better usability in terminal apps
+            assert input_widget.password is False
 
 
 class TestConnectionPasswordFlow:

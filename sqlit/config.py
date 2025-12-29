@@ -133,6 +133,7 @@ class AuthType(Enum):
     AD_PASSWORD = "ad_password"
     AD_INTERACTIVE = "ad_interactive"
     AD_INTEGRATED = "ad_integrated"
+    AD_DEFAULT = "ad_default"  # Uses Azure CLI / environment credentials
 
 
 AUTH_TYPE_LABELS = {
@@ -141,6 +142,7 @@ AUTH_TYPE_LABELS = {
     AuthType.AD_PASSWORD: "Microsoft Entra Password",
     AuthType.AD_INTERACTIVE: "Microsoft Entra MFA",
     AuthType.AD_INTEGRATED: "Microsoft Entra Integrated",
+    AuthType.AD_DEFAULT: "Microsoft Entra Default (CLI)",
 }
 
 
@@ -229,6 +231,7 @@ class ConnectionConfig:
 # Source emoji mapping
 SOURCE_EMOJIS: dict[str, str] = {
     "docker": "🐳 ",
+    "azure": "",
 }
 
 

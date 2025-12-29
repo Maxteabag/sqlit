@@ -37,11 +37,52 @@ def _is_pipx() -> bool:
     pipx_override = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
     if pipx_override in {"1", "true", "yes", "pipx"}:
         return True
-    if pipx_override in {"0", "false", "no", "pip", "unknown", "no-pip"}:
+    if pipx_override in {"0", "false", "no", "pip", "unknown", "no-pip", "uvx", "conda", "uv"}:
         return False
 
+    # pipx stores venvs in:
+    # - ~/.local/pipx/venvs/ (pre-1.2.0)
+    # - ~/.local/share/pipx/venvs/ (post-1.2.0, platformdirs)
+    # - $PIPX_HOME/venvs/ (custom)
     exe = sys.executable.lower()
-    return "pipx" in exe or "/pipx/venvs/" in exe or "\\pipx\\venvs\\" in exe
+    return "/pipx/venvs/" in exe or "\\pipx\\venvs\\" in exe
+
+
+def _is_uvx() -> bool:
+    """Check if running via uvx or uv tool install."""
+    mock = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
+    if mock == "uvx":
+        return True
+    if mock in {"pipx", "pip", "conda", "uv"}:
+        return False
+
+    # Check executable path for uv tools directory
+    # uvx/uv tool install creates venvs in ~/.local/share/uv/tools/<app>/
+    exe = sys.executable.lower()
+    return "/uv/tools/" in exe or "\\uv\\tools\\" in exe
+
+
+def _is_uv_run() -> bool:
+    """Check if running via uv run (uv-managed project environment)."""
+    mock = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
+    if mock == "uv":
+        return True
+    if mock in {"pipx", "pip", "conda", "uvx"}:
+        return False
+
+    # UV env var is set when uv orchestrates the subprocess (uv run, uv sync, etc.)
+    return bool(os.environ.get("UV"))
+
+
+def _is_conda() -> bool:
+    """Check if running in a conda environment."""
+    mock = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
+    if mock == "conda":
+        return True
+    if mock in {"pipx", "pip", "uvx"}:
+        return False
+
+    return bool(os.environ.get("CONDA_PREFIX"))
 
 
 def _is_unknown_install() -> bool:
@@ -130,26 +171,84 @@ def _get_arch_package_name(package_name: str) -> str | None:
     return mapping.get(package_name)
 
 
+@dataclass(frozen=True)
+class InstallOption:
+    """A single install option with label and command."""
+
+    label: str
+    command: str
+
+
+def detect_install_method() -> str:
+    """Detect how sqlit was installed/is running.
+
+    Returns one of: 'pipx', 'uvx', 'uv', 'conda', 'pip'.
+    'pipx', 'uvx', 'uv' (uv run), and 'conda' are high-confidence detections.
+    """
+    # Check high-confidence detections first (runtime environment)
+    if _is_pipx():
+        return "pipx"
+    if _is_uvx():
+        return "uvx"
+    if _is_uv_run():
+        return "uv"
+    if _is_conda():
+        return "conda"
+
+    # Default to pip (most common)
+    return "pip"
+
+
+def get_install_options(package_name: str) -> list[InstallOption]:
+    """Get list of install options for a package, ordered by detected install method."""
+    # All available options
+    all_options = {
+        "pip": InstallOption("pip", f"pip install {package_name}"),
+        "pipx": InstallOption("pipx", f"pipx inject sqlit-tui {package_name}"),
+        "uv": InstallOption("uv", f"uv pip install {package_name}"),
+        "uvx": InstallOption("uvx", f"uvx --with {package_name} sqlit-tui"),
+        "poetry": InstallOption("poetry", f"poetry add {package_name}"),
+        "pdm": InstallOption("pdm", f"pdm add {package_name}"),
+        "conda": InstallOption("conda", f"conda install {package_name}"),
+    }
+
+    # Detect install method and set preferred order
+    detected = detect_install_method()
+
+    # Order based on detection - detected method first, then common alternatives
+    if detected == "pipx":
+        order = ["pipx", "pip", "uv", "uvx", "poetry", "pdm", "conda"]
+    elif detected == "uvx":
+        order = ["uvx", "uv", "pip", "pipx", "poetry", "pdm", "conda"]
+    elif detected == "uv":
+        # uv run - prefer uv pip install
+        order = ["uv", "pip", "uvx", "pipx", "poetry", "pdm", "conda"]
+    elif detected == "conda":
+        order = ["conda", "pip", "uv", "pipx", "uvx", "poetry", "pdm"]
+    else:
+        # Default: pip first
+        order = ["pip", "uv", "pipx", "uvx", "poetry", "pdm", "conda"]
+
+    options = [all_options[key] for key in order]
+
+    # Add Arch Linux options at the end if on Arch
+    if _is_arch_linux():
+        arch_pkg = _get_arch_package_name(package_name)
+        if arch_pkg:
+            options.append(InstallOption("pacman", f"pacman -S {arch_pkg}"))
+            options.append(InstallOption("yay", f"yay -S {arch_pkg}"))
+
+    return options
+
+
 def _format_manual_instructions(package_name: str, reason: str) -> str:
     """Format manual installation instructions with rich markup."""
     lines = [
         f"{reason}\n",
         "[bold]Install the driver using your preferred package manager:[/]\n",
-        f"  [cyan]pip[/]     pip install {package_name}",
-        f"  [cyan]pipx[/]    pipx inject sqlit-tui {package_name}",
-        f"  [cyan]uv[/]      uv pip install {package_name}",
-        f"  [cyan]uvx[/]     uvx --with {package_name} sqlit-tui",
-        f"  [cyan]poetry[/]  poetry add {package_name}",
-        f"  [cyan]pdm[/]     pdm add {package_name}",
-        f"  [cyan]conda[/]   conda install {package_name}",
     ]
-
-    # Add Arch Linux instructions if on Arch
-    if _is_arch_linux():
-        arch_pkg = _get_arch_package_name(package_name)
-        if arch_pkg:
-            lines.append(f"  [cyan]pacman[/]  pacman -S {arch_pkg}")
-            lines.append(f"  [cyan]yay[/]     yay -S {arch_pkg}")
+    for opt in get_install_options(package_name):
+        lines.append(f"  [cyan]{opt.label}[/]     {opt.command}")
 
     return "\n".join(lines)
 

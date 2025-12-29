@@ -172,6 +172,9 @@ class SQLServerAdapter(DatabaseAdapter):
             return base + f"Authentication=ActiveDirectoryInteractive;" f"UID={config.username};"
         elif auth == AuthType.AD_INTEGRATED:
             return base + "Authentication=ActiveDirectoryIntegrated;"
+        elif auth == AuthType.AD_DEFAULT:
+            # Uses Azure CLI / environment credentials automatically
+            return base + "Authentication=ActiveDirectoryDefault;"
 
         return base + "Trusted_Connection=yes;"
 

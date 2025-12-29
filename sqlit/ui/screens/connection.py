@@ -14,7 +14,6 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal
 from textual.events import ScreenResume, ScreenSuspend
 from textual.screen import ModalScreen
-from textual.timer import Timer
 from textual.widgets import (
     Button,
     Input,
@@ -52,17 +51,13 @@ from ...fields import (
 from ...install_strategy import detect_strategy
 from ...validation import ValidationState, validate_connection_form
 from ...widgets import Dialog
-
-
-_TEST_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+from ..spinner import Spinner, SPINNER_FRAMES
 
 
 class ConnectionScreen(ModalScreen):
     """Modal screen for adding/editing a connection."""
 
     AUTO_FOCUS = "#conn-name"
-
-    _INSTALL_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", priority=True),
@@ -269,14 +264,9 @@ class ConnectionScreen(ModalScreen):
         self._saved_dialog_subtitle: str | None = None
         self._missing_driver_error: Any = None  # Stores MissingDriverError if driver is missing
         self._missing_ssh_driver_error: Any = None  # Stores MissingDriverError for SSH tunnel
-        self._install_error: Any = None
-        self._install_in_progress: bool = False
-        self._install_spinner_timer: Timer | None = None
-        self._install_spinner_index: int = 0
         # Test connection spinner state
         self._test_in_progress: bool = False
-        self._test_spinner_timer: Timer | None = None
-        self._test_spinner_index: int = 0
+        self._test_spinner: Spinner | None = None
         self._test_start_time: float = 0.0
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
@@ -326,6 +316,19 @@ class ConnectionScreen(ModalScreen):
             return str(self.config.get_field_value(field_name, ""))
         return ""
 
+    def _select_value_in_options(self, field_def: FieldDefinition, value: str | None) -> bool:
+        return any(opt.value == value for opt in field_def.options)
+
+    def _resolve_select_value(self, field_def: FieldDefinition) -> str:
+        value = self._get_field_value(field_def.name)
+        if self._select_value_in_options(field_def, value):
+            return value
+        if self._select_value_in_options(field_def, field_def.default):
+            return field_def.default
+        if field_def.options:
+            return field_def.options[0].value
+        return ""
+
     def _get_current_form_values(self) -> dict:
         values = {}
         for name, widget in self._field_widgets.items():
@@ -365,7 +368,7 @@ class ConnectionScreen(ModalScreen):
             with container:
                 select = Select(
                     options=[(opt.label, opt.value) for opt in field_def.options],
-                    value=(self._get_field_value(field_def.name) or field_def.default),
+                    value=self._resolve_select_value(field_def),
                     allow_blank=False,
                     compact=True,
                     id=field_id,
@@ -495,16 +498,6 @@ class ConnectionScreen(ModalScreen):
         except Exception:
             pass
 
-        if self._install_in_progress and self._install_error:
-            error = self._install_error
-            spinner = self._INSTALL_SPINNER_FRAMES[self._install_spinner_index % len(self._INSTALL_SPINNER_FRAMES)]
-            test_status.update(
-                f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
-                f"[dim]{spinner} Installing…[/]"
-            )
-            dialog.border_subtitle = "[bold]Installing…[/]  Cancel <esc>"
-            return
-
         active_tab = self._get_active_tab()
         if active_tab == "tab-ssh":
             error = self._missing_ssh_driver_error
@@ -548,35 +541,23 @@ class ConnectionScreen(ModalScreen):
                 test_status.update("")
             dialog.border_subtitle = "[bold]Test ^t[/]  Save ^s  Cancel <esc>"
 
-    def _tick_install_spinner(self) -> None:
-        self._install_spinner_index += 1
-        self._update_driver_status_ui()
-
     def _start_test_spinner(self) -> None:
         """Start the connection test spinner animation."""
         import time
 
         self._test_in_progress = True
         self._test_start_time = time.perf_counter()
-        self._test_spinner_index = 0
-        self._update_test_status()
-        if self._test_spinner_timer is not None:
-            self._test_spinner_timer.stop()
-        self._test_spinner_timer = self.set_interval(1 / 30, self._tick_test_spinner)
+        if self._test_spinner is not None:
+            self._test_spinner.stop()
+        self._test_spinner = Spinner(self, on_tick=lambda _: self._update_test_status(), fps=30)
+        self._test_spinner.start()
 
     def _stop_test_spinner(self) -> None:
         """Stop the connection test spinner animation."""
         self._test_in_progress = False
-        if self._test_spinner_timer is not None:
-            self._test_spinner_timer.stop()
-            self._test_spinner_timer = None
-
-    def _tick_test_spinner(self) -> None:
-        """Update test spinner animation frame."""
-        if not self._test_in_progress:
-            return
-        self._test_spinner_index = (self._test_spinner_index + 1) % len(_TEST_SPINNER_FRAMES)
-        self._update_test_status()
+        if self._test_spinner is not None:
+            self._test_spinner.stop()
+            self._test_spinner = None
 
     def _update_test_status(self) -> None:
         """Update the test status display with current spinner frame."""
@@ -589,8 +570,8 @@ class ConnectionScreen(ModalScreen):
 
         if self._test_in_progress:
             elapsed = time.perf_counter() - self._test_start_time
-            spinner = _TEST_SPINNER_FRAMES[self._test_spinner_index]
-            test_status.update(f"{spinner} Testing ({elapsed:.1f}s)...")
+            spinner_frame = self._test_spinner.frame if self._test_spinner else SPINNER_FRAMES[0]
+            test_status.update(f"{spinner_frame} Testing ({elapsed:.1f}s)...")
         # When not in progress, status is updated by success/error handlers
 
     def _get_restart_cache_path(self) -> Path:
@@ -626,73 +607,6 @@ class ConnectionScreen(ModalScreen):
             self._get_restart_cache_path().unlink(missing_ok=True)
         except Exception:
             pass
-
-    def _start_missing_driver_install(self, error: Any) -> None:
-        from ...services.installer import Installer
-
-        if not isinstance(error, MissingDriverError):
-            return
-        if self._install_in_progress:
-            return
-
-        self._install_in_progress = True
-        self._install_error = error
-        self._install_spinner_index = 0
-        self._post_install_message = None
-        self._update_driver_status_ui()
-        if self._install_spinner_timer is None:
-            self._install_spinner_timer = self.set_interval(0.12, self._tick_install_spinner)
-
-        # Cache the form state so we can restore after restart.
-        self._write_restart_cache()
-
-        def on_complete(success: bool, output: str, err: MissingDriverError) -> None:
-            self._on_missing_driver_install_complete(success, output, err)
-
-        Installer(self.app).install_in_background(error, on_complete=on_complete)
-
-    def _stop_install_spinner(self) -> None:
-        if self._install_spinner_timer is not None:
-            try:
-                self._install_spinner_timer.stop()
-            except Exception:
-                pass
-            self._install_spinner_timer = None
-
-    def _on_missing_driver_install_complete(self, success: bool, output: str, error: Any) -> None:
-        from ..screens import MessageScreen
-
-        self._stop_install_spinner()
-        self._install_in_progress = False
-        self._install_error = None
-
-        if success:
-            if isinstance(error, MissingDriverError) and error.extra_name == "ssh":
-                self._check_ssh_driver_availability()
-            else:
-                self._check_driver_availability(self._current_db_type)
-            self._post_install_message = "Successfully installed driver"
-            self._update_driver_status_ui()
-
-            self._write_restart_cache(post_install_message=self._post_install_message)
-
-            if os.environ.get("SQLIT_DISABLE_RESTART") == "1":
-                self._clear_restart_cache()
-                return
-
-            restart = getattr(self.app, "restart", None)
-            if callable(restart):
-                restart()
-            return
-
-        self._clear_restart_cache()
-        self._update_driver_status_ui()
-        self.app.push_screen(
-            MessageScreen(
-                "Couldn't install automatically",
-                "Couldn't install automatically, please install manually.",
-            )
-        )
 
     def compose(self) -> ComposeResult:
         title = "Edit Connection" if self.editing else "New Connection"
@@ -909,18 +823,13 @@ class ConnectionScreen(ModalScreen):
                 if not field_def:
                     continue
 
-                value = self._get_field_value(name) or field_def.default
+                value = self._resolve_select_value(field_def)
 
                 for i, opt in enumerate(field_def.options):
                     if opt.value == value:
                         widget.highlighted = i
                         break
-            elif isinstance(widget, Select):
-                field_def = self._field_definitions.get(name)
-                if not field_def:
-                    continue
-                value = self._get_field_value(name) or field_def.default
-                widget.value = value
+            # Note: Select widgets get their value from construction, no need to set here
 
     def _rebuild_dynamic_fields(self, db_type: DatabaseType) -> None:
         self._current_db_type = db_type
@@ -941,6 +850,11 @@ class ConnectionScreen(ModalScreen):
         for group in ssh_groups:
             for widget in self._create_field_group_widgets(group):
                 ssh_container.mount(widget)
+
+    def _after_dbtype_change(self) -> None:
+        self._set_initial_select_values()
+        self._update_field_visibility()
+        self._focus_first_visible_field()
 
     def _create_field_group_widgets(self, group: FieldGroup) -> list:
         widgets = []
@@ -990,7 +904,7 @@ class ConnectionScreen(ModalScreen):
         if field_def.field_type == FieldType.DROPDOWN:
             select = Select(
                 options=[(opt.label, opt.value) for opt in field_def.options],
-                value=(self._get_field_value(field_def.name) or field_def.default),
+                value=self._resolve_select_value(field_def),
                 allow_blank=False,
                 compact=True,
                 id=field_id,
@@ -1030,9 +944,7 @@ class ConnectionScreen(ModalScreen):
                 return
             if db_type != self._current_db_type:
                 self._rebuild_dynamic_fields(db_type)
-                self._set_initial_select_values()
-                self._update_field_visibility()
-                self._focus_first_visible_field()
+                self.call_after_refresh(self._after_dbtype_change)
                 self._update_ssh_tab_enabled(db_type)
                 self._check_driver_availability(db_type)
             return
@@ -1131,8 +1043,6 @@ class ConnectionScreen(ModalScreen):
                 return
 
     def action_install_driver(self) -> None:
-        if self._install_in_progress:
-            return
         active_tab = self._get_active_tab()
         if active_tab == "tab-ssh" and self._missing_ssh_driver_error:
             self._prompt_install_missing_driver(self._missing_ssh_driver_error)
@@ -1454,39 +1364,19 @@ class ConnectionScreen(ModalScreen):
             return None
 
     def _prompt_install_missing_driver(self, error: Exception) -> None:
-        from ..screens import ConfirmScreen, MessageScreen, PackageSetupScreen
+        from ..screens import PackageSetupScreen
 
         if not isinstance(error, MissingDriverError):
             return
 
-        if self._install_in_progress:
-            return
+        def on_install_success() -> None:
+            # Cache form state and restart for seamless experience
+            self._write_restart_cache(post_install_message="Successfully installed driver")
+            restart = getattr(self.app, "restart", None)
+            if callable(restart):
+                restart()
 
-        if getattr(error, "import_error", None):
-            self.app.push_screen(
-                PackageSetupScreen(error, on_install=lambda err: self._start_missing_driver_install(err))
-            )
-            return
-
-        strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
-        if not strategy.can_auto_install:
-            self.app.push_screen(
-                MessageScreen(
-                    "Manual installation required",
-                    strategy.manual_instructions,
-                )
-            )
-            return
-
-        self.app.push_screen(
-            ConfirmScreen(
-                "Install missing driver?",
-                f"Missing package: {error.package_name}",
-                yes_label="Yes",
-                no_label="No",
-            ),
-            lambda confirmed: self._start_missing_driver_install(error) if confirmed else None,
-        )
+        self.app.push_screen(PackageSetupScreen(error, on_success=on_install_success))
 
     def action_test_connection(self) -> None:
         from .password_input import PasswordInputScreen
@@ -1656,6 +1546,4 @@ class ConnectionScreen(ModalScreen):
         self.dismiss(("save", config, original_name))
 
     def action_cancel(self) -> None:
-        if self._install_in_progress:
-            return
         self.dismiss(None)

@@ -97,10 +97,10 @@ class TestNeedsDbPassword:
         assert _needs_db_password(config)
 
     def test_mssql_windows_auth_with_none_password(self) -> None:
-        """SQL Server with Windows auth and None password still technically needs prompt.
+        """SQL Server with Windows auth doesn't need a password prompt.
 
-        Note: In practice Windows auth doesn't use the password field,
-        but the function returns True because password is None.
+        Windows auth uses integrated credentials, not passwords,
+        so the function correctly returns False.
         """
         config = ConnectionConfig(
             name="test",
@@ -109,7 +109,7 @@ class TestNeedsDbPassword:
             password=None,
             options={"auth_type": "windows", "trusted_connection": True},
         )
-        assert _needs_db_password(config)
+        assert not _needs_db_password(config)
 
     def test_mssql_windows_auth_with_empty_password_no_prompt(self) -> None:
         """SQL Server with Windows auth and empty string password doesn't need prompt."""
