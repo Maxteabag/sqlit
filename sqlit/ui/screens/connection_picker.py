@@ -409,6 +409,20 @@ class ConnectionPickerScreen(ModalScreen):
 
     def _load_cloud_providers_async(self) -> None:
         """Start async loading of all cloud providers."""
+        from ...services.cloud.mock import is_mock_cloud_enabled, get_mock_cloud_states
+
+        # Check for mock cloud mode
+        if is_mock_cloud_enabled():
+            mock_states = get_mock_cloud_states()
+            for provider in self._cloud_providers:
+                if provider.id in mock_states:
+                    self._cloud_states[provider.id] = mock_states[provider.id]
+            self._rebuild_list()
+            if self._current_tab == self.TAB_CLOUD:
+                self._rebuild_cloud_tree()
+            self._update_shortcuts()
+            return
+
         # Set all providers to loading state
         for provider in self._cloud_providers:
             self._cloud_states[provider.id] = ProviderState(loading=True)
