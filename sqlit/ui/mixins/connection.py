@@ -12,7 +12,11 @@ if TYPE_CHECKING:
     from ...db import DatabaseAdapter
     from ...services.cloud_detector import AzureSqlServer
     from ...services.docker_detector import DetectedContainer
-    from ..screens.connection_picker import AzureConnectionResult, DockerConnectionResult
+    from ..screens.connection_picker import (
+        AzureConnectionResult,
+        CloudConnectionResult,
+        DockerConnectionResult,
+    )
 
 
 def _needs_db_password(config: ConnectionConfig) -> bool:
@@ -537,6 +541,9 @@ class ConnectionMixin:
             elif kind == "azure":
                 self._handle_azure_resource_result(result)
                 return
+            elif kind == "cloud":
+                self._handle_cloud_connection_result(result)
+                return
 
         # Handle saved connection selection
         config = next((c for c in self.connections if c.name == result), None)
@@ -579,16 +586,23 @@ class ConnectionMixin:
     def _find_matching_saved_connection(self: AppProtocol, container: DetectedContainer) -> ConnectionConfig | None:
         """Find a saved connection that matches a Docker container."""
         for conn in self.connections:
+            # Match by name (container name saved as connection name)
+            if conn.name == container.container_name:
+                return conn
+
             # Match by host:port and db_type
             if (
                 conn.db_type == container.db_type
                 and conn.server in ("localhost", "127.0.0.1", container.host)
                 and conn.port == str(container.port)
             ):
-                return conn
-            # Also match by name
-            if conn.name == container.container_name:
-                return conn
+                # If container has a known database, require it to match too
+                if container.database:
+                    if conn.database == container.database:
+                        return conn
+                else:
+                    # No database info on container, match by host:port only
+                    return conn
         return None
 
     def _handle_azure_resource_result(self: AppProtocol, result: AzureConnectionResult) -> None:
@@ -601,4 +615,11 @@ class ConnectionMixin:
         config = azure_server_to_connection_config(server, database, use_sql_auth)
 
         # Connect - will prompt for password if using SQL auth
+        self.connect_to_server(config)
+
+    def _handle_cloud_connection_result(self: AppProtocol, result: CloudConnectionResult) -> None:
+        """Handle a cloud resource selection (AWS, GCP, etc.) from the connection picker."""
+        config = result.config
+
+        # Connect - will prompt for password if needed
         self.connect_to_server(config)

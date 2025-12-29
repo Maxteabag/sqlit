@@ -634,6 +634,152 @@ ATHENA_SCHEMA = ConnectionSchema(
 )
 
 
+def _get_redshift_auth_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("password", "Password"),
+        SelectOption("iam", "IAM"),
+    )
+
+
+def _redshift_auth_is_password(config: dict[str, Any]) -> bool:
+    return config.get("redshift_auth_method", "password") == "password"
+
+
+def _redshift_auth_is_iam(config: dict[str, Any]) -> bool:
+    return config.get("redshift_auth_method") == "iam"
+
+
+REDSHIFT_SCHEMA = ConnectionSchema(
+    db_type="redshift",
+    display_name="Amazon Redshift",
+    default_port="5439",
+    fields=(
+        SchemaField(
+            name="server",
+            label="Cluster Endpoint",
+            placeholder="my-cluster.abc123.us-east-1.redshift.amazonaws.com",
+            required=True,
+            description="Redshift cluster endpoint",
+        ),
+        SchemaField(
+            name="redshift_auth_method",
+            label="Authentication",
+            field_type=FieldType.DROPDOWN,
+            options=_get_redshift_auth_options(),
+            default="password",
+        ),
+        SchemaField(
+            name="username",
+            label="Username",
+            placeholder="admin",
+            required=True,
+            group="credentials",
+        ),
+        SchemaField(
+            name="password",
+            label="Password",
+            field_type=FieldType.PASSWORD,
+            required=True,
+            group="credentials",
+            visible_when=_redshift_auth_is_password,
+        ),
+        SchemaField(
+            name="redshift_cluster_id",
+            label="Cluster ID",
+            placeholder="my-cluster",
+            required=True,
+            visible_when=_redshift_auth_is_iam,
+            description="Cluster identifier for IAM auth",
+        ),
+        SchemaField(
+            name="redshift_region",
+            label="Region",
+            field_type=FieldType.DROPDOWN,
+            options=_get_aws_region_options(),
+            default="us-east-1",
+            visible_when=_redshift_auth_is_iam,
+        ),
+        SchemaField(
+            name="redshift_profile",
+            label="AWS Profile",
+            placeholder="default",
+            required=False,
+            visible_when=_redshift_auth_is_iam,
+            description="AWS CLI profile name",
+        ),
+        SchemaField(
+            name="database",
+            label="Database",
+            placeholder="dev",
+            default="dev",
+            required=False,
+            group="database_port",
+        ),
+        SchemaField(
+            name="port",
+            label="Port",
+            placeholder="5439",
+            default="5439",
+            group="database_port",
+        ),
+    ),
+    supports_ssh=False,
+    has_advanced_auth=True,
+)
+
+
+def _get_bigquery_auth_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("default", "Application Default"),
+        SelectOption("service_account", "Service Account"),
+    )
+
+
+def _bigquery_auth_is_service_account(config: dict[str, Any]) -> bool:
+    return config.get("bigquery_auth_method") == "service_account"
+
+
+BIGQUERY_SCHEMA = ConnectionSchema(
+    db_type="bigquery",
+    display_name="Google BigQuery",
+    fields=(
+        SchemaField(
+            name="server",
+            label="Project ID",
+            placeholder="my-gcp-project",
+            required=False,
+            description="GCP Project ID (or infer from environment)",
+        ),
+        SchemaField(
+            name="bigquery_auth_method",
+            label="Authentication",
+            field_type=FieldType.DROPDOWN,
+            options=_get_bigquery_auth_options(),
+            default="default",
+        ),
+        SchemaField(
+            name="bigquery_credentials_path",
+            label="Service Account Key",
+            placeholder="/path/to/service-account.json",
+            required=True,
+            visible_when=_bigquery_auth_is_service_account,
+            description="Path to service account JSON key file",
+        ),
+        SchemaField(
+            name="bigquery_location",
+            label="Location",
+            placeholder="US",
+            default="US",
+            required=False,
+            description="Dataset location (US, EU, etc.)",
+        ),
+    ),
+    supports_ssh=False,
+    has_advanced_auth=True,
+    requires_auth=False,
+)
+
+
 def get_connection_schema(db_type: str) -> ConnectionSchema:
     from .providers import get_connection_schema as _get_connection_schema
 

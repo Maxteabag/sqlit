@@ -19,6 +19,8 @@ __all__ = [
     "DatabaseAdapter",
     "TableInfo",
     # Adapter classes (lazy via __getattr__)
+    "AthenaAdapter",
+    "BigQueryAdapter",
     "ClickHouseAdapter",
     "CockroachDBAdapter",
     "DuckDBAdapter",
@@ -27,17 +29,19 @@ __all__ = [
     "MySQLAdapter",
     "OracleAdapter",
     "PostgreSQLAdapter",
+    "RedshiftAdapter",
     "SQLiteAdapter",
     "SQLServerAdapter",
     "SupabaseAdapter",
     "TursoAdapter",
-    "AthenaAdapter",
     # Factory helpers
     "get_adapter",
     "get_supported_adapter_db_types",
 ]
 
 if TYPE_CHECKING:
+    from .athena import AthenaAdapter
+    from .bigquery import BigQueryAdapter
     from .clickhouse import ClickHouseAdapter
     from .cockroachdb import CockroachDBAdapter
     from .duckdb import DuckDBAdapter
@@ -47,10 +51,10 @@ if TYPE_CHECKING:
     from .mysql import MySQLAdapter
     from .oracle import OracleAdapter
     from .postgresql import PostgreSQLAdapter
+    from .redshift import RedshiftAdapter
     from .sqlite import SQLiteAdapter
     from .supabase import SupabaseAdapter
     from .turso import TursoAdapter
-    from .athena import AthenaAdapter
 
 
 def get_adapter(db_type: str) -> DatabaseAdapter:

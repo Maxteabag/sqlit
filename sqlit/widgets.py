@@ -38,6 +38,14 @@ class QueryTextArea(TextArea):
 class SqlitDataTable(FastDataTable):
     """FastDataTable with correct header behavior when show_header is False."""
 
+    def action_copy_selection(self) -> None:
+        """Copy selection to clipboard, guarding against empty tables."""
+        # Guard against empty table - the library doesn't check this
+        if self.backend is None:
+            return
+        # Call parent implementation
+        super().action_copy_selection()
+
     def render_line(self, y: int) -> Strip:
         width, _ = self.size
         scroll_x, scroll_y = self.scroll_offset

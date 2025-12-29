@@ -9,8 +9,9 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.events import Key
 from textual.screen import ModalScreen
-from textual.widgets import OptionList
+from textual.widgets import OptionList, Tree
 from textual.widgets.option_list import Option
+from textual.widgets.tree import TreeNode
 
 from ...db.providers import get_connection_display_info
 from ...services.cloud import ProviderState, ProviderStatus, get_providers
@@ -45,6 +46,17 @@ class AzureConnectionResult:
 
     def get_result_kind(self) -> str:
         return "azure"
+
+
+@dataclass
+class CloudConnectionResult:
+    """Result when selecting a cloud resource (AWS, GCP, etc.)."""
+
+    config: ConnectionConfig
+    provider_id: str  # "aws", "gcp", etc.
+
+    def get_result_kind(self) -> str:
+        return "cloud"
 
 
 class ConnectionPickerScreen(ModalScreen):
@@ -112,6 +124,20 @@ class ConnectionPickerScreen(ModalScreen):
         padding: 0 1;
         margin-bottom: 1;
     }
+
+    #cloud-tree {
+        height: 20;
+        scrollbar-size: 1 1;
+        display: none;
+    }
+
+    #cloud-tree.visible {
+        display: block;
+    }
+
+    #picker-list.hidden {
+        display: none;
+    }
     """
 
     # Prefix for Docker container option IDs
@@ -144,6 +170,7 @@ class ConnectionPickerScreen(ModalScreen):
         with Dialog(id="picker-dialog", title="Connect"):
             yield FilterInput(id="picker-filter")
             yield OptionList(id="picker-list")
+            yield Tree("Cloud", id="cloud-tree")
 
     def on_mount(self) -> None:
         """Load Docker containers and cloud resources when screen mounts."""
@@ -165,40 +192,76 @@ class ConnectionPickerScreen(ModalScreen):
 
     def _update_shortcuts(self) -> None:
         """Update dialog shortcuts based on current selection."""
-        option = self._get_highlighted_option()
         show_save = False
         provider_shortcuts: list[tuple[str, str]] = []
 
-        if option:
-            option_id = str(option.id) if option.id else ""
+        # Handle cloud tab with tree widget
+        if self._current_tab == self.TAB_CLOUD:
+            tree_node = self._get_highlighted_tree_node()
+            if tree_node and tree_node.data:
+                data = tree_node.data
+                node_type = data.get("type")
+                provider_id = data.get("provider_id")
 
-            # Check cloud providers for custom shortcuts
-            for provider in self._cloud_providers:
-                if provider.is_my_option(option_id):
-                    state = self._cloud_states.get(provider.id, ProviderState())
-                    provider_shortcuts = provider.get_shortcuts(option_id, state)
-                    # Check if this option can be saved
-                    if option_id.startswith(provider.prefix):
-                        result = provider.handle_action(
-                            "check_save", option_id, state, self.connections
-                        )
-                        if result.config and result.action != "none":
-                            # Check if not already saved
-                            show_save = not any(
-                                c.name == result.config.name or (
-                                    c.server == result.config.server and
-                                    c.database == result.config.database
-                                )
-                                for c in self.connections
+                # Account nodes get Logout/Switch shortcuts
+                if node_type == "account":
+                    provider_shortcuts = [("Logout", "l"), ("Switch", "w")]
+
+                # Check if we can save this node
+                elif node_type == "database" and provider_id == "azure":
+                    server = data.get("server")
+                    database = data.get("database")
+                    auth_type = data.get("auth_type", "ad")
+                    if server and database:
+                        show_save = not self._is_azure_connection_saved(server, database, auth_type == "sql")
+
+                elif node_type == "rds_instance" and provider_id == "aws":
+                    instance = data.get("instance")
+                    if instance:
+                        show_save = not self._is_aws_rds_saved(instance)
+
+                elif node_type == "redshift_cluster" and provider_id == "aws":
+                    cluster = data.get("cluster")
+                    if cluster:
+                        show_save = not self._is_aws_redshift_saved(cluster)
+
+                elif node_type == "cloud_sql_instance" and provider_id == "gcp":
+                    instance = data.get("instance")
+                    if instance:
+                        show_save = not self._is_gcp_instance_saved(instance)
+        else:
+            # Handle option list (Connections and Docker tabs)
+            option = self._get_highlighted_option()
+            if option:
+                option_id = str(option.id) if option.id else ""
+
+                # Check cloud providers for custom shortcuts
+                for provider in self._cloud_providers:
+                    if provider.is_my_option(option_id):
+                        state = self._cloud_states.get(provider.id, ProviderState())
+                        provider_shortcuts = provider.get_shortcuts(option_id, state)
+                        # Check if this option can be saved
+                        if option_id.startswith(provider.prefix):
+                            result = provider.handle_action(
+                                "check_save", option_id, state, self.connections
                             )
-                    break
+                            if result.config and result.action != "none":
+                                # Check if not already saved
+                                show_save = not any(
+                                    c.name == result.config.name or (
+                                        c.server == result.config.server and
+                                        c.database == result.config.database
+                                    )
+                                    for c in self.connections
+                                )
+                        break
 
-            # Check Docker options
-            if not provider_shortcuts and self._is_docker_option(option):
-                container_id = str(option.id)[len(self.DOCKER_PREFIX):]
-                container = self._get_container_by_id(container_id)
-                if container and not self._is_container_saved(container):
-                    show_save = True
+                # Check Docker options
+                if not provider_shortcuts and self._is_docker_option(option):
+                    container_id = str(option.id)[len(self.DOCKER_PREFIX):]
+                    container = self._get_container_by_id(container_id)
+                    if container and not self._is_container_saved(container):
+                        show_save = True
 
         if provider_shortcuts:
             shortcuts = provider_shortcuts
@@ -209,11 +272,24 @@ class ConnectionPickerScreen(ModalScreen):
             if self._current_tab == self.TAB_CONNECTIONS:
                 shortcuts.append(("New", "n"))
 
+        # Always show Refresh on Docker/Cloud tabs
+        if self._current_tab in (self.TAB_DOCKER, self.TAB_CLOUD):
+            shortcuts.append(("Refresh", "f"))
+
         dialog = self.query_one("#picker-dialog", Dialog)
         subtitle = "\u00a0·\u00a0".join(
             f"{action}: [bold]<{key}>[/]" for action, key in shortcuts
         )
         dialog.border_subtitle = subtitle
+
+    def _get_highlighted_tree_node(self) -> TreeNode | None:
+        """Get the currently highlighted tree node."""
+        try:
+            tree = self.query_one("#cloud-tree", Tree)
+            return tree.cursor_node
+        except Exception:
+            pass
+        return None
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         """Update shortcuts when selection changes."""
@@ -286,6 +362,8 @@ class ConnectionPickerScreen(ModalScreen):
         """Callback when a provider finishes discovery."""
         self._cloud_states[provider_id] = state
         self._rebuild_list()
+        if self._current_tab == self.TAB_CLOUD:
+            self._rebuild_cloud_tree()
         self._update_shortcuts()
 
         # Auto-load databases for Azure servers
@@ -302,21 +380,31 @@ class ConnectionPickerScreen(ModalScreen):
             error=error,
         )
         self._rebuild_list()
+        if self._current_tab == self.TAB_CLOUD:
+            self._rebuild_cloud_tree()
         self.notify(f"Cloud error: {error}", severity="error")
 
     def _is_container_saved(self, container: DetectedContainer) -> bool:
         """Check if a Docker container matches a saved connection."""
         for conn in self.connections:
+            # Match by name (container name saved as connection name)
+            if conn.name == container.container_name:
+                return True
+
             # Match by host:port and db_type
             if (
                 conn.db_type == container.db_type
                 and conn.server in ("localhost", "127.0.0.1", container.host)
                 and conn.port == str(container.port)
             ):
-                return True
-            # Also match by name
-            if conn.name == container.container_name:
-                return True
+                # If container has a known database, require it to match too
+                # This allows multiple containers on the same port with different databases
+                if container.database:
+                    if conn.database == container.database:
+                        return True
+                else:
+                    # No database info on container, match by host:port only
+                    return True
         return False
 
     def _build_options(self, pattern: str) -> list[Option]:
@@ -326,7 +414,8 @@ class ConnectionPickerScreen(ModalScreen):
         elif self._current_tab == self.TAB_DOCKER:
             return self._build_docker_options(pattern)
         else:
-            return self._build_cloud_options(pattern)
+            # Cloud tab uses Tree widget instead of OptionList
+            return []
 
     def _build_connections_options(self, pattern: str) -> list[Option]:
         """Build options for the Connections tab (Saved connections only)."""
@@ -451,21 +540,6 @@ class ConnectionPickerScreen(ModalScreen):
             options.append(Option("", id="_spacer2", disabled=True))
             options.append(Option("[bold]Stopped[/]", id="_header_docker_unavailable", disabled=True))
             options.extend(exited_options)
-
-        return options
-
-    def _build_cloud_options(self, pattern: str) -> list[Option]:
-        """Build options for the Cloud tab by delegating to providers."""
-        options: list[Option] = []
-
-        for i, provider in enumerate(self._cloud_providers):
-            # Add spacing between providers
-            if i > 0:
-                options.append(Option("", id=f"_spacer_{provider.id}", disabled=True))
-
-            state = self._cloud_states.get(provider.id, ProviderState())
-            provider_options = provider.build_options(state, self.connections, pattern)
-            options.extend(provider_options)
 
         return options
 
@@ -668,11 +742,19 @@ class ConnectionPickerScreen(ModalScreen):
                     self._activate_subscription(provider, sub_index)
                     return
                 elif result.action == "connect" and result.config:
-                    self.dismiss(AzureConnectionResult(
-                        server=self._get_server_from_config(result.config, state),
-                        database=result.config.database,
-                        use_sql_auth=result.config.options.get("auth_type") == "sql",
-                    ))
+                    # Use Azure-specific result for Azure provider (has special handling)
+                    if provider.id == "azure":
+                        self.dismiss(AzureConnectionResult(
+                            server=self._get_server_from_config(result.config, state),
+                            database=result.config.database,
+                            use_sql_auth=result.config.options.get("auth_type") == "sql",
+                        ))
+                    else:
+                        # Generic cloud result for AWS, GCP, etc.
+                        self.dismiss(CloudConnectionResult(
+                            config=result.config,
+                            provider_id=provider.id,
+                        ))
                     return
                 elif result.action == "none":
                     return
@@ -799,6 +881,8 @@ class ConnectionPickerScreen(ModalScreen):
         server.databases = databases
 
         self._rebuild_list()
+        if self._current_tab == self.TAB_CLOUD:
+            self._rebuild_cloud_tree()
 
         # Select the first database option for this server
         if databases:
@@ -831,6 +915,8 @@ class ConnectionPickerScreen(ModalScreen):
             # Re-run discovery for this provider
             self._cloud_states[provider.id] = ProviderState(loading=True)
             self._rebuild_list()
+            if self._current_tab == self.TAB_CLOUD:
+                self._rebuild_cloud_tree()
             self.run_worker(
                 lambda: self._discover_provider_worker(provider),
                 thread=True,
@@ -841,6 +927,8 @@ class ConnectionPickerScreen(ModalScreen):
                 loading=False,
             )
             self._rebuild_list()
+            if self._current_tab == self.TAB_CLOUD:
+                self._rebuild_cloud_tree()
             self.notify(f"{provider.name} login failed", severity="error")
 
     def _on_provider_login_error(self, provider: CloudProvider, error: str) -> None:
@@ -851,12 +939,27 @@ class ConnectionPickerScreen(ModalScreen):
             error=error,
         )
         self._rebuild_list()
+        if self._current_tab == self.TAB_CLOUD:
+            self._rebuild_cloud_tree()
         if len(error) > 100:
             error = error[:100] + "..."
         self.notify(f"{provider.name} login failed: {error}", severity="error")
 
     def action_azure_logout(self) -> None:
-        """Logout from Azure (only when account is highlighted)."""
+        """Logout from a cloud provider (only when account is highlighted)."""
+        # Check tree widget first for cloud tab
+        if self._current_tab == self.TAB_CLOUD:
+            tree_node = self._get_highlighted_tree_node()
+            if tree_node and tree_node.data:
+                data = tree_node.data
+                if data.get("type") == "account":
+                    provider_id = data.get("provider_id")
+                    provider = next((p for p in self._cloud_providers if p.id == provider_id), None)
+                    if provider:
+                        self._start_provider_logout(provider)
+            return
+
+        # Fallback to option list
         option = self._get_highlighted_option()
         if option and option.id == "_azure_account":
             provider = next((p for p in self._cloud_providers if p.id == "azure"), None)
@@ -864,7 +967,20 @@ class ConnectionPickerScreen(ModalScreen):
                 self._start_provider_logout(provider)
 
     def action_azure_switch(self) -> None:
-        """Switch Azure account (only when account is highlighted)."""
+        """Switch cloud provider account (only when account is highlighted)."""
+        # Check tree widget first for cloud tab
+        if self._current_tab == self.TAB_CLOUD:
+            tree_node = self._get_highlighted_tree_node()
+            if tree_node and tree_node.data:
+                data = tree_node.data
+                if data.get("type") == "account":
+                    provider_id = data.get("provider_id")
+                    provider = next((p for p in self._cloud_providers if p.id == provider_id), None)
+                    if provider:
+                        self._start_provider_login(provider)
+            return
+
+        # Fallback to option list
         option = self._get_highlighted_option()
         if option and option.id == "_azure_account":
             provider = next((p for p in self._cloud_providers if p.id == "azure"), None)
@@ -905,6 +1021,8 @@ class ConnectionPickerScreen(ModalScreen):
             self.notify(f"Failed to logout from {provider.name}", severity="warning")
 
         self._rebuild_list()
+        if self._current_tab == self.TAB_CLOUD:
+            self._rebuild_cloud_tree()
 
     def _load_provider_for_subscription(
         self, provider: CloudProvider, subscription_id: str, new_index: int
@@ -977,6 +1095,8 @@ class ConnectionPickerScreen(ModalScreen):
         )
 
         self._rebuild_list()
+        if self._current_tab == self.TAB_CLOUD:
+            self._rebuild_cloud_tree()
         self._select_option_by_id(f"_azure_sub_{new_index}")
         self._update_shortcuts()
 
@@ -993,11 +1113,296 @@ class ConnectionPickerScreen(ModalScreen):
             self._current_tab = self.TAB_CONNECTIONS
 
         self._update_dialog_title()
+        self._update_widget_visibility()
         self._rebuild_list()
         self._update_shortcuts()
 
+    def _update_widget_visibility(self) -> None:
+        """Show/hide the appropriate widget based on current tab."""
+        option_list = self.query_one("#picker-list", OptionList)
+        cloud_tree = self.query_one("#cloud-tree", Tree)
+
+        if self._current_tab == self.TAB_CLOUD:
+            option_list.add_class("hidden")
+            cloud_tree.add_class("visible")
+            self._rebuild_cloud_tree()
+        else:
+            option_list.remove_class("hidden")
+            cloud_tree.remove_class("visible")
+
+    def _rebuild_cloud_tree(self) -> None:
+        """Rebuild the cloud tree widget from provider states."""
+        tree = self.query_one("#cloud-tree", Tree)
+        tree.clear()
+        tree.root.expand()
+
+        for provider in self._cloud_providers:
+            state = self._cloud_states.get(provider.id, ProviderState())
+            self._add_provider_to_tree(tree.root, provider, state)
+
+    def _add_provider_to_tree(
+        self,
+        parent: TreeNode,
+        provider: "CloudProvider",
+        state: ProviderState,
+    ) -> None:
+        """Add a cloud provider's resources to the tree."""
+        # Provider header node
+        provider_node = parent.add(f"[bold]{provider.name}[/]", expand=True)
+        provider_node.data = {"type": "provider", "provider_id": provider.id}
+
+        # Handle loading state
+        if state.loading:
+            provider_node.add_leaf("[dim italic]Loading...[/]")
+            return
+
+        # Handle different statuses
+        if state.status == ProviderStatus.CLI_NOT_INSTALLED:
+            provider_node.add_leaf(f"[dim]({provider.name.lower()} CLI not installed)[/]")
+            return
+
+        if state.status == ProviderStatus.NOT_LOGGED_IN:
+            login_node = provider_node.add_leaf(f"🔑 Login to {provider.name}...")
+            login_node.data = {"type": "login", "provider_id": provider.id}
+            return
+
+        if state.status == ProviderStatus.ERROR:
+            provider_node.add_leaf(f"[red]⚠ {provider.name} error[/]")
+            if state.error:
+                provider_node.add_leaf(f"[dim]{state.error}[/]")
+            return
+
+        # Show account
+        if state.account:
+            account_display = state.account.username
+            if len(account_display) > 40:
+                account_display = account_display[:37] + "..."
+            account_node = provider_node.add(f"👤 {account_display}", expand=True)
+            account_node.data = {"type": "account", "provider_id": provider.id}
+
+            # Provider-specific tree building
+            if provider.id == "azure":
+                self._add_azure_resources_to_tree(account_node, provider, state)
+            elif provider.id == "aws":
+                self._add_aws_resources_to_tree(account_node, provider, state)
+            elif provider.id == "gcp":
+                self._add_gcp_resources_to_tree(account_node, provider, state)
+
+    def _add_azure_resources_to_tree(
+        self,
+        parent: TreeNode,
+        provider: "CloudProvider",
+        state: ProviderState,
+    ) -> None:
+        """Add Azure-specific resources to the tree."""
+        subscriptions = state.extra.get("subscriptions", [])
+        current_sub_index = state.extra.get("current_subscription_index", 0)
+        servers = state.extra.get("servers", [])
+
+        for i, sub in enumerate(subscriptions):
+            sub_display = f"{sub.name[:40]}..." if len(sub.name) > 40 else sub.name
+            is_active = i == current_sub_index
+
+            if is_active:
+                sub_node = parent.add(f"[green]🔑 ★ {sub_display}[/]", expand=True)
+            else:
+                sub_node = parent.add(f"[dim]🔑 {sub_display}[/]")
+            sub_node.data = {"type": "subscription", "provider_id": "azure", "index": i}
+
+            # Only show servers for active subscription
+            if is_active and servers:
+                for server in servers:
+                    status_icon = "🟢" if server.state == "Ready" else "🟡"
+                    auth_hint = ""
+                    if server.entra_only_auth:
+                        auth_hint = " [dim][Entra only][/]"
+                    elif not server.has_entra_admin:
+                        auth_hint = " [dim][SQL only][/]"
+
+                    server_node = sub_node.add(
+                        f"{status_icon} {server.name}{auth_hint}",
+                        expand=True
+                    )
+                    server_node.data = {"type": "server", "provider_id": "azure", "server": server}
+
+                    if server.databases:
+                        for db in server.databases:
+                            # Add Entra option if available
+                            if server.has_entra_admin:
+                                saved = self._is_azure_connection_saved(server, db, False)
+                                if saved:
+                                    db_node = server_node.add_leaf(f"[dim]{db} Entra ✓[/]")
+                                else:
+                                    db_node = server_node.add_leaf(f"{db} [dim]Entra[/]")
+                                db_node.data = {
+                                    "type": "database",
+                                    "provider_id": "azure",
+                                    "server": server,
+                                    "database": db,
+                                    "auth_type": "ad",
+                                }
+
+                            # Add SQL Auth option if available
+                            if not server.entra_only_auth:
+                                saved = self._is_azure_connection_saved(server, db, True)
+                                if saved:
+                                    db_node = server_node.add_leaf(f"[dim]{db} SQL Auth ✓[/]")
+                                else:
+                                    db_node = server_node.add_leaf(f"{db} [dim]SQL Auth[/]")
+                                db_node.data = {
+                                    "type": "database",
+                                    "provider_id": "azure",
+                                    "server": server,
+                                    "database": db,
+                                    "auth_type": "sql",
+                                }
+                    else:
+                        server_node.add_leaf("[dim](no databases)[/]")
+            elif is_active:
+                sub_node.add_leaf("[dim](no SQL servers)[/]")
+
+    def _add_aws_resources_to_tree(
+        self,
+        parent: TreeNode,
+        provider: "CloudProvider",
+        state: ProviderState,
+    ) -> None:
+        """Add AWS-specific resources to the tree."""
+        regions_with_resources = state.extra.get("regions_with_resources", [])
+
+        if not regions_with_resources:
+            parent.add_leaf("[dim](no databases found)[/]")
+            return
+
+        for region_resources in regions_with_resources:
+            region = region_resources.region
+            region_node = parent.add(f"[green]📍 {region}[/]", expand=True)
+            region_node.data = {"type": "region", "provider_id": "aws", "region": region}
+
+            # RDS Instances
+            for instance in region_resources.rds_instances:
+                engine_display = instance.engine.replace("-", " ").title()
+                status_icon = "🟢" if instance.status == "available" else "🟡"
+                saved = self._is_aws_rds_saved(instance)
+
+                if saved:
+                    inst_node = region_node.add_leaf(
+                        f"[dim]{status_icon} {instance.identifier} [{engine_display}] ✓[/]"
+                    )
+                else:
+                    inst_node = region_node.add_leaf(
+                        f"{status_icon} {instance.identifier} [dim][{engine_display}][/]"
+                    )
+                inst_node.data = {
+                    "type": "rds_instance",
+                    "provider_id": "aws",
+                    "instance": instance,
+                    "region": region,
+                }
+
+            # Redshift Clusters
+            for cluster in region_resources.redshift_clusters:
+                status_icon = "🟢" if cluster.status == "available" else "🟡"
+                saved = self._is_aws_redshift_saved(cluster)
+
+                if saved:
+                    cluster_node = region_node.add_leaf(
+                        f"[dim]{status_icon} {cluster.identifier} [Redshift] ✓[/]"
+                    )
+                else:
+                    cluster_node = region_node.add_leaf(
+                        f"{status_icon} {cluster.identifier} [dim][Redshift][/]"
+                    )
+                cluster_node.data = {
+                    "type": "redshift_cluster",
+                    "provider_id": "aws",
+                    "cluster": cluster,
+                    "region": region,
+                }
+
+    def _add_gcp_resources_to_tree(
+        self,
+        parent: TreeNode,
+        provider: "CloudProvider",
+        state: ProviderState,
+    ) -> None:
+        """Add GCP-specific resources to the tree."""
+        project = state.extra.get("project", "")
+        instances = state.extra.get("instances", [])
+
+        if project:
+            project_node = parent.add(f"[dim]Project: {project}[/]", expand=True)
+            project_node.data = {"type": "project", "provider_id": "gcp", "project": project}
+
+            if instances:
+                for instance in instances:
+                    engine_display = instance.database_version.replace("_", " ")
+                    status_icon = "🟢" if instance.state == "RUNNABLE" else "🟡"
+                    saved = self._is_gcp_instance_saved(instance)
+
+                    if saved:
+                        inst_node = project_node.add_leaf(
+                            f"[dim]{status_icon} {instance.name} [{engine_display}] ✓[/]"
+                        )
+                    else:
+                        inst_node = project_node.add_leaf(
+                            f"{status_icon} {instance.name} [dim][{engine_display}][/]"
+                        )
+                    inst_node.data = {
+                        "type": "cloud_sql_instance",
+                        "provider_id": "gcp",
+                        "instance": instance,
+                    }
+            else:
+                project_node.add_leaf("[dim](no Cloud SQL instances)[/]")
+
+    def _is_azure_connection_saved(self, server: "AzureSqlServer", database: str, use_sql_auth: bool) -> bool:
+        """Check if an Azure connection is already saved."""
+        for conn in self.connections:
+            if conn.source != "azure":
+                continue
+            if conn.server == server.fqdn and conn.database == database:
+                conn_is_sql = conn.options.get("auth_type") == "sql"
+                if conn_is_sql == use_sql_auth:
+                    return True
+        return False
+
+    def _is_aws_rds_saved(self, instance) -> bool:
+        """Check if an RDS instance is already saved."""
+        for conn in self.connections:
+            if conn.source != "aws":
+                continue
+            if conn.server == instance.endpoint:
+                return True
+        return False
+
+    def _is_aws_redshift_saved(self, cluster) -> bool:
+        """Check if a Redshift cluster is already saved."""
+        for conn in self.connections:
+            if conn.source != "aws":
+                continue
+            if conn.server == cluster.endpoint:
+                return True
+        return False
+
+    def _is_gcp_instance_saved(self, instance) -> bool:
+        """Check if a GCP instance is already saved."""
+        for conn in self.connections:
+            if conn.source != "gcp":
+                continue
+            if conn.options.get("gcp_connection_name") == instance.connection_name:
+                return True
+            if instance.ip_address and conn.server == instance.ip_address:
+                return True
+        return False
+
     def action_save_docker(self) -> None:
         """Save the selected Docker container or cloud resource as a connection."""
+        # Handle tree-based saves for cloud tab
+        if self._current_tab == self.TAB_CLOUD:
+            self._save_cloud_tree_node()
+            return
+
         option = self._get_highlighted_option()
         if not option or option.disabled:
             return
@@ -1025,6 +1430,102 @@ class ConnectionPickerScreen(ModalScreen):
                     self.notify("Container already saved", severity="warning")
                     return
                 self._save_container(container)
+
+    def _save_cloud_tree_node(self) -> None:
+        """Save a cloud resource from the tree widget."""
+        tree_node = self._get_highlighted_tree_node()
+        if not tree_node or not tree_node.data:
+            return
+
+        data = tree_node.data
+        node_type = data.get("type")
+        provider_id = data.get("provider_id")
+
+        config = None
+
+        # Azure database
+        if node_type == "database" and provider_id == "azure":
+            server = data.get("server")
+            database = data.get("database")
+            auth_type = data.get("auth_type", "ad")
+            if server and database:
+                if self._is_azure_connection_saved(server, database, auth_type == "sql"):
+                    self.notify("Connection already saved", severity="warning")
+                    return
+                # Build config from Azure provider
+                from ...config import ConnectionConfig
+                config = ConnectionConfig(
+                    name=f"{server.name}/{database}",
+                    db_type="mssql",
+                    server=server.fqdn,
+                    port="1433",
+                    database=database,
+                    username=server.admin_login or "",
+                    password=None,
+                    source="azure",
+                    options={
+                        "auth_type": auth_type,
+                        "azure_subscription_id": server.subscription_id,
+                        "azure_resource_group": server.resource_group,
+                    },
+                )
+
+        # AWS RDS instance
+        elif node_type == "rds_instance" and provider_id == "aws":
+            instance = data.get("instance")
+            if instance:
+                if self._is_aws_rds_saved(instance):
+                    self.notify("Connection already saved", severity="warning")
+                    return
+                provider = next((p for p in self._cloud_providers if p.id == "aws"), None)
+                if provider:
+                    state = self._cloud_states.get("aws", ProviderState())
+                    result = provider.handle_action(
+                        "save",
+                        f"aws:rds:{instance.identifier}",
+                        state,
+                        self.connections
+                    )
+                    config = result.config
+
+        # AWS Redshift cluster
+        elif node_type == "redshift_cluster" and provider_id == "aws":
+            cluster = data.get("cluster")
+            if cluster:
+                if self._is_aws_redshift_saved(cluster):
+                    self.notify("Connection already saved", severity="warning")
+                    return
+                provider = next((p for p in self._cloud_providers if p.id == "aws"), None)
+                if provider:
+                    state = self._cloud_states.get("aws", ProviderState())
+                    result = provider.handle_action(
+                        "save",
+                        f"aws:redshift:{cluster.identifier}",
+                        state,
+                        self.connections
+                    )
+                    config = result.config
+
+        # GCP Cloud SQL instance
+        elif node_type == "cloud_sql_instance" and provider_id == "gcp":
+            instance = data.get("instance")
+            if instance:
+                if self._is_gcp_instance_saved(instance):
+                    self.notify("Connection already saved", severity="warning")
+                    return
+                provider = next((p for p in self._cloud_providers if p.id == "gcp"), None)
+                if provider:
+                    state = self._cloud_states.get("gcp", ProviderState())
+                    result = provider.handle_action(
+                        "save",
+                        f"gcp:sql:{instance.name}",
+                        state,
+                        self.connections
+                    )
+                    config = result.config
+
+        if config:
+            self._save_cloud_connection_from_tree(config)
 
     def _save_container(self, container: DetectedContainer) -> None:
         """Save a Docker container as a connection without closing the modal."""
@@ -1108,6 +1609,43 @@ class ConnectionPickerScreen(ModalScreen):
         # Restore cursor position
         self._select_option_by_id(option_id)
 
+    def _save_cloud_connection_from_tree(self, config: ConnectionConfig) -> None:
+        """Save a cloud connection from tree widget without closing the modal."""
+        from ...config import save_connections
+
+        # Generate unique name if needed
+        existing_names = {c.name for c in self.connections}
+        base_name = config.name
+        new_name = base_name
+        counter = 2
+        while new_name in existing_names:
+            new_name = f"{base_name}-{counter}"
+            counter += 1
+        config.name = new_name
+
+        # Add to connections list
+        self.connections.append(config)
+
+        # Persist (check for mock mode via app)
+        try:
+            if getattr(self.app, "_mock_profile", None):
+                self.notify(f"Mock mode: '{config.name}' not persisted")
+            else:
+                save_connections(self.connections)
+                self.notify(f"Saved '{config.name}'")
+        except Exception as e:
+            self.notify(f"Failed to save: {e}", severity="error")
+            return
+
+        # Rebuild tree to update saved indicators
+        self._rebuild_cloud_tree()
+
+        # Refresh the app's explorer tree to show new connection
+        if hasattr(self.app, "refresh_tree"):
+            self.app.refresh_tree()
+
+        self._update_shortcuts()
+
     def _select_option_by_id(self, option_id: str) -> None:
         """Select an option by its ID."""
         try:
@@ -1126,14 +1664,124 @@ class ConnectionPickerScreen(ModalScreen):
 
     def action_refresh(self) -> None:
         """Refresh Docker containers and cloud resources (clears cache)."""
+        from ...services.cloud.aws.cache import clear_aws_cache
+        from ...services.cloud.gcp.cache import clear_gcp_cache
         from ...services.cloud_detector import clear_azure_cache
 
-        # Clear caches to force fresh data
+        # Clear all cloud caches to force fresh data
         clear_azure_cache()
+        clear_aws_cache()
+        clear_gcp_cache()
 
         self._load_containers_async()
         self._load_cloud_providers_async()
         self.notify("Refreshing...")
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+        """Handle tree node selection in cloud tab."""
+        if event.control.id != "cloud-tree":
+            return
+
+        node = event.node
+        data = node.data
+        if not data:
+            return
+
+        node_type = data.get("type")
+        provider_id = data.get("provider_id")
+
+        # Handle login nodes
+        if node_type == "login":
+            provider = next((p for p in self._cloud_providers if p.id == provider_id), None)
+            if provider:
+                self._start_provider_login(provider)
+            return
+
+        # Handle subscription switching for Azure
+        if node_type == "subscription" and provider_id == "azure":
+            sub_index = data.get("index", 0)
+            provider = next((p for p in self._cloud_providers if p.id == "azure"), None)
+            if provider:
+                self._activate_subscription(provider, sub_index)
+            return
+
+        # Handle Azure database selection
+        if node_type == "database" and provider_id == "azure":
+            server = data.get("server")
+            database = data.get("database")
+            auth_type = data.get("auth_type", "ad")
+            if server and database:
+                self.dismiss(AzureConnectionResult(
+                    server=server,
+                    database=database,
+                    use_sql_auth=(auth_type == "sql"),
+                ))
+            return
+
+        # Handle AWS RDS instance selection
+        if node_type == "rds_instance" and provider_id == "aws":
+            instance = data.get("instance")
+            if instance:
+                provider = next((p for p in self._cloud_providers if p.id == "aws"), None)
+                if provider:
+                    state = self._cloud_states.get("aws", ProviderState())
+                    result = provider.handle_action(
+                        "select",
+                        f"aws:rds:{instance.identifier}",
+                        state,
+                        self.connections
+                    )
+                    if result.config:
+                        self.dismiss(CloudConnectionResult(
+                            config=result.config,
+                            provider_id="aws",
+                        ))
+            return
+
+        # Handle AWS Redshift cluster selection
+        if node_type == "redshift_cluster" and provider_id == "aws":
+            cluster = data.get("cluster")
+            if cluster:
+                provider = next((p for p in self._cloud_providers if p.id == "aws"), None)
+                if provider:
+                    state = self._cloud_states.get("aws", ProviderState())
+                    result = provider.handle_action(
+                        "select",
+                        f"aws:redshift:{cluster.identifier}",
+                        state,
+                        self.connections
+                    )
+                    if result.config:
+                        self.dismiss(CloudConnectionResult(
+                            config=result.config,
+                            provider_id="aws",
+                        ))
+            return
+
+        # Handle GCP Cloud SQL instance selection
+        if node_type == "cloud_sql_instance" and provider_id == "gcp":
+            instance = data.get("instance")
+            if instance:
+                provider = next((p for p in self._cloud_providers if p.id == "gcp"), None)
+                if provider:
+                    state = self._cloud_states.get("gcp", ProviderState())
+                    result = provider.handle_action(
+                        "select",
+                        f"gcp:sql:{instance.name}",
+                        state,
+                        self.connections
+                    )
+                    if result.config:
+                        self.dismiss(CloudConnectionResult(
+                            config=result.config,
+                            provider_id="gcp",
+                        ))
+            return
+
+    def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
+        """Update shortcuts when tree selection changes."""
+        if event.control.id == "cloud-tree":
+            self._update_shortcuts()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Handle option selection via click."""
@@ -1154,11 +1802,19 @@ class ConnectionPickerScreen(ModalScreen):
                             sub_index = result.metadata.get("subscription_index", 0)
                             self._activate_subscription(provider, sub_index)
                         elif result.action == "connect" and result.config:
-                            self.dismiss(AzureConnectionResult(
-                                server=self._get_server_from_config(result.config, state),
-                                database=result.config.database,
-                                use_sql_auth=result.config.options.get("auth_type") == "sql",
-                            ))
+                            # Use Azure-specific result for Azure provider
+                            if provider.id == "azure":
+                                self.dismiss(AzureConnectionResult(
+                                    server=self._get_server_from_config(result.config, state),
+                                    database=result.config.database,
+                                    use_sql_auth=result.config.options.get("auth_type") == "sql",
+                                ))
+                            else:
+                                # Generic cloud result for AWS, GCP, etc.
+                                self.dismiss(CloudConnectionResult(
+                                    config=result.config,
+                                    provider_id=provider.id,
+                                ))
                         # For "none" action or account clicks, do nothing
                         return
 

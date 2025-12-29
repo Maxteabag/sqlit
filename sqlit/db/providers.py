@@ -16,21 +16,23 @@ from typing import TYPE_CHECKING
 
 # Pre-import all schemas (no external dependencies)
 from .schema import (
+    ATHENA_SCHEMA,
+    BIGQUERY_SCHEMA,
     CLICKHOUSE_SCHEMA,
     COCKROACHDB_SCHEMA,
     D1_SCHEMA,
     DUCKDB_SCHEMA,
     FIREBIRD_SCHEMA,
-    SNOWFLAKE_SCHEMA,
     MARIADB_SCHEMA,
     MSSQL_SCHEMA,
     MYSQL_SCHEMA,
     ORACLE_SCHEMA,
     POSTGRESQL_SCHEMA,
+    REDSHIFT_SCHEMA,
+    SNOWFLAKE_SCHEMA,
     SQLITE_SCHEMA,
     SUPABASE_SCHEMA,
     TURSO_SCHEMA,
-    ATHENA_SCHEMA,
     ConnectionSchema,
 )
 
@@ -105,6 +107,14 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "athena": ProviderSpec(
         schema=ATHENA_SCHEMA,
         adapter_path=("sqlit.db.adapters.athena", "AthenaAdapter"),
+    ),
+    "redshift": ProviderSpec(
+        schema=REDSHIFT_SCHEMA,
+        adapter_path=("sqlit.db.adapters.redshift", "RedshiftAdapter"),
+    ),
+    "bigquery": ProviderSpec(
+        schema=BIGQUERY_SCHEMA,
+        adapter_path=("sqlit.db.adapters.bigquery", "BigQueryAdapter"),
     ),
 }
 

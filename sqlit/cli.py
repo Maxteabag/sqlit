@@ -255,6 +255,11 @@ def main() -> int:
         help="Maximum rows to fetch (default: 1000, use 0 for unlimited)",
     )
 
+    # Docker discovery command
+    docker_parser = subparsers.add_parser("docker", help="Docker container discovery")
+    docker_subparsers = docker_parser.add_subparsers(dest="docker_command", help="Docker commands")
+    docker_subparsers.add_parser("list", help="List detected database containers")
+
     startup_mark = time.perf_counter()
     args = parser.parse_args(filtered_argv[1:])  # Skip program name
     if args.settings:
@@ -387,6 +392,15 @@ def main() -> int:
 
     if args.command == "query":
         return cmd_query(args)
+
+    if args.command == "docker":
+        from .commands import cmd_docker_list
+
+        if args.docker_command == "list":
+            return cmd_docker_list(args)
+        else:
+            docker_parser.print_help()
+            return 1
 
     parser.print_help()
     return 1

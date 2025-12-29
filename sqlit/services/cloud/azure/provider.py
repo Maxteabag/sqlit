@@ -273,91 +273,102 @@ class AzureProvider:
         for i, sub in enumerate(subscriptions):
             sub_display = f"{sub.name[:40]}..." if len(sub.name) > 40 else sub.name
             is_active = i == current_sub_index
+            is_last_sub = i == len(subscriptions) - 1
+            sub_branch = "└── " if is_last_sub else "├── "
             if is_active:
                 options.append(
                     Option(
-                        f"    [green]🔑 ★ {sub_display}[/]",
+                        f"    {sub_branch}[green]🔑 ★ {sub_display}[/]",
                         id=f"{self.SUB_PREFIX}{i}",
                     )
                 )
             else:
                 options.append(
                     Option(
-                        f"    [dim]🔑 {sub_display}[/]",
+                        f"    {sub_branch}[dim]🔑 {sub_display}[/]",
                         id=f"{self.SUB_PREFIX}{i}",
                     )
                 )
 
         # Show servers under active subscription
         if servers:
+            # Filter servers first to know which is last
+            filtered_servers = []
             for server in servers:
-                matches, indices = fuzzy_match(filter_pattern, server.name)
-                if not matches and filter_pattern:
-                    continue
+                matches, _ = fuzzy_match(filter_pattern, server.name)
+                if matches or not filter_pattern:
+                    filtered_servers.append(server)
 
+            for server_idx, server in enumerate(filtered_servers):
+                _, indices = fuzzy_match(filter_pattern, server.name)
                 display = highlight_matches(server.name, indices) if filter_pattern else server.name
+                # Status icon: 🟢 for Ready, 🟡 otherwise
+                status_icon = "🟢" if server.state == "Ready" else "🟡"
+                is_last_server = server_idx == len(filtered_servers) - 1
+                server_branch = "└── " if is_last_server else "├── "
+                server_cont = "    " if is_last_server else "│   "
+
+                # Auth method indicator
+                if server.entra_only_auth:
+                    auth_hint = " [dim][Entra only][/]"
+                elif server.has_entra_admin:
+                    auth_hint = ""  # Both available, no need for hint
+                else:
+                    auth_hint = " [dim][SQL only][/]"
 
                 if server.databases:
-                    # Server header
+                    # Server header with status
                     options.append(
                         Option(
-                            f"      {display}",
+                            f"        {server_branch}{status_icon} {display}{auth_hint}",
                             id=f"{self.SERVER_PREFIX}{server.name}",
                             disabled=True,
                         )
                     )
-                    # Databases under server
+
+                    # Build list of database options based on available auth methods
+                    db_options = []
                     for db in server.databases:
                         db_matches, db_indices = fuzzy_match(filter_pattern, db)
                         if not db_matches and filter_pattern:
                             continue
-
                         db_display = highlight_matches(db, db_indices) if filter_pattern else db
 
-                        # Check saved status
-                        ad_saved = self._is_connection_saved(
-                            server, db, False, saved_connections
-                        )
-                        sql_saved = self._is_connection_saved(
-                            server, db, True, saved_connections
-                        )
+                        # Only show Entra option if Entra admin is configured
+                        if server.has_entra_admin:
+                            ad_saved = self._is_connection_saved(server, db, False, saved_connections)
+                            db_options.append((db, db_display, "ad", ad_saved))
 
-                        # Entra ID auth option
-                        if ad_saved:
+                        # Only show SQL Auth option if not Entra-only
+                        if not server.entra_only_auth:
+                            sql_saved = self._is_connection_saved(server, db, True, saved_connections)
+                            db_options.append((db, db_display, "sql", sql_saved))
+
+                    # Render database options with tree lines
+                    for db_idx, (db, db_display, auth_type, is_saved) in enumerate(db_options):
+                        is_last_db = db_idx == len(db_options) - 1
+                        db_branch = "└── " if is_last_db else "├── "
+                        auth_label = "Entra" if auth_type == "ad" else "SQL Auth"
+
+                        if is_saved:
                             options.append(
                                 Option(
-                                    f"        [dim]📁 {db_display} Entra ✓[/]",
-                                    id=f"{self.DB_PREFIX}{server.name}:{db}:ad",
+                                    f"        {server_cont}{db_branch}[dim]{db_display} {auth_label} ✓[/]",
+                                    id=f"{self.DB_PREFIX}{server.name}:{db}:{auth_type}",
                                 )
                             )
                         else:
                             options.append(
                                 Option(
-                                    f"        📁 {db_display} [dim]Entra[/]",
-                                    id=f"{self.DB_PREFIX}{server.name}:{db}:ad",
-                                )
-                            )
-
-                        # SQL auth option
-                        if sql_saved:
-                            options.append(
-                                Option(
-                                    f"        [dim]📁 {db_display} SQL Auth ✓[/]",
-                                    id=f"{self.DB_PREFIX}{server.name}:{db}:sql",
-                                )
-                            )
-                        else:
-                            options.append(
-                                Option(
-                                    f"        📁 {db_display} [dim]SQL Auth[/]",
-                                    id=f"{self.DB_PREFIX}{server.name}:{db}:sql",
+                                    f"        {server_cont}{db_branch}{db_display} [dim]{auth_label}[/]",
+                                    id=f"{self.DB_PREFIX}{server.name}:{db}:{auth_type}",
                                 )
                             )
                 else:
                     # Server with no databases loaded yet
                     options.append(
                         Option(
-                            f"      {display} [dim](no databases)[/]",
+                            f"        {server_branch}{status_icon} {display}{auth_hint} [dim](no databases)[/]",
                             id=f"{self.SERVER_PREFIX}empty_{server.name}",
                             disabled=True,
                         )
@@ -365,7 +376,7 @@ class AzureProvider:
         else:
             options.append(
                 Option(
-                    "[dim]        (no SQL servers in this subscription)[/]",
+                    "        [dim](no SQL servers in this subscription)[/]",
                     id="_azure_no_servers",
                     disabled=True,
                 )

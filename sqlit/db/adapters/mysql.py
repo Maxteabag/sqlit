@@ -1,4 +1,4 @@
-"""MySQL adapter using mysql-connector-python."""
+"""MySQL adapter using PyMySQL (pure Python)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class MySQLAdapter(MySQLBaseAdapter):
-    """Adapter for MySQL using mysql-connector-python."""
+    """Adapter for MySQL using PyMySQL."""
 
     @classmethod
     def badge_label(cls) -> str:
@@ -48,27 +48,29 @@ class MySQLAdapter(MySQLBaseAdapter):
 
     @property
     def install_package(self) -> str:
-        return "mysql-connector-python"
+        return "PyMySQL"
 
     @property
     def driver_import_names(self) -> tuple[str, ...]:
-        return ("mysql.connector",)
+        return ("pymysql",)
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to MySQL database."""
-        mysql_connector = import_driver_module(
-            "mysql.connector",
+        pymysql = import_driver_module(
+            "pymysql",
             driver_name=self.name,
             extra_name=self.install_extra,
             package_name=self.install_package,
         )
 
         port = int(config.port or get_default_port("mysql"))
-        return mysql_connector.connect(
+        return pymysql.connect(
             host=config.server,
             port=port,
             database=config.database or None,
             user=config.username,
             password=config.password,
-            connection_timeout=10,
+            connect_timeout=10,
+            autocommit=True,
+            charset="utf8mb4",
         )

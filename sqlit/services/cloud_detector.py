@@ -52,6 +52,9 @@ class AzureSqlServer:
     subscription_name: str
     location: str
     admin_login: str | None = None
+    state: str = "Ready"  # Server state: Ready, Creating, Disabled, etc.
+    has_entra_admin: bool = False  # Whether Entra (Azure AD) admin is configured
+    entra_only_auth: bool = False  # Whether only Entra auth is allowed (SQL auth disabled)
     databases: list[str] = field(default_factory=list)
 
     def get_display_name(self) -> str:
@@ -177,6 +180,9 @@ def get_cached_servers(subscription_id: str) -> list[AzureSqlServer] | None:
             subscription_name=s["subscription_name"],
             location=s["location"],
             admin_login=s.get("admin_login"),
+            state=s.get("state", "Ready"),
+            has_entra_admin=s.get("has_entra_admin", False),
+            entra_only_auth=s.get("entra_only_auth", False),
             databases=s.get("databases", []),
         )
         for s in servers_data
@@ -264,6 +270,9 @@ def cache_subscriptions_and_servers(
             "subscription_name": s.subscription_name,
             "location": s.location,
             "admin_login": s.admin_login,
+            "state": s.state,
+            "has_entra_admin": s.has_entra_admin,
+            "entra_only_auth": s.entra_only_auth,
             "databases": s.databases,
         }
         for s in servers
@@ -388,6 +397,77 @@ def get_azure_subscriptions() -> list[AzureSubscription]:
         return []
 
 
+def check_entra_admin(
+    server_name: str,
+    resource_group: str,
+    subscription_id: str | None = None,
+) -> bool:
+    """Check if a server has an Entra (Azure AD) admin configured.
+
+    Args:
+        server_name: Name of the SQL server.
+        resource_group: Resource group containing the server.
+        subscription_id: Optional subscription ID.
+
+    Returns:
+        True if Entra admin is configured, False otherwise.
+    """
+    args = [
+        "sql", "server", "ad-admin", "list",
+        "--server", server_name,
+        "--resource-group", resource_group,
+        "-o", "json",
+    ]
+    if subscription_id:
+        args.extend(["--subscription", subscription_id])
+
+    success, output = _run_az_command(args, timeout=15)
+    if not success:
+        return False
+
+    try:
+        data = json.loads(output)
+        # If the list is non-empty, an Entra admin is configured
+        return bool(data)
+    except json.JSONDecodeError:
+        return False
+
+
+def check_entra_only_auth(
+    server_name: str,
+    resource_group: str,
+    subscription_id: str | None = None,
+) -> bool:
+    """Check if a server only allows Entra authentication (SQL auth disabled).
+
+    Args:
+        server_name: Name of the SQL server.
+        resource_group: Resource group containing the server.
+        subscription_id: Optional subscription ID.
+
+    Returns:
+        True if only Entra auth is allowed, False if SQL auth is also allowed.
+    """
+    args = [
+        "sql", "server", "ad-only-auth", "get",
+        "--name", server_name,
+        "--resource-group", resource_group,
+        "-o", "json",
+    ]
+    if subscription_id:
+        args.extend(["--subscription", subscription_id])
+
+    success, output = _run_az_command(args, timeout=15)
+    if not success:
+        return False
+
+    try:
+        data = json.loads(output)
+        return data.get("azureAdOnlyAuthentication", False)
+    except json.JSONDecodeError:
+        return False
+
+
 def get_azure_sql_servers(subscription_id: str | None = None) -> list[AzureSqlServer]:
     """Get list of Azure SQL servers.
 
@@ -399,7 +479,7 @@ def get_azure_sql_servers(subscription_id: str | None = None) -> list[AzureSqlSe
     """
     args = [
         "sql", "server", "list",
-        "--query", "[].{name:name, fqdn:fullyQualifiedDomainName, resourceGroup:resourceGroup, location:location, adminLogin:administratorLogin}",
+        "--query", "[].{name:name, fqdn:fullyQualifiedDomainName, resourceGroup:resourceGroup, location:location, adminLogin:administratorLogin, state:state}",
         "-o", "json",
     ]
     if subscription_id:
@@ -433,6 +513,7 @@ def get_azure_sql_servers(subscription_id: str | None = None) -> list[AzureSqlSe
             except json.JSONDecodeError:
                 pass
 
+    # Build initial server list
     servers = []
     for server in data:
         servers.append(
@@ -444,8 +525,38 @@ def get_azure_sql_servers(subscription_id: str | None = None) -> list[AzureSqlSe
                 subscription_name=sub_name,
                 location=server.get("location", ""),
                 admin_login=server.get("adminLogin"),
+                state=server.get("state", "Ready"),
             )
         )
+
+    # Check Entra auth status for each server in parallel
+    if servers:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def check_entra_status(srv: AzureSqlServer) -> tuple[str, bool, bool]:
+            """Check Entra auth status for a server."""
+            has_admin = check_entra_admin(srv.name, srv.resource_group, srv.subscription_id)
+            entra_only = False
+            if has_admin:
+                # Only check entra-only if admin is configured
+                entra_only = check_entra_only_auth(srv.name, srv.resource_group, srv.subscription_id)
+            return (srv.name, has_admin, entra_only)
+
+        # Run checks in parallel
+        entra_status: dict[str, tuple[bool, bool]] = {}
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(check_entra_status, srv): srv for srv in servers}
+            for future in as_completed(futures):
+                try:
+                    name, has_admin, entra_only = future.result()
+                    entra_status[name] = (has_admin, entra_only)
+                except Exception:
+                    pass
+
+        # Update servers with Entra status
+        for srv in servers:
+            if srv.name in entra_status:
+                srv.has_entra_admin, srv.entra_only_auth = entra_status[srv.name]
 
     return servers
 
@@ -651,7 +762,9 @@ def lookup_azure_sql_server(server_name: str) -> AzureSqlServer | None:
                 fqdn=server.get("fullyQualifiedDomainName", ""),
                 resource_group=server.get("resourceGroup", ""),
                 subscription_id=server.get("subscriptionId", ""),
+                subscription_name="",
                 location=server.get("location", ""),
+                state=server.get("state", "Ready"),
             )
     except (json.JSONDecodeError, KeyError):
         pass

@@ -345,6 +345,54 @@ def _output_table(columns: list[str], rows: list[tuple], truncated: bool) -> Non
         print(f"\n({len(rows)} row(s) returned)")
 
 
+def cmd_docker_list(args: Any) -> int:
+    """List detected Docker database containers."""
+    from .services.docker_detector import (
+        ContainerStatus,
+        DockerStatus,
+        detect_database_containers,
+    )
+
+    status, containers = detect_database_containers()
+
+    if status == DockerStatus.NOT_INSTALLED:
+        print("Error: Docker Python library not installed.")
+        print("Install it with: pip install docker")
+        return 1
+    elif status == DockerStatus.NOT_RUNNING:
+        print("Error: Docker is not running.")
+        return 1
+    elif status == DockerStatus.NOT_ACCESSIBLE:
+        print("Error: Docker is not accessible (permission denied).")
+        print("Try adding your user to the docker group or running with sudo.")
+        return 1
+
+    if not containers:
+        print("No database containers found.")
+        return 0
+
+    running = [c for c in containers if c.status == ContainerStatus.RUNNING]
+    exited = [c for c in containers if c.status == ContainerStatus.EXITED]
+
+    print(f"{'Container':<25} {'Type':<12} {'Port':<8} {'Database':<15} {'Status':<10}")
+    print("-" * 75)
+
+    for c in running:
+        port_str = str(c.port) if c.port else "-"
+        db_str = c.database[:13] + ".." if c.database and len(c.database) > 15 else (c.database or "-")
+        name_str = c.container_name[:23] + ".." if len(c.container_name) > 25 else c.container_name
+        print(f"{name_str:<25} {c.db_type:<12} {port_str:<8} {db_str:<15} {'running':<10}")
+
+    for c in exited:
+        port_str = "-"
+        db_str = c.database[:13] + ".." if c.database and len(c.database) > 15 else (c.database or "-")
+        name_str = c.container_name[:23] + ".." if len(c.container_name) > 25 else c.container_name
+        print(f"{name_str:<25} {c.db_type:<12} {port_str:<8} {db_str:<15} {'exited':<10}")
+
+    print(f"\nFound {len(running)} running, {len(exited)} exited database container(s).")
+    return 0
+
+
 def cmd_query(
     args: Any,
     *,
