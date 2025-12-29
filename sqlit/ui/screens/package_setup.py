@@ -11,7 +11,7 @@ from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
 from ...db.exceptions import MissingDriverError
-from ...install_strategy import get_install_options
+from ...install_strategy import detect_install_method, get_install_options
 from ...widgets import Dialog
 
 
@@ -83,9 +83,14 @@ class PackageSetupScreen(ModalScreen):
         with Dialog(id="package-dialog", title=title, shortcuts=shortcuts):
             yield Static(message, id="package-message")
 
+            detected = detect_install_method()
             option_list = OptionList(id="install-options")
             for opt in self._install_options:
-                option_list.add_option(Option(f"[bold]{opt.label:<8}[/] {opt.command}", id=opt.label))
+                if opt.label == detected:
+                    label = f"[bold]{opt.label:<8}[/] {opt.command}  [dim](Detected)[/]"
+                else:
+                    label = f"[bold]{opt.label:<8}[/] {opt.command}"
+                option_list.add_option(Option(label, id=opt.label))
             option_list.highlighted = 0
             yield option_list
 
@@ -112,19 +117,15 @@ class PackageSetupScreen(ModalScreen):
                     self._on_success()
                     self.dismiss(None)
                 elif success:
-                    # Default: show restart message
-                    from .message import MessageScreen
-
-                    restart = getattr(self.app, "restart", None)
-                    self.app.push_screen(
-                        MessageScreen(
-                            "Driver installed",
-                            f"{self.error.driver_name} installed successfully. Please restart to apply.",
-                            enter_label="Restart",
-                            on_enter=restart if callable(restart) else None,
-                        ),
-                        lambda _: self.dismiss(None),
+                    # Default: show notification and restart
+                    self.app.notify(
+                        f"{self.error.driver_name} installed successfully. Restarting...",
+                        timeout=3,
                     )
+                    self.dismiss(None)
+                    restart = getattr(self.app, "restart", None)
+                    if callable(restart):
+                        restart()
                 else:
                     self.dismiss(None)
 

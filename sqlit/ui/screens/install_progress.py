@@ -17,7 +17,7 @@ class InstallProgressScreen(ModalScreen[bool]):
 
     BINDINGS = [
         Binding("enter", "ok", "OK", priority=True),
-        Binding("escape", "ok", "OK", priority=True),
+        Binding("escape", "cancel", "Cancel", priority=True),
     ]
 
     CSS = """
@@ -69,15 +69,26 @@ class InstallProgressScreen(ModalScreen[bool]):
         self.command = command
         self._completed = False
         self._success = False
+        self._process: asyncio.subprocess.Process | None = None
+        self._cancelled = False
 
     def compose(self) -> ComposeResult:
         title = f"Installing {self.package_name}"
-        shortcuts = [("OK", "<enter>")]
+        # Start with Cancel shortcut while installing
+        shortcuts = [("Cancel", "<esc>")]
 
         with Dialog(id="install-dialog", title=title, shortcuts=shortcuts):
             yield Static(f"$ {self.command}", id="install-command")
             yield RichLog(id="install-output", highlight=True, markup=True)
             yield Static("Running...", id="install-status", classes="running")
+
+    def _update_dialog_shortcuts(self, shortcuts: list[tuple[str, str]]) -> None:
+        """Update the dialog's border subtitle with new shortcuts."""
+        dialog = self.query_one("#install-dialog", Dialog)
+        subtitle = "\u00a0·\u00a0".join(
+            f"{action}: [bold]<{key}>[/]" for action, key in shortcuts
+        )
+        dialog.border_subtitle = subtitle
 
     def on_mount(self) -> None:
         self.run_worker(self._run_install(), exclusive=True)
@@ -88,22 +99,28 @@ class InstallProgressScreen(ModalScreen[bool]):
         status = self.query_one("#install-status", Static)
 
         try:
-            process = await asyncio.create_subprocess_shell(
+            self._process = await asyncio.create_subprocess_shell(
                 self.command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
 
-            if process.stdout:
-                async for line in process.stdout:
+            if self._process.stdout:
+                async for line in self._process.stdout:
                     decoded = line.decode("utf-8", errors="replace").rstrip()
                     log.write(decoded)
 
-            await process.wait()
-            return_code = process.returncode
+            await self._process.wait()
+            return_code = self._process.returncode
 
             self._completed = True
-            if return_code == 0:
+            self._process = None
+
+            if self._cancelled:
+                status.update("[bold]Installation cancelled[/]")
+                status.remove_class("running")
+                status.add_class("error")
+            elif return_code == 0:
                 self._success = True
                 status.update("[bold]Installation complete[/]")
                 status.remove_class("running")
@@ -113,12 +130,30 @@ class InstallProgressScreen(ModalScreen[bool]):
                 status.remove_class("running")
                 status.add_class("error")
 
+            # Update shortcuts to show OK when complete
+            self._update_dialog_shortcuts([("OK", "enter")])
+
         except Exception as e:
             self._completed = True
+            self._process = None
             log.write(f"[red]Error: {e}[/]")
             status.update("[bold]Installation failed[/]")
             status.remove_class("running")
             status.add_class("error")
+            self._update_dialog_shortcuts([("OK", "enter")])
 
     def action_ok(self) -> None:
-        self.dismiss(self._success)
+        """Dismiss the dialog (only works when completed)."""
+        if self._completed:
+            self.dismiss(self._success)
+
+    def action_cancel(self) -> None:
+        """Cancel the installation or dismiss if completed."""
+        if self._completed:
+            self.dismiss(self._success)
+        elif self._process:
+            self._cancelled = True
+            try:
+                self._process.terminate()
+            except Exception:
+                pass
