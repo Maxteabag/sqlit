@@ -130,26 +130,44 @@ def _get_arch_package_name(package_name: str) -> str | None:
     return mapping.get(package_name)
 
 
+@dataclass(frozen=True)
+class InstallOption:
+    """A single install option with label and command."""
+
+    label: str
+    command: str
+
+
+def get_install_options(package_name: str) -> list[InstallOption]:
+    """Get list of install options for a package."""
+    options = [
+        InstallOption("pip", f"pip install {package_name}"),
+        InstallOption("pipx", f"pipx inject sqlit-tui {package_name}"),
+        InstallOption("uv", f"uv pip install {package_name}"),
+        InstallOption("uvx", f"uvx --with {package_name} sqlit-tui"),
+        InstallOption("poetry", f"poetry add {package_name}"),
+        InstallOption("pdm", f"pdm add {package_name}"),
+        InstallOption("conda", f"conda install {package_name}"),
+    ]
+
+    # Add Arch Linux options if on Arch
+    if _is_arch_linux():
+        arch_pkg = _get_arch_package_name(package_name)
+        if arch_pkg:
+            options.append(InstallOption("pacman", f"pacman -S {arch_pkg}"))
+            options.append(InstallOption("yay", f"yay -S {arch_pkg}"))
+
+    return options
+
+
 def _format_manual_instructions(package_name: str, reason: str) -> str:
     """Format manual installation instructions with rich markup."""
     lines = [
         f"{reason}\n",
         "[bold]Install the driver using your preferred package manager:[/]\n",
-        f"  [cyan]pip[/]     pip install {package_name}",
-        f"  [cyan]pipx[/]    pipx inject sqlit-tui {package_name}",
-        f"  [cyan]uv[/]      uv pip install {package_name}",
-        f"  [cyan]uvx[/]     uvx --with {package_name} sqlit-tui",
-        f"  [cyan]poetry[/]  poetry add {package_name}",
-        f"  [cyan]pdm[/]     pdm add {package_name}",
-        f"  [cyan]conda[/]   conda install {package_name}",
     ]
-
-    # Add Arch Linux instructions if on Arch
-    if _is_arch_linux():
-        arch_pkg = _get_arch_package_name(package_name)
-        if arch_pkg:
-            lines.append(f"  [cyan]pacman[/]  pacman -S {arch_pkg}")
-            lines.append(f"  [cyan]yay[/]     yay -S {arch_pkg}")
+    for opt in get_install_options(package_name):
+        lines.append(f"  [cyan]{opt.label}[/]     {opt.command}")
 
     return "\n".join(lines)
 

@@ -498,10 +498,6 @@ class AppProtocol(Protocol):
 
     # === Connection Mixin methods ===
 
-    def _handle_install_confirmation(self, confirmed: bool, error: Any) -> None:
-        """Handle driver installation confirmation."""
-        ...
-
     def _set_connection_screen_footer(self) -> None:
         """Set footer for connection screen."""
         ...

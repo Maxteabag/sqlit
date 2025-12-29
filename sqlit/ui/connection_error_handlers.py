@@ -27,12 +27,10 @@ class MissingDriverHandler:
         return isinstance(error, MissingDriverError)
 
     def handle(self, app: AppProtocol, error: Exception, config: ConnectionConfig) -> None:
-        from ..services.installer import Installer
         from .screens import PackageSetupScreen
 
-        app.push_screen(
-            PackageSetupScreen(error, on_install=lambda err: Installer(app).install(err)),
-        )
+        # No on_success callback - uses default "Restart to apply" behavior
+        app.push_screen(PackageSetupScreen(error))
 
 
 @dataclass(frozen=True)

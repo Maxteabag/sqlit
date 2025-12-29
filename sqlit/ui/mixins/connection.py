@@ -497,20 +497,6 @@ class ConnectionMixin:
         self.refresh_tree()
         self.notify(f"Connection '{config.name}' deleted")
 
-    def _handle_install_confirmation(self: AppProtocol, confirmed: bool | None, error: Any) -> None:
-        from ...db.adapters.base import _create_driver_import_error_hint
-        from ...services.installer import Installer
-        from ..screens import ErrorScreen
-
-        if confirmed is True:
-            installer = Installer(self)  # self is the App instance
-            self.call_next(installer.install, error)  # Schedule the async install method
-        elif confirmed is False:
-            hint = _create_driver_import_error_hint(error.driver_name, error.extra_name, error.package_name)
-            self.push_screen(ErrorScreen("Manual Installation Required", hint))
-        else:
-            return
-
     def action_connect_selected(self: AppProtocol) -> None:
         node = self.object_tree.cursor_node
 
