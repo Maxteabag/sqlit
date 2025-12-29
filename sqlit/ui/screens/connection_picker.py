@@ -25,6 +25,60 @@ if TYPE_CHECKING:
     from ...services.docker_detector import DetectedContainer
 
 
+class AzureAuthChoiceScreen(ModalScreen):
+    """Modal screen for choosing Azure authentication method."""
+
+    CSS = """
+    AzureAuthChoiceScreen {
+        align: center middle;
+    }
+
+    #auth-choice-dialog {
+        width: 50;
+        height: auto;
+        max-height: 12;
+    }
+
+    #auth-choice-list {
+        height: 4;
+        background: $surface;
+        border: none;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("enter", "select", "Select"),
+    ]
+
+    def __init__(self, server: "AzureSqlServer", database: str):
+        super().__init__()
+        self.server = server
+        self.database = database
+
+    def compose(self) -> ComposeResult:
+        with Dialog(id="auth-choice-dialog", title="Choose Authentication"):
+            yield OptionList(
+                Option("Entra ID (Azure AD)", id="entra"),
+                Option("SQL Server Authentication", id="sql"),
+                id="auth-choice-list",
+            )
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def action_select(self) -> None:
+        option_list = self.query_one("#auth-choice-list", OptionList)
+        if option_list.highlighted is not None:
+            option = option_list.get_option_at_index(option_list.highlighted)
+            if option:
+                self.dismiss(option.id == "sql")
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option:
+            self.dismiss(event.option.id == "sql")
+
+
 @dataclass
 class DockerConnectionResult:
     """Result when selecting a Docker container."""
@@ -193,6 +247,8 @@ class ConnectionPickerScreen(ModalScreen):
     def _update_shortcuts(self) -> None:
         """Update dialog shortcuts based on current selection."""
         show_save = False
+        is_connectable = False
+        is_expandable = False
         provider_shortcuts: list[tuple[str, str]] = []
 
         # Handle cloud tab with tree widget
@@ -203,29 +259,35 @@ class ConnectionPickerScreen(ModalScreen):
                 node_type = data.get("type")
                 provider_id = data.get("provider_id")
 
+                # Check if node has children (expandable)
+                is_expandable = tree_node.allow_expand and len(tree_node.children) > 0
+
                 # Account nodes get Logout/Switch shortcuts
                 if node_type == "account":
                     provider_shortcuts = [("Logout", "l"), ("Switch", "w")]
 
                 # Check if we can save this node
                 elif node_type == "database" and provider_id == "azure":
+                    is_connectable = True
                     server = data.get("server")
                     database = data.get("database")
-                    auth_type = data.get("auth_type", "ad")
                     if server and database:
-                        show_save = not self._is_azure_connection_saved(server, database, auth_type == "sql")
+                        show_save = not self._is_azure_db_saved(server, database)
 
                 elif node_type == "rds_instance" and provider_id == "aws":
+                    is_connectable = True
                     instance = data.get("instance")
                     if instance:
                         show_save = not self._is_aws_rds_saved(instance)
 
                 elif node_type == "redshift_cluster" and provider_id == "aws":
+                    is_connectable = True
                     cluster = data.get("cluster")
                     if cluster:
                         show_save = not self._is_aws_redshift_saved(cluster)
 
                 elif node_type == "cloud_sql_instance" and provider_id == "gcp":
+                    is_connectable = True
                     instance = data.get("instance")
                     if instance:
                         show_save = not self._is_gcp_instance_saved(instance)
@@ -258,15 +320,26 @@ class ConnectionPickerScreen(ModalScreen):
 
                 # Check Docker options
                 if not provider_shortcuts and self._is_docker_option(option):
+                    is_connectable = True
                     container_id = str(option.id)[len(self.DOCKER_PREFIX):]
                     container = self._get_container_by_id(container_id)
                     if container and not self._is_container_saved(container):
                         show_save = True
 
+                # Saved connections are connectable
+                if self._current_tab == self.TAB_CONNECTIONS and option_id.startswith("conn_"):
+                    is_connectable = True
+
         if provider_shortcuts:
             shortcuts = provider_shortcuts
         else:
-            shortcuts = [("Select", "enter")]
+            if is_connectable:
+                action_label = "Connect"
+            elif is_expandable:
+                action_label = "Expand"
+            else:
+                action_label = "Select"
+            shortcuts = [(action_label, "enter")]
             if show_save:
                 shortcuts.append(("Save", "s"))
             if self._current_tab == self.TAB_CONNECTIONS:
@@ -1204,7 +1277,7 @@ class ConnectionPickerScreen(ModalScreen):
             is_active = i == current_sub_index
 
             if is_active:
-                sub_node = parent.add(f"[green]🔑 ★ {sub_display}[/]", expand=True)
+                sub_node = parent.add(f"🔑 {sub_display} ★", expand=True)
             else:
                 sub_node = parent.add(f"[dim]🔑 {sub_display}[/]")
             sub_node.data = {"type": "subscription", "provider_id": "azure", "index": i}
@@ -1212,50 +1285,29 @@ class ConnectionPickerScreen(ModalScreen):
             # Only show servers for active subscription
             if is_active and servers:
                 for server in servers:
-                    status_icon = "🟢" if server.state == "Ready" else "🟡"
-                    auth_hint = ""
-                    if server.entra_only_auth:
-                        auth_hint = " [dim][Entra only][/]"
-                    elif not server.has_entra_admin:
-                        auth_hint = " [dim][SQL only][/]"
+                    unavailable = " [dim](Unavailable)[/]" if server.state != "Ready" else ""
 
                     server_node = sub_node.add(
-                        f"{status_icon} {server.name}{auth_hint}",
+                        f"{server.name}{unavailable}",
                         expand=True
                     )
                     server_node.data = {"type": "server", "provider_id": "azure", "server": server}
 
                     if server.databases:
                         for db in server.databases:
-                            # Add Entra option if available
-                            if server.has_entra_admin:
-                                saved = self._is_azure_connection_saved(server, db, False)
-                                if saved:
-                                    db_node = server_node.add_leaf(f"[dim]{db} Entra ✓[/]")
-                                else:
-                                    db_node = server_node.add_leaf(f"{db} [dim]Entra[/]")
-                                db_node.data = {
-                                    "type": "database",
-                                    "provider_id": "azure",
-                                    "server": server,
-                                    "database": db,
-                                    "auth_type": "ad",
-                                }
+                            # Check if saved (either auth type)
+                            saved = self._is_azure_db_saved(server, db)
 
-                            # Add SQL Auth option if available
-                            if not server.entra_only_auth:
-                                saved = self._is_azure_connection_saved(server, db, True)
-                                if saved:
-                                    db_node = server_node.add_leaf(f"[dim]{db} SQL Auth ✓[/]")
-                                else:
-                                    db_node = server_node.add_leaf(f"{db} [dim]SQL Auth[/]")
-                                db_node.data = {
-                                    "type": "database",
-                                    "provider_id": "azure",
-                                    "server": server,
-                                    "database": db,
-                                    "auth_type": "sql",
-                                }
+                            if saved:
+                                db_node = server_node.add_leaf(f"[dim]{db} [Azure SQL] ✓[/]")
+                            else:
+                                db_node = server_node.add_leaf(f"{db} [dim][Azure SQL][/]")
+                            db_node.data = {
+                                "type": "database",
+                                "provider_id": "azure",
+                                "server": server,
+                                "database": db,
+                            }
                     else:
                         server_node.add_leaf("[dim](no databases)[/]")
             elif is_active:
@@ -1276,22 +1328,22 @@ class ConnectionPickerScreen(ModalScreen):
 
         for region_resources in regions_with_resources:
             region = region_resources.region
-            region_node = parent.add(f"[green]📍 {region}[/]", expand=True)
+            region_node = parent.add(f"🌍 {region}", expand=True)
             region_node.data = {"type": "region", "provider_id": "aws", "region": region}
 
             # RDS Instances
             for instance in region_resources.rds_instances:
                 engine_display = instance.engine.replace("-", " ").title()
-                status_icon = "🟢" if instance.status == "available" else "🟡"
                 saved = self._is_aws_rds_saved(instance)
+                unavailable = " (Unavailable)" if instance.status != "available" else ""
 
                 if saved:
                     inst_node = region_node.add_leaf(
-                        f"[dim]{status_icon} {instance.identifier} [{engine_display}] ✓[/]"
+                        f"[dim]{instance.identifier} [{engine_display}] ✓[/]"
                     )
                 else:
                     inst_node = region_node.add_leaf(
-                        f"{status_icon} {instance.identifier} [dim][{engine_display}][/]"
+                        f"{instance.identifier}{unavailable} [dim][{engine_display}][/]"
                     )
                 inst_node.data = {
                     "type": "rds_instance",
@@ -1302,16 +1354,16 @@ class ConnectionPickerScreen(ModalScreen):
 
             # Redshift Clusters
             for cluster in region_resources.redshift_clusters:
-                status_icon = "🟢" if cluster.status == "available" else "🟡"
                 saved = self._is_aws_redshift_saved(cluster)
+                unavailable = " (Unavailable)" if cluster.status != "available" else ""
 
                 if saved:
                     cluster_node = region_node.add_leaf(
-                        f"[dim]{status_icon} {cluster.identifier} [Redshift] ✓[/]"
+                        f"[dim]{cluster.identifier} [Redshift] ✓[/]"
                     )
                 else:
                     cluster_node = region_node.add_leaf(
-                        f"{status_icon} {cluster.identifier} [dim][Redshift][/]"
+                        f"{cluster.identifier}{unavailable} [dim][Redshift][/]"
                     )
                 cluster_node.data = {
                     "type": "redshift_cluster",
@@ -1331,22 +1383,22 @@ class ConnectionPickerScreen(ModalScreen):
         instances = state.extra.get("instances", [])
 
         if project:
-            project_node = parent.add(f"[dim]Project: {project}[/]", expand=True)
+            project_node = parent.add(f"Project: {project}", expand=True)
             project_node.data = {"type": "project", "provider_id": "gcp", "project": project}
 
             if instances:
                 for instance in instances:
                     engine_display = instance.database_version.replace("_", " ")
-                    status_icon = "🟢" if instance.state == "RUNNABLE" else "🟡"
                     saved = self._is_gcp_instance_saved(instance)
+                    unavailable = " (Unavailable)" if instance.state != "RUNNABLE" else ""
 
                     if saved:
                         inst_node = project_node.add_leaf(
-                            f"[dim]{status_icon} {instance.name} [{engine_display}] ✓[/]"
+                            f"[dim]{instance.name} [{engine_display}] ✓[/]"
                         )
                     else:
                         inst_node = project_node.add_leaf(
-                            f"{status_icon} {instance.name} [dim][{engine_display}][/]"
+                            f"{instance.name}{unavailable} [dim][{engine_display}][/]"
                         )
                     inst_node.data = {
                         "type": "cloud_sql_instance",
@@ -1357,7 +1409,7 @@ class ConnectionPickerScreen(ModalScreen):
                 project_node.add_leaf("[dim](no Cloud SQL instances)[/]")
 
     def _is_azure_connection_saved(self, server: "AzureSqlServer", database: str, use_sql_auth: bool) -> bool:
-        """Check if an Azure connection is already saved."""
+        """Check if an Azure connection is already saved with specific auth type."""
         for conn in self.connections:
             if conn.source != "azure":
                 continue
@@ -1365,6 +1417,15 @@ class ConnectionPickerScreen(ModalScreen):
                 conn_is_sql = conn.options.get("auth_type") == "sql"
                 if conn_is_sql == use_sql_auth:
                     return True
+        return False
+
+    def _is_azure_db_saved(self, server: "AzureSqlServer", database: str) -> bool:
+        """Check if an Azure database is saved with any auth type."""
+        for conn in self.connections:
+            if conn.source != "azure":
+                continue
+            if conn.server == server.fqdn and conn.database == database:
+                return True
         return False
 
     def _is_aws_rds_saved(self, instance) -> bool:
@@ -1447,28 +1508,38 @@ class ConnectionPickerScreen(ModalScreen):
         if node_type == "database" and provider_id == "azure":
             server = data.get("server")
             database = data.get("database")
-            auth_type = data.get("auth_type", "ad")
             if server and database:
-                if self._is_azure_connection_saved(server, database, auth_type == "sql"):
+                if self._is_azure_db_saved(server, database):
                     self.notify("Connection already saved", severity="warning")
                     return
-                # Build config from Azure provider
-                from ...config import ConnectionConfig
-                config = ConnectionConfig(
-                    name=f"{server.name}/{database}",
-                    db_type="mssql",
-                    server=server.fqdn,
-                    port="1433",
-                    database=database,
-                    username=server.admin_login or "",
-                    password=None,
-                    source="azure",
-                    options={
-                        "auth_type": auth_type,
-                        "azure_subscription_id": server.subscription_id,
-                        "azure_resource_group": server.resource_group,
-                    },
-                )
+
+                # Check what auth methods are available
+                has_entra = server.has_entra_admin
+                has_sql = not server.entra_only_auth
+
+                if has_entra and has_sql:
+                    # Both available - prompt user to choose, then save
+                    self._prompt_azure_auth_choice_for_save(server, database)
+                    return
+                else:
+                    # Only one auth method - use it
+                    auth_type = "ad" if has_entra else "sql"
+                    from ...config import ConnectionConfig
+                    config = ConnectionConfig(
+                        name=f"{server.name}/{database}",
+                        db_type="mssql",
+                        server=server.fqdn,
+                        port="1433",
+                        database=database,
+                        username=server.admin_login or "" if auth_type == "sql" else "",
+                        password=None,
+                        source="azure",
+                        options={
+                            "auth_type": auth_type,
+                            "azure_subscription_id": server.subscription_id,
+                            "azure_resource_group": server.resource_group,
+                        },
+                    )
 
         # AWS RDS instance
         elif node_type == "rds_instance" and provider_id == "aws":
@@ -1658,6 +1729,49 @@ class ConnectionPickerScreen(ModalScreen):
         except Exception:
             pass
 
+    def _prompt_azure_auth_choice(self, server: "AzureSqlServer", database: str) -> None:
+        """Prompt user to choose authentication method for Azure SQL connection."""
+        def handle_auth_choice(use_sql_auth: bool | None) -> None:
+            if use_sql_auth is not None:
+                self.dismiss(AzureConnectionResult(
+                    server=server,
+                    database=database,
+                    use_sql_auth=use_sql_auth,
+                ))
+
+        self.app.push_screen(
+            AzureAuthChoiceScreen(server, database),
+            handle_auth_choice,
+        )
+
+    def _prompt_azure_auth_choice_for_save(self, server: "AzureSqlServer", database: str) -> None:
+        """Prompt user to choose authentication method for saving Azure SQL connection."""
+        def handle_auth_choice(use_sql_auth: bool | None) -> None:
+            if use_sql_auth is not None:
+                from ...config import ConnectionConfig
+                auth_type = "sql" if use_sql_auth else "ad"
+                config = ConnectionConfig(
+                    name=f"{server.name}/{database}",
+                    db_type="mssql",
+                    server=server.fqdn,
+                    port="1433",
+                    database=database,
+                    username=server.admin_login or "" if use_sql_auth else "",
+                    password=None,
+                    source="azure",
+                    options={
+                        "auth_type": auth_type,
+                        "azure_subscription_id": server.subscription_id,
+                        "azure_resource_group": server.resource_group,
+                    },
+                )
+                self._save_cloud_connection_from_tree(config)
+
+        self.app.push_screen(
+            AzureAuthChoiceScreen(server, database),
+            handle_auth_choice,
+        )
+
     def action_new_connection(self) -> None:
         """Open new connection dialog."""
         self.dismiss("__new_connection__")
@@ -1709,13 +1823,28 @@ class ConnectionPickerScreen(ModalScreen):
         if node_type == "database" and provider_id == "azure":
             server = data.get("server")
             database = data.get("database")
-            auth_type = data.get("auth_type", "ad")
             if server and database:
-                self.dismiss(AzureConnectionResult(
-                    server=server,
-                    database=database,
-                    use_sql_auth=(auth_type == "sql"),
-                ))
+                # Check what auth methods are available
+                has_entra = server.has_entra_admin
+                has_sql = not server.entra_only_auth
+
+                if has_entra and has_sql:
+                    # Both available - prompt user to choose
+                    self._prompt_azure_auth_choice(server, database)
+                elif has_entra:
+                    # Only Entra available
+                    self.dismiss(AzureConnectionResult(
+                        server=server,
+                        database=database,
+                        use_sql_auth=False,
+                    ))
+                else:
+                    # Only SQL available
+                    self.dismiss(AzureConnectionResult(
+                        server=server,
+                        database=database,
+                        use_sql_auth=True,
+                    ))
             return
 
         # Handle AWS RDS instance selection
