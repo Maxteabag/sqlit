@@ -45,22 +45,34 @@ class AzureFirewallHandler:
         return is_firewall_error(str(error))
 
     def handle(self, app: AppProtocol, error: Exception, config: ConnectionConfig) -> None:
-        from ..services.cloud_detector import parse_ip_from_firewall_error
+        from ..services.cloud_detector import (
+            lookup_azure_sql_server,
+            parse_ip_from_firewall_error,
+            parse_server_name_from_hostname,
+        )
         from .screens import AzureFirewallScreen
 
-        # Only handle if this is an Azure connection with required metadata
-        if config.source != "azure":
+        ip_address = parse_ip_from_firewall_error(str(error))
+        if not ip_address:
             return
 
+        # Try to get Azure metadata from config (cloud-discovered connections)
         server_name = config.get_option("azure_server_name")
         resource_group = config.get_option("azure_resource_group")
         subscription_id = config.get_option("azure_subscription_id")
 
+        # If metadata not available, try to look up from hostname
         if not server_name or not resource_group:
-            return
+            short_name = parse_server_name_from_hostname(config.server or "")
+            if short_name:
+                azure_server = lookup_azure_sql_server(short_name)
+                if azure_server:
+                    server_name = azure_server.name
+                    resource_group = azure_server.resource_group
+                    subscription_id = azure_server.subscription_id
 
-        ip_address = parse_ip_from_firewall_error(str(error))
-        if not ip_address:
+        # Still no metadata - can't add firewall rule
+        if not server_name or not resource_group:
             return
 
         def on_result(added: bool) -> None:

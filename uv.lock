@@ -726,6 +726,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9d/1c/5613412d592d09c2daeb6e591fa110cdffe24aecff617b2b300360e3b51a/firebirdsql-1.4.1.tar.gz", hash = "sha256:4863b5497924c74fc213bcb91ce69647b42f33fdd24a199c62c22039423cb1d4", size = 90912, upload-time = "2025-09-27T01:42:22.863Z" }
 
 [[package]]
+name = "fsspec"
+version = "2025.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b6/27/954057b0d1f53f086f681755207dda6de6c660ce133c829158e8e8fe7895/fsspec-2025.12.0.tar.gz", hash = "sha256:c505de011584597b1060ff778bb664c1bc022e87921b0e4f10cc9c44f9635973", size = 309748, upload-time = "2025-12-03T15:23:42.687Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/c7/b64cae5dba3a1b138d7123ec36bb5ccd39d39939f18454407e5468f4763f/fsspec-2025.12.0-py3-none-any.whl", hash = "sha256:8bf1fe301b7d8acfa6e8571e3b1c3d158f909666642431cc78a1b7b4dbc5ec5b", size = 201422, upload-time = "2025-12-03T15:23:41.434Z" },
+]
+
+[[package]]
 name = "identify"
 version = "2.6.15"
 source = { registry = "https://pypi.org/simple" }
@@ -1739,6 +1748,22 @@ wheels = [
 ]
 
 [[package]]
+name = "pyathena"
+version = "3.22.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+    { name = "botocore" },
+    { name = "fsspec" },
+    { name = "python-dateutil" },
+    { name = "tenacity" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0b/84/8e23900d7dec48b48681f6ea435016990c4038c66ba7db0bed82c469dd83/pyathena-3.22.0.tar.gz", hash = "sha256:80f10ca0410beb80c93446baec15dd22ceb5bd0804bfe1aa544c3225bdfd8a81", size = 87015, upload-time = "2025-11-17T13:52:32.769Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/55/0cf7be399d2cb4eb36399e4ba3defdd89b1c25831c26b8c6d6bb136c49fa/pyathena-3.22.0-py3-none-any.whl", hash = "sha256:a60d25e8918833218f952606d4fc96ab25623eff550415e245b58896f145d6c8", size = 112248, upload-time = "2025-11-17T13:52:31.171Z" },
+]
+
+[[package]]
 name = "pycparser"
 version = "2.23"
 source = { registry = "https://pypi.org/simple" }
@@ -2202,9 +2227,13 @@ all = [
     { name = "oracledb" },
     { name = "paramiko" },
     { name = "psycopg2-binary" },
+    { name = "pyathena" },
     { name = "requests" },
     { name = "snowflake-connector-python" },
     { name = "sshtunnel" },
+]
+athena = [
+    { name = "pyathena" },
 ]
 clickhouse = [
     { name = "clickhouse-connect" },
@@ -2296,6 +2325,8 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9.0" },
     { name = "psycopg2-binary", marker = "extra == 'cockroachdb'", specifier = ">=2.9.0" },
     { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9.0" },
+    { name = "pyathena", marker = "extra == 'all'", specifier = ">=3.22.0" },
+    { name = "pyathena", marker = "extra == 'athena'", specifier = ">=3.22.0" },
     { name = "pyperclip", specifier = ">=1.8.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
@@ -2317,7 +2348,7 @@ requires-dist = [
     { name = "textual", extras = ["syntax"], specifier = ">=6.10.0" },
     { name = "textual-fastdatatable", specifier = ">=0.14.0" },
 ]
-provides-extras = ["all", "clickhouse", "cockroachdb", "d1", "dev", "duckdb", "firebird", "mariadb", "mssql", "mysql", "oracle", "postgres", "snowflake", "ssh", "test", "turso"]
+provides-extras = ["all", "athena", "clickhouse", "cockroachdb", "d1", "dev", "duckdb", "firebird", "mariadb", "mssql", "mysql", "oracle", "postgres", "snowflake", "ssh", "test", "turso"]
 
 [[package]]
 name = "sqlparse"
@@ -2338,6 +2369,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8d/ad/4c587adf79865be268ee0b6bd52cfaa7a75d827a23ced072dc5ab554b4af/sshtunnel-0.4.0.tar.gz", hash = "sha256:e7cb0ea774db81bf91844db22de72a40aae8f7b0f9bb9ba0f666d474ef6bf9fc", size = 62716, upload-time = "2021-01-11T13:26:32.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/58/13/8476c4328dcadfe26f8bd7f3a1a03bf9ddb890a7e7b692f54a179bc525bf/sshtunnel-0.4.0-py2.py3-none-any.whl", hash = "sha256:98e54c26f726ab8bd42b47a3a21fca5c3e60f58956f0f70de2fb8ab0046d0606", size = 24729, upload-time = "2021-01-11T13:26:29.969Z" },
+]
+
+[[package]]
+name = "tenacity"
+version = "9.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0a/d4/2b0cd0fe285e14b36db076e78c93766ff1d529d70408bd1d2a5a84f1d929/tenacity-9.1.2.tar.gz", hash = "sha256:1169d376c297e7de388d18b4481760d478b0e99a777cad3a9c86e556f4b697cb", size = 48036, upload-time = "2025-04-02T08:25:09.966Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/30/643397144bfbfec6f6ef821f36f33e57d35946c44a2352d3c9f0ae847619/tenacity-9.1.2-py3-none-any.whl", hash = "sha256:f77bf36710d8b73a50b2dd155c97b870017ad21afe6ab300326b0371b3b05138", size = 28248, upload-time = "2025-04-02T08:25:07.678Z" },
 ]
 
 [[package]]
