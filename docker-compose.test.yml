@@ -194,3 +194,20 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  # Flight SQL server (using voltrondata/sqlflite - Flight SQL over DuckDB)
+  flight-sql:
+    image: voltrondata/sqlflite:latest
+    container_name: sqlit-test-flight-sql
+    environment:
+      TLS_ENABLED: "0"
+      SQLFLITE_PASSWORD: "test_password"
+      PRINT_QUERIES: "1"
+    ports:
+      - "31337:31337"
+    healthcheck:
+      test: ["CMD", "nc", "-vz", "localhost", "31337"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s

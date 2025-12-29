@@ -27,7 +27,7 @@ pytest tests/ -v -k sqlite
 
 ### Full Test Suite (Requires Docker)
 
-To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB, FirebirdSQL, Oracle, DuckDB, and CockroachDB tests:
+To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, and Flight SQL tests:
 
 1. Start the test database containers:
    ```bash
@@ -54,6 +54,7 @@ pytest tests/ -v -k PostgreSQL  # PostgreSQL only
 pytest tests/ -v -k MySQL       # MySQL only
 pytest tests/ -v -k cockroach   # CockroachDB only
 pytest tests/ -v -k firebird    # FirebirdSQL only
+pytest tests/ -v -k flight      # Flight SQL only
 ```
 
 ### Environment Variables
@@ -109,6 +110,15 @@ The database tests can be configured with these environment variables:
 |----------|---------|-------------|
 | `AWS_PROFILE` | `default` | AWS CLI profile to use (must be configured in `~/.aws/credentials`) |
 | `AWS_REGION` | `us-east-1` | AWS Region |
+
+**Flight SQL:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FLIGHT_HOST` | `localhost` | Flight SQL server hostname |
+| `FLIGHT_PORT` | `31337` | Flight SQL server port |
+| `FLIGHT_USER` | `` | Flight SQL username (optional) |
+| `FLIGHT_PASSWORD` | `test_password` | Flight SQL password |
+| `FLIGHT_DATABASE` | `` | Flight SQL database/catalog (optional) |
 
 ### CockroachDB Quickstart (Docker)
 

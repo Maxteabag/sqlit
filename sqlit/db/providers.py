@@ -23,6 +23,7 @@ from .schema import (
     D1_SCHEMA,
     DUCKDB_SCHEMA,
     FIREBIRD_SCHEMA,
+    FLIGHT_SCHEMA,
     MARIADB_SCHEMA,
     MSSQL_SCHEMA,
     MYSQL_SCHEMA,
@@ -115,6 +116,10 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "bigquery": ProviderSpec(
         schema=BIGQUERY_SCHEMA,
         adapter_path=("sqlit.db.adapters.bigquery", "BigQueryAdapter"),
+    ),
+    "flight": ProviderSpec(
+        schema=FLIGHT_SCHEMA,
+        adapter_path=("sqlit.db.adapters.flight", "FlightSQLAdapter"),
     ),
 }
 

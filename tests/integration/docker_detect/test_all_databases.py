@@ -253,6 +253,21 @@ DATABASE_CONFIGS = [
         expected_database="",
         startup_time=5,
     ),
+    # Flight SQL (using voltrondata/sqlflite)
+    DatabaseTestConfig(
+        name="flight_sqlflite",
+        image="voltrondata/sqlflite:latest",
+        db_type="flight",
+        env_vars={
+            "TLS_ENABLED": "0",
+            "SQLFLITE_PASSWORD": "test_password",
+        },
+        internal_port=31337,
+        expected_user="",
+        expected_password="test_password",
+        expected_database=None,
+        startup_time=5,
+    ),
 ]
 
 

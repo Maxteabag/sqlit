@@ -51,6 +51,7 @@ all = [
     "paramiko>=2.0.0,<4.0.0",
     "snowflake-connector-python>=3.7.0",
     "pyathena>=3.22.0",
+    "adbc-driver-flightsql>=1.0.0",
 ]
 postgres = ["psycopg2-binary>=2.9.0"]
 cockroachdb = ["psycopg2-binary>=2.9.0"]
@@ -65,6 +66,7 @@ turso = ["libsql>=0.1.0"]
 firebird = ["firebirdsql>=1.3.5"]
 snowflake = ["snowflake-connector-python>=3.7.0"]
 athena = ["pyathena>=3.22.0"]
+flight = ["adbc-driver-flightsql>=1.0.0"]
 ssh = [
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",
@@ -127,6 +129,7 @@ markers = [
     "oracle: Oracle database tests",
     "firebird: Firebird database tests",
     "clickhouse: ClickHouse database tests",
+    "flight: Apache Arrow Flight SQL database tests",
     "asyncio: async tests",
     "integration: integration tests (may require external services)",
 ]
@@ -166,6 +169,10 @@ module = [
     "docker",
     "docker.errors",
     "pyarrow",
+    "pyarrow.flight",
+    "adbc_driver_flightsql",
+    "adbc_driver_flightsql.dbapi",
+    "adbc_driver_manager",
     "textual_fastdatatable"
 ]
 ignore_missing_imports = true
