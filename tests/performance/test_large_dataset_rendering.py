@@ -102,7 +102,7 @@ def mock_app_context():
     mock_settings = MockSettingsStore({"theme": "tokyo-night"})
 
     return patch.multiple(
-        "sqlit.app",
+        "sqlit.config",
         load_connections=mock_connections.load_all,
         load_settings=mock_settings.load_all,
         save_settings=mock_settings.save_all,

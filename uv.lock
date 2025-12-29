@@ -2244,18 +2244,6 @@ cockroachdb = [
 d1 = [
     { name = "requests" },
 ]
-dev = [
-    { name = "build" },
-    { name = "faker" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-benchmark" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
-    { name = "ruff" },
-]
 duckdb = [
     { name = "duckdb" },
 ]
@@ -2284,6 +2272,24 @@ ssh = [
     { name = "paramiko" },
     { name = "sshtunnel" },
 ]
+turso = [
+    { name = "libsql" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "build" },
+    { name = "faker" },
+    { name = "fakesnow" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-benchmark" },
+    { name = "pytest-cov" },
+    { name = "pytest-timeout" },
+    { name = "ruff" },
+]
 test = [
     { name = "fakesnow" },
     { name = "pytest" },
@@ -2291,20 +2297,14 @@ test = [
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
 ]
-turso = [
-    { name = "libsql" },
-]
 
 [package.metadata]
 requires-dist = [
-    { name = "build", marker = "extra == 'dev'" },
     { name = "clickhouse-connect", marker = "extra == 'all'", specifier = ">=0.7.0" },
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'", specifier = ">=0.7.0" },
     { name = "docker", specifier = ">=7.0.0" },
     { name = "duckdb", marker = "extra == 'all'", specifier = ">=1.1.0" },
     { name = "duckdb", marker = "extra == 'duckdb'", specifier = ">=1.1.0" },
-    { name = "faker", marker = "extra == 'dev'", specifier = ">=28.0" },
-    { name = "fakesnow", marker = "extra == 'test'", specifier = ">=0.0.1" },
     { name = "firebirdsql", marker = "extra == 'all'", specifier = ">=1.3.5" },
     { name = "firebirdsql", marker = "extra == 'firebird'", specifier = ">=1.3.5" },
     { name = "keyring", specifier = ">=24.0.0" },
@@ -2314,32 +2314,20 @@ requires-dist = [
     { name = "mariadb", marker = "extra == 'mariadb'", specifier = ">=1.1.0" },
     { name = "mssql-python", marker = "extra == 'all'", specifier = ">=1.1.0" },
     { name = "mssql-python", marker = "extra == 'mssql'", specifier = ">=1.1.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0" },
     { name = "mysql-connector-python", marker = "extra == 'all'", specifier = ">=9.1.0" },
     { name = "mysql-connector-python", marker = "extra == 'mysql'", specifier = ">=9.1.0" },
     { name = "oracledb", marker = "extra == 'all'", specifier = ">=2.0.0" },
     { name = "oracledb", marker = "extra == 'oracle'", specifier = ">=2.0.0" },
     { name = "paramiko", marker = "extra == 'all'", specifier = ">=2.0.0,<4.0.0" },
     { name = "paramiko", marker = "extra == 'ssh'", specifier = ">=2.0.0,<4.0.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.0" },
     { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9.0" },
     { name = "psycopg2-binary", marker = "extra == 'cockroachdb'", specifier = ">=2.9.0" },
     { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9.0" },
     { name = "pyathena", marker = "extra == 'all'", specifier = ">=3.22.0" },
     { name = "pyathena", marker = "extra == 'athena'", specifier = ">=3.22.0" },
     { name = "pyperclip", specifier = ">=1.8.2" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
-    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.23.0" },
-    { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
-    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=4.0" },
-    { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.0" },
-    { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.0" },
     { name = "requests", marker = "extra == 'all'", specifier = ">=2.32.4" },
     { name = "requests", marker = "extra == 'd1'", specifier = ">=2.32.4" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "snowflake-connector-python", marker = "extra == 'all'", specifier = ">=3.7.0" },
     { name = "snowflake-connector-python", marker = "extra == 'snowflake'", specifier = ">=3.7.0" },
     { name = "sqlparse", specifier = ">=0.5.0" },
@@ -2348,7 +2336,29 @@ requires-dist = [
     { name = "textual", extras = ["syntax"], specifier = ">=6.10.0" },
     { name = "textual-fastdatatable", specifier = ">=0.14.0" },
 ]
-provides-extras = ["all", "athena", "clickhouse", "cockroachdb", "d1", "dev", "duckdb", "firebird", "mariadb", "mssql", "mysql", "oracle", "postgres", "snowflake", "ssh", "test", "turso"]
+provides-extras = ["all", "athena", "clickhouse", "cockroachdb", "d1", "duckdb", "firebird", "mariadb", "mssql", "mysql", "oracle", "postgres", "snowflake", "ssh", "turso"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build" },
+    { name = "faker", specifier = ">=28.0" },
+    { name = "fakesnow", specifier = ">=0.0.1" },
+    { name = "mypy", specifier = ">=1.0" },
+    { name = "pre-commit", specifier = ">=3.0" },
+    { name = "pytest", specifier = ">=7.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "pytest-benchmark", specifier = ">=4.0" },
+    { name = "pytest-cov", specifier = ">=4.0" },
+    { name = "pytest-timeout", specifier = ">=2.0" },
+    { name = "ruff", specifier = ">=0.8.0" },
+]
+test = [
+    { name = "fakesnow", specifier = ">=0.0.1" },
+    { name = "pytest", specifier = ">=7.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "pytest-cov", specifier = ">=4.0" },
+    { name = "pytest-timeout", specifier = ">=2.0" },
+]
 
 [[package]]
 name = "sqlparse"
