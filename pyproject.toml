@@ -39,7 +39,7 @@ dynamic = ["version"]
 all = [
     "psycopg2-binary>=2.9.0",
     "mssql-python>=1.1.0",
-    "mysql-connector-python>=9.1.0",  # min avoids known CVEs
+    "PyMySQL>=1.1.0",
     "mariadb>=1.1.0",
     "oracledb>=2.0.0",
     "duckdb>=1.1.0",  # min avoids known CVEs
@@ -55,7 +55,7 @@ all = [
 postgres = ["psycopg2-binary>=2.9.0"]
 cockroachdb = ["psycopg2-binary>=2.9.0"]
 mssql = ["mssql-python>=1.1.0"]
-mysql = ["mysql-connector-python>=9.1.0"]  # min avoids known CVEs
+mysql = ["PyMySQL>=1.1.0"]
 mariadb = ["mariadb>=1.1.0"]
 oracle = ["oracledb>=2.0.0"]
 duckdb = ["duckdb>=1.1.0"]  # min avoids known CVEs
