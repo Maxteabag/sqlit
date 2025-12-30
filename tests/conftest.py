@@ -716,18 +716,18 @@ def mysql_db(mysql_server_ready: bool) -> str:
         pytest.skip("MySQL is not available")
 
     try:
-        import mysql.connector
+        import pymysql
     except ImportError:
-        pytest.skip("mysql-connector-python is not installed")
+        pytest.skip("PyMySQL is not installed")
 
     try:
-        conn = mysql.connector.connect(
+        conn = pymysql.connect(
             host=MYSQL_HOST,
             port=MYSQL_PORT,
             database=MYSQL_DATABASE,
             user=MYSQL_USER,
             password=MYSQL_PASSWORD,
-            connection_timeout=10,
+            connect_timeout=10,
         )
         cursor = conn.cursor()
 
@@ -793,13 +793,13 @@ def mysql_db(mysql_server_ready: bool) -> str:
     yield MYSQL_DATABASE
 
     try:
-        conn = mysql.connector.connect(
+        conn = pymysql.connect(
             host=MYSQL_HOST,
             port=MYSQL_PORT,
             database=MYSQL_DATABASE,
             user=MYSQL_USER,
             password=MYSQL_PASSWORD,
-            connection_timeout=10,
+            connect_timeout=10,
         )
         cursor = conn.cursor()
         cursor.execute("DROP TRIGGER IF EXISTS trg_test_users_audit")

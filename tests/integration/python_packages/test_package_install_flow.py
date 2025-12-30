@@ -171,7 +171,7 @@ async def main() -> None:
     _assert_present("psycopg2")
 
     # Failure path: forced install failure yields manual instructions
-    _assert_missing("mysql.connector")
+    _assert_missing("pymysql")
     await _run_flow(force_fail=True, db_type="mysql")
 
 

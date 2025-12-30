@@ -16,7 +16,7 @@ pkgbase = python-sqlit-tui
 	depends = python-docker>=7.0.0
 	optdepends = python-psycopg2: PostgreSQL, CockroachDB and Supabase support
 	optdepends = python-pyodbc: SQL Server support
-	optdepends = python-mysql-connector: MySQL support
+	optdepends = python-pymysql: MySQL support
 	optdepends = python-mariadb-connector: MariaDB support
 	optdepends = python-oracledb: Oracle support
 	optdepends = python-duckdb: DuckDB support

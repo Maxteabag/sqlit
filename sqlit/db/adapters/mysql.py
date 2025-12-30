@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import importlib.util
 from typing import TYPE_CHECKING, Any
 
+from ..exceptions import MissingDriverError
 from ..schema import get_default_port
 from .base import MySQLBaseAdapter, import_driver_module
 
 if TYPE_CHECKING:
     from ...config import ConnectionConfig
+
+
+def _check_old_mysql_connector() -> bool:
+    """Check if the old mysql-connector-python package is installed."""
+    return importlib.util.find_spec("mysql.connector") is not None
 
 
 class MySQLAdapter(MySQLBaseAdapter):
@@ -56,12 +63,29 @@ class MySQLAdapter(MySQLBaseAdapter):
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to MySQL database."""
-        pymysql = import_driver_module(
-            "pymysql",
-            driver_name=self.name,
-            extra_name=self.install_extra,
-            package_name=self.install_package,
-        )
+        try:
+            pymysql = import_driver_module(
+                "pymysql",
+                driver_name=self.name,
+                extra_name=self.install_extra,
+                package_name=self.install_package,
+            )
+        except MissingDriverError:
+            # Check if user has the old mysql-connector-python installed
+            if _check_old_mysql_connector():
+                raise MissingDriverError(
+                    self.name,
+                    self.install_extra,
+                    self.install_package,
+                    module_name="pymysql",
+                    import_error=(
+                        "MySQL driver has changed from mysql-connector-python to PyMySQL.\n"
+                        "Please uninstall the old package and install PyMySQL:\n"
+                        "  pip uninstall mysql-connector-python\n"
+                        "  pip install PyMySQL"
+                    ),
+                ) from None
+            raise
 
         port = int(config.port or get_default_port("mysql"))
         return pymysql.connect(

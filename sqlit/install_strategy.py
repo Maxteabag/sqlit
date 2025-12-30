@@ -158,7 +158,7 @@ def _get_arch_package_name(package_name: str) -> str | None:
         "psycopg2-binary": "python-psycopg2",
         "psycopg2": "python-psycopg2",
         "mssql-python": "python-mssql",
-        "mysql-connector-python": "python-mysql-connector",
+        "PyMySQL": "python-pymysql",
         "mariadb": "python-mariadb-connector",
         "oracledb": "python-oracledb",
         "duckdb": "python-duckdb",

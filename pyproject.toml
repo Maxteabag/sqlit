@@ -155,7 +155,7 @@ namespace_packages = true
 
 [[tool.mypy.overrides]]
 module = [
-    "mysql.connector",
+    "pymysql",
     "mariadb",
     "oracledb",
     "duckdb",
