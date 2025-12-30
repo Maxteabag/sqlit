@@ -88,8 +88,13 @@ class MySQLAdapter(MySQLBaseAdapter):
             raise
 
         port = int(config.port or get_default_port("mysql"))
+        # PyMySQL resolves 'localhost' to ::1 (IPv6) which often fails.
+        # Normalize to 127.0.0.1 to ensure TCP/IP connection works.
+        host = config.server
+        if host and host.lower() == "localhost":
+            host = "127.0.0.1"
         return pymysql.connect(
-            host=config.server,
+            host=host,
             port=port,
             database=config.database or None,
             user=config.username,
