@@ -17,6 +17,14 @@ Thank you for considering a contribution to sqlit! This guide walks you through 
 
 ## Running Tests
 
+### CLI E2E Tests
+
+CLI end-to-end tests run the entrypoint in a subprocess:
+
+```bash
+pytest tests/cli/ -v
+```
+
 ### SQLite Tests (No Docker Required)
 
 SQLite tests can run without any external dependencies:
@@ -138,7 +146,7 @@ The project uses GitHub Actions for continuous integration:
 - **Build**: Verifies the package builds on Python 3.10-3.13
 - **SQLite Tests**: Runs SQLite integration tests (no external dependencies)
 - **SQL Server Tests**: Runs SQL Server integration tests with Docker service
-- 
+-
 
 ### Vision
 

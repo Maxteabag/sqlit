@@ -9,6 +9,7 @@ from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 
+from sqlit.shared.core.processes import AsyncProcess, AsyncProcessRunner, AsyncSubprocessRunner
 from sqlit.shared.ui.widgets import Dialog
 
 
@@ -63,13 +64,14 @@ class InstallProgressScreen(ModalScreen[bool]):
     }
     """
 
-    def __init__(self, package_name: str, command: str):
+    def __init__(self, package_name: str, command: str, *, process_runner: AsyncProcessRunner | None = None):
         super().__init__()
         self.package_name = package_name
         self.command = command
+        self._process_runner = process_runner
         self._completed = False
         self._success = False
-        self._process: asyncio.subprocess.Process | None = None
+        self._process: AsyncProcess | None = None
         self._cancelled = False
 
     def compose(self) -> ComposeResult:
@@ -99,11 +101,14 @@ class InstallProgressScreen(ModalScreen[bool]):
         status = self.query_one("#install-status", Static)
 
         try:
-            self._process = await asyncio.create_subprocess_shell(
-                self.command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
+            runner = self._process_runner
+            if runner is None:
+                services = getattr(self.app, "services", None)
+                runner = getattr(services, "async_process_runner", None) if services else None
+            if runner is None:
+                runner = AsyncSubprocessRunner()
+
+            self._process = await runner.spawn(self.command)
 
             if self._process.stdout:
                 async for line in self._process.stdout:

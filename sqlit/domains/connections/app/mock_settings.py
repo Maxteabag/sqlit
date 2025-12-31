@@ -21,19 +21,6 @@ class MockSettings:
     docker_containers: list[DetectedContainer] | None
 
 
-# Legacy global storage for mock docker containers (use services/runtime instead).
-_mock_docker_containers: list[DetectedContainer] | None = None
-
-
-def set_mock_docker_containers(containers: list[DetectedContainer] | None) -> None:
-    global _mock_docker_containers
-    _mock_docker_containers = containers
-
-
-def get_mock_docker_containers() -> list[DetectedContainer] | None:
-    return _mock_docker_containers
-
-
 def parse_mock_settings(settings: dict[str, Any]) -> MockSettings | None:
     """Parse mock settings from settings.json into a structured config."""
     mock_settings = settings.get("mock")

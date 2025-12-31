@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,7 +25,7 @@ def import_driver_module(
 ) -> Any:
     """Import a driver module, raising MissingDriverError with detail if it fails."""
     mock_driver_error = bool(getattr(getattr(runtime, "mock", None), "driver_error", False))
-    if (mock_driver_error or os.environ.get("SQLIT_MOCK_DRIVER_ERROR")) and extra_name and package_name:
+    if mock_driver_error and extra_name and package_name:
         from sqlit.domains.connections.providers.exceptions import MissingDriverError
 
         raise MissingDriverError(
@@ -74,9 +73,6 @@ def ensure_provider_driver_available(provider: Any, runtime: Any | None = None) 
 
     mock_missing = getattr(getattr(runtime, "mock", None), "missing_drivers", None)
     requested = {item.strip().lower() for item in mock_missing or [] if item.strip()}
-    if not requested:
-        missing = os.environ.get("SQLIT_MOCK_MISSING_DRIVERS", "")
-        requested = {item.strip().lower() for item in missing.split(",") if item.strip()}
     db_type = getattr(getattr(provider, "metadata", None), "db_type", "").lower()
     if db_type and db_type in requested:
         from sqlit.domains.connections.providers.exceptions import MissingDriverError

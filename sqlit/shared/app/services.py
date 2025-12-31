@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from sqlit.shared.app.runtime import RuntimeConfig
+from sqlit.shared.core.processes import AsyncProcessRunner, AsyncSubprocessRunner, SyncProcessRunner, SubprocessRunner
 from sqlit.shared.core.protocols import (
     ConnectionStoreProtocol,
     HistoryStoreProtocol,
@@ -35,6 +36,8 @@ class AppServices:
     docker_detector: Callable[[], tuple[Any, list[Any]]]
     cloud_discovery: CloudDiscovery
     install_strategy: InstallStrategyProvider
+    sync_process_runner: SyncProcessRunner
+    async_process_runner: AsyncProcessRunner
 
     def apply_mock_profile(self, profile: Any | None) -> None:
         """Switch services into/out of mock profile mode."""
@@ -98,6 +101,8 @@ def build_app_services(
     docker_detector: Callable[[], tuple[Any, list[Any]]] | None = None,
     cloud_discovery: CloudDiscovery | None = None,
     install_strategy: InstallStrategyProvider | None = None,
+    sync_process_runner: SyncProcessRunner | None = None,
+    async_process_runner: AsyncProcessRunner | None = None,
 ) -> AppServices:
     """Build the default service container for the app."""
     from sqlit.domains.connections.app.credentials import build_credentials_service
@@ -122,6 +127,8 @@ def build_app_services(
 
     provider_factory = provider_factory or get_provider
     tunnel_factory = tunnel_factory or create_ssh_tunnel
+    sync_process_runner = sync_process_runner or SubprocessRunner()
+    async_process_runner = async_process_runner or AsyncSubprocessRunner()
 
     if session_factory is None:
         def _default_session_factory(config: Any) -> Any:
@@ -145,6 +152,8 @@ def build_app_services(
         docker_detector=docker_detector or build_docker_detector(runtime),
         cloud_discovery=cloud_discovery or CloudDiscovery(runtime),
         install_strategy=install_strategy or InstallStrategyProvider(runtime),
+        sync_process_runner=sync_process_runner,
+        async_process_runner=async_process_runner,
     )
 
     if runtime.mock.profile is not None:
@@ -186,8 +195,13 @@ class CloudDiscovery:
 class InstallStrategyProvider:
     """Install strategy helper honoring runtime mock settings."""
 
-    def __init__(self, runtime: RuntimeConfig) -> None:
+    def __init__(self, runtime: RuntimeConfig, *, probe: "SystemProbe" | None = None) -> None:
         self._runtime = runtime
+        if probe is None:
+            from sqlit.shared.core.system_probe import SystemProbe
+
+            probe = SystemProbe()
+        self._probe = probe
 
     def detect(self, *, extra_name: str, package_name: str) -> Any:
         from sqlit.domains.connections.app.install_strategy import detect_strategy
@@ -198,4 +212,34 @@ class InstallStrategyProvider:
             mock_pipx=self._runtime.mock.pipx_mode,
             mock_no_pip=self._runtime.mock.pipx_mode == "no-pip",
             mock_driver_error=self._runtime.mock.driver_error,
+            probe=self._probe,
+        )
+
+    def detect_install_method(self) -> str:
+        from sqlit.domains.connections.app.install_strategy import detect_install_method
+
+        return detect_install_method(
+            mock_pipx=self._runtime.mock.pipx_mode,
+            probe=self._probe,
+        )
+
+    def get_install_options(self, *, extra_name: str | None, package_name: str) -> list[Any]:
+        from sqlit.domains.connections.app.install_strategy import get_install_options
+
+        return get_install_options(
+            package_name=package_name,
+            extra_name=extra_name,
+            mock_pipx=self._runtime.mock.pipx_mode,
+            probe=self._probe,
+        )
+
+    def format_manual_instructions(self, *, extra_name: str | None, package_name: str, reason: str) -> str:
+        from sqlit.domains.connections.app.install_strategy import _format_manual_instructions
+
+        return _format_manual_instructions(
+            package_name=package_name,
+            extra_name=extra_name,
+            reason=reason,
+            mock_pipx=self._runtime.mock.pipx_mode,
+            probe=self._probe,
         )

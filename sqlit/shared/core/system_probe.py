@@ -75,6 +75,10 @@ class SystemProbe:
         self._os_release_content = os_release_content if os_release_content is not None else _read_os_release()
         self._path_writable = path_writable or (lambda path: os.access(path, os.W_OK))
 
+    @property
+    def executable(self) -> str:
+        return self._executable
+
     def env_value(self, key: str) -> str:
         return str(self._env.get(key, ""))
 

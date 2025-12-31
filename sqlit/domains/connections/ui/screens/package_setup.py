@@ -10,11 +10,7 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
-from sqlit.domains.connections.app.install_strategy import (
-    InstallOption,
-    detect_install_method,
-    get_install_options,
-)
+from sqlit.domains.connections.app.install_strategy import InstallOption
 from sqlit.domains.connections.providers.exceptions import MissingDriverError
 from sqlit.shared.ui.widgets import Dialog
 
@@ -71,6 +67,20 @@ class PackageSetupScreen(ModalScreen):
         self.error = error
         self._on_success = on_success
         self._install_options: list[InstallOption] = []
+        self._install_strategy = None
+
+    def _get_install_strategy(self):
+        if self._install_strategy is not None:
+            return self._install_strategy
+        services = getattr(self.app, "services", None)
+        if services is not None and getattr(services, "install_strategy", None) is not None:
+            self._install_strategy = services.install_strategy
+            return self._install_strategy
+        from sqlit.shared.app.runtime import RuntimeConfig
+        from sqlit.shared.app.services import InstallStrategyProvider
+
+        self._install_strategy = InstallStrategyProvider(RuntimeConfig())
+        return self._install_strategy
 
     def compose(self) -> ComposeResult:
         has_import_error = bool(getattr(self.error, "import_error", None))
@@ -84,14 +94,16 @@ class PackageSetupScreen(ModalScreen):
 
         shortcuts = [("Install", "<enter>"), ("Yank", "y"), ("Cancel", "<esc>")]
 
-        mock_pipx = getattr(getattr(self.app, "services", None), "runtime", None)
-        mock_pipx = getattr(getattr(mock_pipx, "mock", None), "pipx_mode", None)
-        self._install_options = get_install_options(self.error.package_name, mock_pipx=mock_pipx)
+        strategy = self._get_install_strategy()
+        self._install_options = strategy.get_install_options(
+            extra_name=self.error.extra_name,
+            package_name=self.error.package_name,
+        )
 
         with Dialog(id="package-dialog", title=title, shortcuts=shortcuts):
             yield Static(message, id="package-message")
 
-            detected = detect_install_method(mock_pipx=mock_pipx)
+            detected = strategy.detect_install_method()
             option_list = OptionList(id="install-options")
             for opt in self._install_options:
                 if opt.label == detected:

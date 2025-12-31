@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sqlit.domains.connections.app.mock_settings import set_mock_docker_containers
 from sqlit.domains.connections.discovery.docker_detector import (
     DetectedContainer,
     DockerStatus,
@@ -259,12 +258,6 @@ class TestContainerToConnectionConfig:
 
 
 class TestDetectDatabaseContainers:
-    @pytest.fixture(autouse=True)
-    def _clear_mock_docker_containers(self):
-        set_mock_docker_containers(None)
-        yield
-        set_mock_docker_containers(None)
-
     def test_detect_containers_docker_not_installed(self):
         """Test detection when docker SDK is not installed."""
         with patch(

@@ -6,13 +6,9 @@ can be used from adapters, services, and UI screens.
 
 from __future__ import annotations
 
-import importlib.util
-import os
-import site
-import sys
-import sysconfig
 from dataclasses import dataclass
-from pathlib import Path
+
+from sqlit.shared.core.system_probe import SystemProbe
 
 
 @dataclass(frozen=True)
@@ -22,134 +18,104 @@ class InstallStrategy:
     kind: str
     can_auto_install: bool
     manual_instructions: str
+    install_target: str | None = None
     auto_install_command: list[str] | None = None
     reason_unavailable: str | None = None
 
 
-def _in_venv() -> bool:
-    if os.environ.get("VIRTUAL_ENV"):
-        return True
-    base_prefix = getattr(sys, "base_prefix", sys.prefix)
-    return sys.prefix != base_prefix
+def _normalize_install_kind(kind: str) -> str:
+    return "pip" if kind == "pip-user" else kind
 
 
-def _is_pipx(mock_pipx: str | None = None) -> bool:
-    pipx_override = (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower()
+def _format_shell_target(target: str) -> str:
+    if any(ch in target for ch in (" ", "[", "]")):
+        return f"\"{target}\""
+    return target
+
+
+def _install_target_for_method(method: str, *, package_name: str, extra_name: str | None) -> str:
+    if extra_name and method in {"pip", "uv", "poetry", "pdm"}:
+        return f"sqlit-tui[{extra_name}]"
+    return package_name
+
+
+def _install_target_for_kind(kind: str, *, package_name: str, extra_name: str | None) -> str:
+    return _install_target_for_method(
+        _normalize_install_kind(kind),
+        package_name=package_name,
+        extra_name=extra_name,
+    )
+
+
+def _is_pipx(mock_pipx: str | None, probe: SystemProbe) -> bool:
+    pipx_override = (mock_pipx or "").strip().lower()
     if pipx_override in {"1", "true", "yes", "pipx"}:
         return True
     if pipx_override in {"0", "false", "no", "pip", "unknown", "no-pip", "uvx", "conda", "uv"}:
         return False
 
-    # pipx stores venvs in:
-    # - ~/.local/pipx/venvs/ (pre-1.2.0)
-    # - ~/.local/share/pipx/venvs/ (post-1.2.0, platformdirs)
-    # - $PIPX_HOME/venvs/ (custom)
-    exe = sys.executable.lower()
-    return "/pipx/venvs/" in exe or "\\pipx\\venvs\\" in exe
+    return probe.is_pipx()
 
 
-def _is_uvx(mock_pipx: str | None = None) -> bool:
+def _is_uvx(mock_pipx: str | None, probe: SystemProbe) -> bool:
     """Check if running via uvx or uv tool install."""
-    mock = (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower()
+    mock = (mock_pipx or "").strip().lower()
     if mock == "uvx":
         return True
     if mock in {"pipx", "pip", "conda", "uv"}:
         return False
 
-    # Check executable path for uv tools directory
-    # uvx/uv tool install creates venvs in ~/.local/share/uv/tools/<app>/
-    exe = sys.executable.lower()
-    return "/uv/tools/" in exe or "\\uv\\tools\\" in exe
+    return probe.is_uvx()
 
 
-def _is_uv_run(mock_pipx: str | None = None) -> bool:
+def _is_uv_run(mock_pipx: str | None, probe: SystemProbe) -> bool:
     """Check if running via uv run (uv-managed project environment)."""
-    mock = (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower()
+    mock = (mock_pipx or "").strip().lower()
     if mock == "uv":
         return True
     if mock in {"pipx", "pip", "conda", "uvx"}:
         return False
 
-    # UV env var is set when uv orchestrates the subprocess (uv run, uv sync, etc.)
-    return bool(os.environ.get("UV"))
+    return probe.is_uv_run()
 
 
-def _is_conda(mock_pipx: str | None = None) -> bool:
+def _is_conda(mock_pipx: str | None, probe: SystemProbe) -> bool:
     """Check if running in a conda environment."""
-    mock = (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower()
+    mock = (mock_pipx or "").strip().lower()
     if mock == "conda":
         return True
     if mock in {"pipx", "pip", "uvx"}:
         return False
 
-    return bool(os.environ.get("CONDA_PREFIX"))
+    return probe.is_conda()
 
 
-def _is_unknown_install(mock_pipx: str | None = None) -> bool:
+def _is_unknown_install(mock_pipx: str | None) -> bool:
     """Check if we should mock an unknown installation method (e.g., uvx)."""
-    return (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower() == "unknown"
+    return (mock_pipx or "").strip().lower() == "unknown"
 
 
-def _pep668_externally_managed() -> bool:
-    if _in_venv():
+def _pep668_externally_managed(probe: SystemProbe) -> bool:
+    return probe.pep668_externally_managed()
+
+
+def _pip_available(mock_no_pip: bool, mock_pipx: str | None, probe: SystemProbe) -> bool:
+    if mock_no_pip or (mock_pipx or "").strip().lower() == "no-pip":
         return False
-
-    candidates: list[str] = []
-    for key in ("stdlib", "platstdlib"):
-        try:
-            value = sysconfig.get_path(key)
-        except Exception:
-            value = None
-        if value:
-            candidates.append(value)
-
-    for stdlib_path in candidates:
-        marker = Path(stdlib_path) / "EXTERNALLY-MANAGED"
-        if marker.exists():
-            return True
-    return False
+    return probe.pip_available()
 
 
-def _pip_available(mock_no_pip: bool = False, mock_pipx: str | None = None) -> bool:
-    if mock_no_pip or (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower() == "no-pip":
-        return False
-    return importlib.util.find_spec("pip") is not None
+def _user_site_enabled(probe: SystemProbe) -> bool:
+    return probe.user_site_enabled()
 
 
-def _user_site_enabled() -> bool:
-    # site.ENABLE_USER_SITE already accounts for PYTHONNOUSERSITE and -s/-S in most cases.
-    try:
-        return bool(site.ENABLE_USER_SITE)
-    except Exception:
-        return False
-
-
-def _is_arch_linux() -> bool:
+def _is_arch_linux(probe: SystemProbe) -> bool:
     """Check if running on Arch Linux or derivative."""
-    try:
-        with open("/etc/os-release") as f:
-            content = f.read().lower()
-            return "arch" in content or "manjaro" in content or "endeavouros" in content
-    except (FileNotFoundError, PermissionError):
-        return False
+    return probe.is_arch_linux()
 
 
-def _install_paths_writable() -> bool:
-    try:
-        paths = sysconfig.get_paths()
-    except Exception:
-        return False
-
-    for key in ("purelib", "platlib"):
-        value = paths.get(key)
-        if not value:
-            continue
-        path = Path(value)
-        # If the directory doesn't exist, check whether we can create it under its parent.
-        probe = path if path.exists() else path.parent
-        if probe.exists() and os.access(probe, os.W_OK):
-            return True
-    return False
+def _install_paths_writable(probe: SystemProbe) -> bool:
+    return probe.install_paths_writable()
 
 
 def _get_arch_package_name(package_name: str) -> str | None:
@@ -179,41 +145,57 @@ class InstallOption:
     command: str
 
 
-def detect_install_method(mock_pipx: str | None = None) -> str:
+def detect_install_method(*, mock_pipx: str | None = None, probe: SystemProbe | None = None) -> str:
     """Detect how sqlit was installed/is running.
 
     Returns one of: 'pipx', 'uvx', 'uv', 'conda', 'pip'.
     'pipx', 'uvx', 'uv' (uv run), and 'conda' are high-confidence detections.
     """
+    probe = probe or SystemProbe()
+
     # Check high-confidence detections first (runtime environment)
-    if _is_pipx(mock_pipx):
+    if _is_pipx(mock_pipx, probe):
         return "pipx"
-    if _is_uvx(mock_pipx):
+    if _is_uvx(mock_pipx, probe):
         return "uvx"
-    if _is_uv_run(mock_pipx):
+    if _is_uv_run(mock_pipx, probe):
         return "uv"
-    if _is_conda(mock_pipx):
+    if _is_conda(mock_pipx, probe):
         return "conda"
 
     # Default to pip (most common)
     return "pip"
 
 
-def get_install_options(package_name: str, mock_pipx: str | None = None) -> list[InstallOption]:
+def get_install_options(
+    *,
+    package_name: str,
+    extra_name: str | None,
+    mock_pipx: str | None = None,
+    probe: SystemProbe | None = None,
+) -> list[InstallOption]:
     """Get list of install options for a package, ordered by detected install method."""
+    probe = probe or SystemProbe()
+
+    def target_for(method: str) -> str:
+        return _install_target_for_method(method, package_name=package_name, extra_name=extra_name)
+
+    def shell_target(method: str) -> str:
+        return _format_shell_target(target_for(method))
+
     # All available options
     all_options = {
-        "pip": InstallOption("pip", f"pip install {package_name}"),
-        "pipx": InstallOption("pipx", f"pipx inject sqlit-tui {package_name}"),
-        "uv": InstallOption("uv", f"uv pip install {package_name}"),
-        "uvx": InstallOption("uvx", f"uvx --with {package_name} sqlit-tui"),
-        "poetry": InstallOption("poetry", f"poetry add {package_name}"),
-        "pdm": InstallOption("pdm", f"pdm add {package_name}"),
-        "conda": InstallOption("conda", f"conda install {package_name}"),
+        "pip": InstallOption("pip", f"pip install {shell_target('pip')}"),
+        "pipx": InstallOption("pipx", f"pipx inject sqlit-tui {shell_target('pipx')}"),
+        "uv": InstallOption("uv", f"uv pip install {shell_target('uv')}"),
+        "uvx": InstallOption("uvx", f"uvx --with {shell_target('uvx')} sqlit-tui"),
+        "poetry": InstallOption("poetry", f"poetry add {shell_target('poetry')}"),
+        "pdm": InstallOption("pdm", f"pdm add {shell_target('pdm')}"),
+        "conda": InstallOption("conda", f"conda install {shell_target('conda')}"),
     }
 
     # Detect install method and set preferred order
-    detected = detect_install_method(mock_pipx)
+    detected = detect_install_method(mock_pipx=mock_pipx, probe=probe)
 
     # Order based on detection - detected method first, then common alternatives
     if detected == "pipx":
@@ -232,7 +214,7 @@ def get_install_options(package_name: str, mock_pipx: str | None = None) -> list
     options = [all_options[key] for key in order]
 
     # Add Arch Linux options at the end if on Arch
-    if _is_arch_linux():
+    if _is_arch_linux(probe):
         arch_pkg = _get_arch_package_name(package_name)
         if arch_pkg:
             options.append(InstallOption("pacman", f"pacman -S {arch_pkg}"))
@@ -241,13 +223,25 @@ def get_install_options(package_name: str, mock_pipx: str | None = None) -> list
     return options
 
 
-def _format_manual_instructions(package_name: str, reason: str, mock_pipx: str | None = None) -> str:
+def _format_manual_instructions(
+    *,
+    package_name: str,
+    extra_name: str | None,
+    reason: str,
+    mock_pipx: str | None = None,
+    probe: SystemProbe | None = None,
+) -> str:
     """Format manual installation instructions with rich markup."""
     lines = [
         f"{reason}\n",
         "[bold]Install the driver using your preferred package manager:[/]\n",
     ]
-    for opt in get_install_options(package_name, mock_pipx):
+    for opt in get_install_options(
+        package_name=package_name,
+        extra_name=extra_name,
+        mock_pipx=mock_pipx,
+        probe=probe,
+    ):
         lines.append(f"  [cyan]{opt.label}[/]     {opt.command}")
 
     return "\n".join(lines)
@@ -260,92 +254,121 @@ def detect_strategy(
     mock_pipx: str | None = None,
     mock_no_pip: bool = False,
     mock_driver_error: bool = False,
+    probe: SystemProbe | None = None,
 ) -> InstallStrategy:
     """Detect the best installation strategy for optional driver dependencies."""
+    probe = probe or SystemProbe()
+
     # When mocking driver errors, also force the no-pip path to show full instructions
-    if mock_driver_error or os.environ.get("SQLIT_MOCK_DRIVER_ERROR"):
+    if mock_driver_error:
+        install_target = _install_target_for_kind("pip", package_name=package_name, extra_name=extra_name)
         return InstallStrategy(
             kind="no-pip",
             can_auto_install=False,
             manual_instructions=_format_manual_instructions(
-                package_name,
-                "pip is not available for this Python interpreter.",
-                mock_pipx,
+                package_name=package_name,
+                extra_name=extra_name,
+                reason="pip is not available for this Python interpreter.",
+                mock_pipx=mock_pipx,
+                probe=probe,
             ),
             reason_unavailable="pip is not available.",
+            install_target=install_target,
         )
 
     if _is_unknown_install(mock_pipx):
+        install_target = _install_target_for_kind("pip", package_name=package_name, extra_name=extra_name)
         return InstallStrategy(
             kind="unknown",
             can_auto_install=False,
             manual_instructions=_format_manual_instructions(
-                package_name,
-                "Unable to detect how sqlit was installed.",
-                mock_pipx,
+                package_name=package_name,
+                extra_name=extra_name,
+                reason="Unable to detect how sqlit was installed.",
+                mock_pipx=mock_pipx,
+                probe=probe,
             ),
             reason_unavailable="Unable to detect installation method.",
+            install_target=install_target,
         )
 
-    if _is_pipx(mock_pipx):
-        cmd = ["pipx", "inject", "sqlit-tui", package_name]
+    if _is_pipx(mock_pipx, probe):
+        install_target = _install_target_for_kind("pipx", package_name=package_name, extra_name=extra_name)
+        cmd = ["pipx", "inject", "sqlit-tui", install_target]
         return InstallStrategy(
             kind="pipx",
             can_auto_install=True,
-            manual_instructions="pipx inject sqlit-tui " + package_name,
+            manual_instructions="pipx inject sqlit-tui " + _format_shell_target(install_target),
             auto_install_command=cmd,
+            install_target=install_target,
         )
 
-    if _pep668_externally_managed():
+    if _pep668_externally_managed(probe):
+        install_target = _install_target_for_kind("pip", package_name=package_name, extra_name=extra_name)
         return InstallStrategy(
             kind="externally-managed",
             can_auto_install=False,
             manual_instructions=_format_manual_instructions(
-                package_name,
-                "This Python environment is externally managed (PEP 668).",
-                mock_pipx,
+                package_name=package_name,
+                extra_name=extra_name,
+                reason="This Python environment is externally managed (PEP 668).",
+                mock_pipx=mock_pipx,
+                probe=probe,
             ),
             reason_unavailable="Externally managed Python environment (PEP 668).",
+            install_target=install_target,
         )
 
-    if not _pip_available(mock_no_pip, mock_pipx):
+    if not _pip_available(mock_no_pip, mock_pipx, probe):
+        install_target = _install_target_for_kind("pip", package_name=package_name, extra_name=extra_name)
         return InstallStrategy(
             kind="no-pip",
             can_auto_install=False,
             manual_instructions=_format_manual_instructions(
-                package_name,
-                "pip is not available for this Python interpreter.",
-                mock_pipx,
+                package_name=package_name,
+                extra_name=extra_name,
+                reason="pip is not available for this Python interpreter.",
+                mock_pipx=mock_pipx,
+                probe=probe,
             ),
             reason_unavailable="pip is not available.",
+            install_target=install_target,
         )
 
-    pip_cmd = [sys.executable, "-m", "pip", "install"]
-    if _in_venv() or _install_paths_writable():
-        cmd = [*pip_cmd, package_name]
+    pip_cmd = [probe.executable, "-m", "pip", "install"]
+    if probe.in_venv() or _install_paths_writable(probe):
+        install_target = _install_target_for_kind("pip", package_name=package_name, extra_name=extra_name)
+        cmd = [*pip_cmd, install_target]
         return InstallStrategy(
             kind="pip",
             can_auto_install=True,
-            manual_instructions=f"{sys.executable} -m pip install {package_name}",
+            manual_instructions=f"{probe.executable} -m pip install {_format_shell_target(install_target)}",
             auto_install_command=cmd,
+            install_target=install_target,
         )
 
-    if _user_site_enabled():
-        cmd = [*pip_cmd, "--user", package_name]
+    if _user_site_enabled(probe):
+        install_target = _install_target_for_kind("pip", package_name=package_name, extra_name=extra_name)
+        cmd = [*pip_cmd, "--user", install_target]
         return InstallStrategy(
             kind="pip-user",
             can_auto_install=True,
-            manual_instructions=f"{sys.executable} -m pip install --user {package_name}",
+            manual_instructions=f"{probe.executable} -m pip install --user {_format_shell_target(install_target)}",
             auto_install_command=cmd,
+            install_target=install_target,
         )
 
+    install_target = _install_target_for_kind("pip", package_name=package_name, extra_name=extra_name)
     return InstallStrategy(
         kind="pip-unwritable",
         can_auto_install=False,
         manual_instructions=_format_manual_instructions(
-            package_name,
-            "This Python environment is not writable and user-site installs are disabled.",
-            mock_pipx,
+            package_name=package_name,
+            extra_name=extra_name,
+            reason="This Python environment is not writable and user-site installs are disabled.",
+            mock_pipx=mock_pipx,
+            probe=probe,
         ),
         reason_unavailable="Python environment not writable and user-site disabled.",
+        install_target=install_target,
     )

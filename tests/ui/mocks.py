@@ -109,6 +109,8 @@ def build_test_services(
     settings_store: MockSettingsStore | None = None,
     history_store: MockHistoryStore | None = None,
     docker_detector: Any | None = None,
+    sync_process_runner: Any | None = None,
+    async_process_runner: Any | None = None,
 ) -> AppServices:
     runtime = runtime or RuntimeConfig()
     history_store = history_store or MockHistoryStore()
@@ -118,6 +120,8 @@ def build_test_services(
         settings_store=settings_store,
         history_store=history_store,
         docker_detector=docker_detector,
+        sync_process_runner=sync_process_runner,
+        async_process_runner=async_process_runner,
     )
 
 

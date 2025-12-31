@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import threading
@@ -12,6 +11,7 @@ from typing import Any, Protocol
 
 from sqlit.domains.connections.app.install_strategy import detect_strategy
 from sqlit.domains.connections.providers.exceptions import MissingDriverError
+from sqlit.shared.core.processes import SubprocessRunner, SyncProcess, SyncProcessRunner
 
 
 class InstallerApp(Protocol):
@@ -25,9 +25,10 @@ class InstallerApp(Protocol):
 class Installer:
     """Manages the automatic installation of missing drivers."""
 
-    def __init__(self, app: InstallerApp):
+    def __init__(self, app: InstallerApp, *, process_runner: SyncProcessRunner | None = None):
         self.app = app
-        self._active_process: subprocess.Popen[str] | None = None
+        self._process_runner = process_runner
+        self._active_process: SyncProcess | None = None
 
     def install(self, error: MissingDriverError) -> None:
         """Push a loading screen and run installation in a background thread."""
@@ -74,15 +75,10 @@ class Installer:
         mock_install = None
         if services is not None:
             mock_install = services.runtime.mock.install_result
-        if not mock_install:
-            mock_install = os.environ.get("SQLIT_MOCK_INSTALL_RESULT", "").strip().lower()
         if mock_install in {"success", "ok", "pass"}:
-            return True, "Mocked success (SQLIT_MOCK_INSTALL_RESULT=success)", error
+            return True, "Mocked success (install_result=success)", error
         if mock_install in {"fail", "error"}:
-            return False, "Mocked failure (SQLIT_MOCK_INSTALL_RESULT=fail)", error
-
-        if os.environ.get("SQLIT_INSTALL_FORCE_FAIL") == "1":
-            return False, "Forced failure (SQLIT_INSTALL_FORCE_FAIL=1)", error
+            return False, "Mocked failure (install_result=fail)", error
 
         if services is not None:
             strategy = services.install_strategy.detect(
@@ -102,13 +98,13 @@ class Installer:
             return False, "Installation cancelled by user.", error
 
         try:
-            self._active_process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=cwd,
-            )
+            runner = self._process_runner
+            if runner is None and services is not None:
+                runner = getattr(services, "sync_process_runner", None)
+            if runner is None:
+                runner = SubprocessRunner()
+
+            self._active_process = runner.spawn(command, cwd=cwd)
 
             stdout = ""
             stderr = ""

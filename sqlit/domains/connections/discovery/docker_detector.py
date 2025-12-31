@@ -317,15 +317,6 @@ def detect_database_containers(
         exited = [c for c in mock_containers if c.status == ContainerStatus.EXITED]
         return DockerStatus.AVAILABLE, running + exited
 
-    # Legacy global mock containers (deprecated)
-    from sqlit.domains.connections.app.mock_settings import get_mock_docker_containers
-
-    legacy_containers = get_mock_docker_containers()
-    if legacy_containers:
-        running = [c for c in legacy_containers if c.status == ContainerStatus.RUNNING]
-        exited = [c for c in legacy_containers if c.status == ContainerStatus.EXITED]
-        return DockerStatus.AVAILABLE, running + exited
-
     status = get_docker_status()
     if status != DockerStatus.AVAILABLE:
         return status, []

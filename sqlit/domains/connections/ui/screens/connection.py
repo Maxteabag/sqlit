@@ -472,13 +472,20 @@ class ConnectionScreen(ModalScreen):
         except Exception:
             return "tab-general"
 
-    def _format_install_hint(self, strategy: Any, package_name: str) -> str:
+    def _format_install_target(self, target: str) -> str:
+        if any(ch in target for ch in (" ", "[", "]")):
+            return f"\"{target}\""
+        return target
+
+    def _format_install_hint(self, strategy: Any) -> str:
+        target = str(getattr(strategy, "install_target", "") or "")
+        target_hint = self._format_install_target(target) if target else ""
         if strategy.kind == "pip":
-            return f"pip install {package_name}"
+            return f"pip install {target_hint}".strip()
         if strategy.kind == "pip-user":
-            return f"pip install --user {package_name}"
+            return f"pip install --user {target_hint}".strip()
         if strategy.kind == "pipx":
-            return f"pipx inject sqlit-tui {package_name}"
+            return f"pipx inject sqlit-tui {target_hint}".strip()
         manual = getattr(strategy, "manual_instructions", "")
         if isinstance(manual, str) and manual:
             return manual.split("\n")[0].strip()
@@ -517,7 +524,7 @@ class ConnectionScreen(ModalScreen):
                 package_name=error.package_name,
             )
             if strategy.can_auto_install:
-                install_cmd = self._format_install_hint(strategy, error.package_name)
+                install_cmd = self._format_install_hint(strategy)
                 test_status.update(
                     f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
                     f"[dim]Install with:[/] {escape(install_cmd)}"
@@ -1375,7 +1382,7 @@ class ConnectionScreen(ModalScreen):
                 package_name=driver.package_name,
             )
             if strategy.can_auto_install:
-                return self._format_install_hint(strategy, driver.package_name)
+                return self._format_install_hint(strategy)
             manual = getattr(strategy, "manual_instructions", "")
             if isinstance(manual, str) and manual:
                 return manual.split("\n")[0].strip()
