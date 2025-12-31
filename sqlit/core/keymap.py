@@ -195,6 +195,12 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("g", "first_line", "Go to first line", "Go to", menu="g"),
             LeaderCommandDef("e", "word_end_back", "End of prev word", "Go to", menu="g"),
             LeaderCommandDef("E", "WORD_end_back", "End of prev WORD", "Go to", menu="g"),
+            LeaderCommandDef("c", "comment", "Toggle comment...", "Toggle", menu="g"),
+            # gc comment menu (vim-style)
+            LeaderCommandDef("c", "line", "Toggle line comment", "Comment", menu="gc"),
+            LeaderCommandDef("j", "down", "Comment line down", "Comment", menu="gc"),
+            LeaderCommandDef("k", "up", "Comment line up", "Comment", menu="gc"),
+            LeaderCommandDef("G", "to_end", "Comment to end", "Comment", menu="gc"),
         ]
 
     def get_action_keys(self) -> list[ActionKeyDef]:

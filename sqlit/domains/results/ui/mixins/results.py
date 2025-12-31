@@ -14,6 +14,9 @@ class ResultsMixin:
     _last_result_columns: list[str] = []
     _last_result_rows: list[tuple[Any, ...]] = []
     _last_result_row_count: int = 0
+    _tooltip_cell_coord: tuple[int, int] | None = None
+    _tooltip_showing: bool = False
+    _tooltip_timer: Any | None = None
 
     def _copy_text(self: ResultsMixinHost, text: str) -> bool:
         """Copy text to clipboard if possible, otherwise store internally."""
@@ -79,8 +82,28 @@ class ResultsMixin:
         return "\n".join(lines)
 
     def action_view_cell(self: ResultsMixinHost) -> None:
-        """Show the selected cell value (full view)."""
-        self.action_view_cell_full()
+        """Preview the selected cell value (tooltip)."""
+        table = self.results_table
+        if table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+        try:
+            cursor_coord = table.cursor_coordinate
+            value = table.get_cell_at(cursor_coord)
+        except Exception:
+            return
+
+        coord_key = (
+            (cursor_coord.row, cursor_coord.column)
+            if hasattr(cursor_coord, "row")
+            else tuple(cursor_coord)
+        )
+
+        if self._tooltip_showing and self._tooltip_cell_coord == coord_key:
+            self._hide_cell_tooltip(table)
+            return
+
+        self._show_cell_tooltip(table, cursor_coord, value)
 
     def action_view_cell_full(self: ResultsMixinHost) -> None:
         """View the full value of the selected cell inline."""
@@ -95,6 +118,8 @@ class ResultsMixin:
             value = table.get_cell_at(table.cursor_coordinate)
         except Exception:
             return
+
+        self._hide_cell_tooltip(table)
 
         # Get column name if available
         column_name = ""
@@ -149,6 +174,67 @@ class ResultsMixin:
             return
         self._copy_text(str(value) if value is not None else "NULL")
         self._flash_table_yank(table, "cell")
+
+    def _show_cell_tooltip(
+        self: ResultsMixinHost,
+        table: SqlitDataTable,
+        coordinate: Any,
+        value: Any,
+    ) -> None:
+        """Show a manual tooltip preview for the selected cell."""
+        if self._tooltip_timer is not None:
+            self._tooltip_timer.stop()
+            self._tooltip_timer = None
+
+        tooltip_value = "NULL" if value is None else str(value)
+        if len(tooltip_value) > 2000:
+            tooltip_value = f"{tooltip_value[:2000]}..."
+
+        try:
+            table.tooltip = tooltip_value
+            table._manual_tooltip_active = True
+        except Exception:
+            pass
+
+        try:
+            from textual.geometry import Offset
+
+            cell_region = table._get_cell_region(coordinate)
+            x = int(table.region.x + cell_region.x - int(table.scroll_x))
+            y = int(table.region.y + cell_region.y - int(table.scroll_y))
+            x += max(0, cell_region.width // 2)
+            self.app.mouse_position = Offset(x, y)
+        except Exception:
+            pass
+
+        try:
+            screen = table.screen
+            screen._tooltip_widget = table
+            screen._handle_tooltip_timer(table)
+        except Exception:
+            pass
+
+        coord_key = (
+            (coordinate.row, coordinate.column)
+            if hasattr(coordinate, "row")
+            else tuple(coordinate)
+        )
+        self._tooltip_cell_coord = coord_key
+        self._tooltip_showing = True
+        self._tooltip_timer = self.set_timer(2.5, lambda: self._hide_cell_tooltip(table))
+
+    def _hide_cell_tooltip(self: ResultsMixinHost, table: SqlitDataTable) -> None:
+        """Hide any active manual tooltip preview."""
+        if self._tooltip_timer is not None:
+            self._tooltip_timer.stop()
+            self._tooltip_timer = None
+        try:
+            table.tooltip = None
+            table._manual_tooltip_active = False
+        except Exception:
+            pass
+        self._tooltip_cell_coord = None
+        self._tooltip_showing = False
 
     def action_copy_row(self: ResultsMixinHost) -> None:
         """Copy the selected row to clipboard (TSV)."""

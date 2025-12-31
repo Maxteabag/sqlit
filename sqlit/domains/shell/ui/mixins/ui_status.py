@@ -153,10 +153,11 @@ class UIStatusMixin:
         # Build status indicators
         status_parts = []
 
-        # Check if schema is indexing
+        # Check if schema is indexing (only show during debugging)
         schema_spinner = getattr(self, "_schema_spinner", None)
         if schema_spinner and schema_spinner.running:
-            status_parts.append(f"[bold cyan]{schema_spinner.frame} Indexing...[/]")
+            if getattr(self, "_debug_mode", False) or getattr(self, "_debug_idle_scheduler", False):
+                status_parts.append(f"[bold cyan]{schema_spinner.frame} Indexing...[/]")
 
         # Check if query is executing
         query_spinner = getattr(self, "_query_spinner", None)

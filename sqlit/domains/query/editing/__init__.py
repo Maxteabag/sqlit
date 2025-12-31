@@ -21,6 +21,7 @@ from .text_objects import TEXT_OBJECT_CHARS, get_text_object
 # Vim motion engine
 from .types import MotionResult, MotionType, OperatorResult, Position, Range
 from .undo_history import UndoHistory, UndoState
+from .comments import toggle_comment_lines
 
 __all__ = [
     # Deletion
@@ -60,4 +61,6 @@ __all__ = [
     # Undo/redo
     "UndoHistory",
     "UndoState",
+    # Comments
+    "toggle_comment_lines",
 ]

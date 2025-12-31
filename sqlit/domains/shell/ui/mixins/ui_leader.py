@@ -41,8 +41,8 @@ class UILeaderMixin:
                 self._leader_pending = False
                 self._show_leader_menu(menu)
 
-        # Show menu after 200ms delay
-        self._leader_timer = self.set_timer(0.2, show_menu)
+        # Show menu after 250ms delay
+        self._leader_timer = self.set_timer(0.25, show_menu)
 
     def _cancel_leader_pending(self: UINavigationMixinHost) -> None:
         """Cancel leader pending state and timer."""

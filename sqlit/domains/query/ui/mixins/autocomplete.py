@@ -197,6 +197,11 @@ class AutocompleteMixin(AutocompleteSchemaMixin, AutocompleteSuggestionsMixin):
         """Close autocomplete dropdown without exiting insert mode."""
         self._hide_autocomplete()
 
+    def action_autocomplete_accept(self: AutocompleteMixinHost) -> None:
+        """Accept the current autocomplete suggestion."""
+        if self._autocomplete_visible:
+            self._apply_autocomplete()
+
     def on_text_area_selection_changed(self: AutocompleteMixinHost, event: Any) -> None:
         """Hide autocomplete when cursor moves without text change."""
         if not self._autocomplete_visible:
