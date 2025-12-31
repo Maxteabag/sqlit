@@ -4,13 +4,15 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
+from pathlib import Path
 
 from sqlit.domains.connections.cli.helpers import add_schema_arguments, build_connection_config_from_args
 from sqlit.domains.connections.domain.config import AuthType, ConnectionConfig, DatabaseType
 from sqlit.domains.connections.providers.catalog import get_provider_schema, get_supported_db_types
+from sqlit.shared.app.runtime import MockConfig, RuntimeConfig
+from sqlit.shared.app.services import build_app_services
 
 
 def _get_schema_value_flags() -> set[str]:
@@ -89,6 +91,40 @@ def _extract_connection_url(argv: list[str]) -> tuple[str | None, list[str]]:
         i += 1
 
     return url, result_argv
+
+
+def _parse_missing_drivers(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
+def _build_runtime(args: argparse.Namespace, startup_mark: float) -> RuntimeConfig:
+    settings_path = Path(args.settings).expanduser() if args.settings else None
+    max_rows = args.max_rows if args.max_rows and args.max_rows > 0 else None
+    mock_install = args.mock_install if args.mock_install != "real" else None
+    mock_pipx = args.mock_pipx if args.mock_pipx != "auto" else None
+
+    mock_config = MockConfig(
+        enabled=bool(args.mock),
+        missing_drivers=_parse_missing_drivers(args.mock_missing_drivers),
+        install_result=mock_install,
+        pipx_mode=mock_pipx,
+        query_delay=args.mock_query_delay or 0.0,
+        demo_rows=args.demo_rows or 0,
+        demo_long_text=bool(args.demo_long_text),
+        cloud=bool(args.mock_cloud),
+    )
+
+    return RuntimeConfig(
+        settings_path=settings_path,
+        max_rows=max_rows,
+        debug_mode=bool(args.debug),
+        debug_idle_scheduler=bool(args.debug_idle_scheduler),
+        profile_startup=bool(args.profile_startup),
+        startup_mark=startup_mark if args.profile_startup or args.debug else None,
+        mock=mock_config,
+    )
 
 
 def main() -> int:
@@ -292,59 +328,12 @@ def main() -> int:
 
     startup_mark = time.perf_counter()
     args = parser.parse_args(filtered_argv[1:])  # Skip program name
-    if args.settings:
-        os.environ["SQLIT_SETTINGS_PATH"] = str(args.settings)
-    if args.mock_missing_drivers:
-        os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = str(args.mock_missing_drivers)
-    if args.mock_install and args.mock_install != "real":
-        os.environ["SQLIT_MOCK_INSTALL_RESULT"] = str(args.mock_install)
-    else:
-        os.environ.pop("SQLIT_MOCK_INSTALL_RESULT", None)
-    if args.mock_pipx and args.mock_pipx != "auto":
-        os.environ["SQLIT_MOCK_PIPX"] = str(args.mock_pipx)
-    else:
-        os.environ.pop("SQLIT_MOCK_PIPX", None)
-    if args.mock_query_delay and args.mock_query_delay > 0:
-        os.environ["SQLIT_MOCK_QUERY_DELAY"] = str(args.mock_query_delay)
-    else:
-        os.environ.pop("SQLIT_MOCK_QUERY_DELAY", None)
-    if args.demo_rows and args.demo_rows > 0:
-        os.environ["SQLIT_DEMO_ROWS"] = str(args.demo_rows)
-    else:
-        os.environ.pop("SQLIT_DEMO_ROWS", None)
-    if args.demo_long_text:
-        os.environ["SQLIT_DEMO_LONG_TEXT"] = "1"
-    else:
-        os.environ.pop("SQLIT_DEMO_LONG_TEXT", None)
-    if args.max_rows and args.max_rows > 0:
-        os.environ["SQLIT_MAX_ROWS"] = str(args.max_rows)
-    else:
-        os.environ.pop("SQLIT_MAX_ROWS", None)
-    if args.mock_cloud:
-        os.environ["SQLIT_MOCK_CLOUD"] = "1"
-    else:
-        os.environ.pop("SQLIT_MOCK_CLOUD", None)
-    if args.profile_startup:
-        os.environ["SQLIT_PROFILE_STARTUP"] = "1"
-    else:
-        os.environ.pop("SQLIT_PROFILE_STARTUP", None)
-    if args.debug:
-        os.environ["SQLIT_DEBUG"] = "1"
-    else:
-        os.environ.pop("SQLIT_DEBUG", None)
-    if args.debug_idle_scheduler:
-        os.environ["SQLIT_DEBUG_IDLE_SCHEDULER"] = "1"
-    else:
-        os.environ.pop("SQLIT_DEBUG_IDLE_SCHEDULER", None)
-    if args.profile_startup or args.debug:
-        os.environ["SQLIT_STARTUP_MARK"] = str(startup_mark)
-    else:
-        os.environ.pop("SQLIT_STARTUP_MARK", None)
+    runtime = _build_runtime(args, startup_mark)
+    services = build_app_services(runtime)
     if args.command is None:
         from sqlit.domains.shell.app.main import SSMSTUI
         from sqlit.domains.connections.app.url_parser import parse_connection_url
 
-        mock_profile = None
         if args.mock:
             from sqlit.domains.connections.app.mocks import get_mock_profile, list_mock_profiles
 
@@ -353,6 +342,7 @@ def main() -> int:
                 print(f"Unknown mock profile: {args.mock}")
                 print(f"Available profiles: {', '.join(list_mock_profiles())}")
                 return 1
+            services.apply_mock_profile(mock_profile)
 
         temp_config = None
         try:
@@ -368,7 +358,7 @@ def main() -> int:
             print(f"Error: {exc}")
             return 1
 
-        app = SSMSTUI(mock_profile=mock_profile, startup_connection=temp_config)
+        app = SSMSTUI(services=services, startup_connection=temp_config)
         app.run()
         return 0
 
@@ -388,7 +378,6 @@ def main() -> int:
             connect_parser.print_help()
             return 1
 
-        mock_profile = None
         if args.mock:
             from sqlit.domains.connections.app.mocks import get_mock_profile, list_mock_profiles
 
@@ -397,6 +386,7 @@ def main() -> int:
                 print(f"Unknown mock profile: {args.mock}")
                 print(f"Available profiles: {', '.join(list_mock_profiles())}")
                 return 1
+            services.apply_mock_profile(mock_profile)
 
         schema = get_provider_schema(provider_db_type)
         try:
@@ -411,31 +401,31 @@ def main() -> int:
             print(f"Error: {exc}")
             return 1
 
-        app = SSMSTUI(mock_profile=mock_profile, startup_connection=temp_config)
+        app = SSMSTUI(services=services, startup_connection=temp_config)
         app.run()
         return 0
 
     if args.command in {"connections", "connection"}:
         if args.conn_command == "list":
-            return cmd_connection_list(args)
+            return cmd_connection_list(args, services=services)
         elif args.conn_command in {"add", "create"}:
-            return cmd_connection_create(args)
+            return cmd_connection_create(args, services=services)
         elif args.conn_command == "edit":
-            return cmd_connection_edit(args)
+            return cmd_connection_edit(args, services=services)
         elif args.conn_command == "delete":
-            return cmd_connection_delete(args)
+            return cmd_connection_delete(args, services=services)
         else:
             conn_parser.print_help()
             return 1
 
     if args.command == "query":
-        return cmd_query(args)
+        return cmd_query(args, services=services)
 
     if args.command == "docker":
         from sqlit.domains.connections.cli.commands import cmd_docker_list
 
         if args.docker_command == "list":
-            return cmd_docker_list(args)
+            return cmd_docker_list(args, services=services)
         else:
             docker_parser.print_help()
             return 1

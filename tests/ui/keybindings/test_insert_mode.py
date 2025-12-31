@@ -8,6 +8,16 @@ from sqlit.domains.shell.app.main import SSMSTUI
 from sqlit.domains.shell.app.keymap import get_keymap
 from sqlit.shared.ui.widgets import VimMode
 
+from ..mocks import MockConnectionStore, MockSettingsStore, build_test_services
+
+
+def _make_app() -> SSMSTUI:
+    services = build_test_services(
+        connection_store=MockConnectionStore(),
+        settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+    )
+    return SSMSTUI(services=services)
+
 
 class TestInsertModeKeybindings:
     """Test keybindings in vim INSERT mode."""
@@ -18,7 +28,7 @@ class TestInsertModeKeybindings:
         keymap = get_keymap()
         insert_key = keymap.action("enter_insert_mode")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_query()
@@ -37,7 +47,7 @@ class TestInsertModeKeybindings:
         keymap = get_keymap()
         exit_key = keymap.action("exit_insert_mode")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_query()
@@ -60,7 +70,7 @@ class TestInsertModeKeybindings:
         keymap = get_keymap()
         focus_explorer_key = keymap.action("focus_explorer")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_query()

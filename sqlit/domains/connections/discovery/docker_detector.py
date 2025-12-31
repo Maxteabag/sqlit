@@ -301,21 +301,29 @@ def _detect_containers_with_status(
     return detected
 
 
-def detect_database_containers() -> tuple[DockerStatus, list[DetectedContainer]]:
+def detect_database_containers(
+    mock_containers: list[DetectedContainer] | None = None,
+) -> tuple[DockerStatus, list[DetectedContainer]]:
     """Scan Docker containers for databases (running and exited).
 
     Returns:
         Tuple of (DockerStatus, list of DetectedContainer objects).
         Running containers are listed first, followed by exited containers.
     """
-    # Check for mock containers first
-    from sqlit.domains.connections.app.mock_settings import get_mock_docker_containers
-
-    mock_containers = get_mock_docker_containers()
+    # Check for explicit mock containers first
     if mock_containers is not None and mock_containers:
         # Sort: running first, then exited
         running = [c for c in mock_containers if c.status == ContainerStatus.RUNNING]
         exited = [c for c in mock_containers if c.status == ContainerStatus.EXITED]
+        return DockerStatus.AVAILABLE, running + exited
+
+    # Legacy global mock containers (deprecated)
+    from sqlit.domains.connections.app.mock_settings import get_mock_docker_containers
+
+    legacy_containers = get_mock_docker_containers()
+    if legacy_containers:
+        running = [c for c in legacy_containers if c.status == ContainerStatus.RUNNING]
+        exited = [c for c in legacy_containers if c.status == ContainerStatus.EXITED]
         return DockerStatus.AVAILABLE, running + exited
 
     status = get_docker_status()

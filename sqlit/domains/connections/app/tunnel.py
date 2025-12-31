@@ -77,3 +77,12 @@ def create_ssh_tunnel(config: ConnectionConfig) -> tuple[Any, str, int]:
     tunnel.start()
 
     return tunnel, "127.0.0.1", tunnel.local_bind_port
+
+
+def create_noop_tunnel(config: ConnectionConfig) -> tuple[Any, str, int]:
+    """Return the original endpoint without creating a tunnel."""
+    endpoint = config.tcp_endpoint
+    if endpoint is None:
+        return None, "", 0
+    port = int(endpoint.port) if endpoint.port else 0
+    return None, endpoint.host, port

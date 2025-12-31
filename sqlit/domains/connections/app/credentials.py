@@ -327,26 +327,26 @@ class PlaintextFileCredentialsService(CredentialsService):
 _credentials_service: CredentialsService | None = None
 
 
+def build_credentials_service(settings_store: Any | None = None) -> CredentialsService:
+    """Build a credentials service with an optional settings store."""
+    if is_keyring_usable():
+        return KeyringCredentialsService()
+
+    if settings_store is None:
+        from sqlit.domains.shell.store.settings import SettingsStore
+
+        settings_store = SettingsStore.get_instance()
+
+    settings = settings_store.load_all()
+    allow_plaintext = bool(settings.get(ALLOW_PLAINTEXT_CREDENTIALS_SETTING))
+    return PlaintextFileCredentialsService() if allow_plaintext else PlaintextCredentialsService()
+
+
 def get_credentials_service() -> CredentialsService:
-    """Get the global credentials service instance.
-
-    Returns the keyring-based service by default. If keyring isn't usable,
-    falls back to a plaintext file store if user consent is recorded in
-    settings; otherwise falls back to an in-memory store (not persisted).
-
-    Returns:
-        The credentials service instance.
-    """
+    """Get the global credentials service instance."""
     global _credentials_service
     if _credentials_service is None:
-        if is_keyring_usable():
-            _credentials_service = KeyringCredentialsService()
-        else:
-            from sqlit.domains.shell.store.settings import SettingsStore
-
-            settings = SettingsStore.get_instance().load_all()
-            allow_plaintext = bool(settings.get(ALLOW_PLAINTEXT_CREDENTIALS_SETTING))
-            _credentials_service = PlaintextFileCredentialsService() if allow_plaintext else PlaintextCredentialsService()
+        _credentials_service = build_credentials_service()
     return _credentials_service
 
 

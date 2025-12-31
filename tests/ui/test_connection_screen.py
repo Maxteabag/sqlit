@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.helpers import ConnectionConfig
+from sqlit.domains.connections.domain.config import FileEndpoint
 
 from .conftest import ConnectionScreenTestApp
 
@@ -33,7 +34,8 @@ class TestConnectionScreen:
         assert action == "save"
         assert config.name == "my-sqlite"
         assert config.db_type == "sqlite"
-        assert config.get_option("file_path") == str(db_path)
+        assert isinstance(config.endpoint, FileEndpoint)
+        assert config.endpoint.path == str(db_path)
         assert original_name is None  # New connection has no original name
 
     @pytest.mark.asyncio
@@ -68,7 +70,8 @@ class TestConnectionScreen:
         assert action == "save"
         assert config.name == "new-prod-db"
         assert config.db_type == "sqlite"
-        assert config.get_option("file_path") == str(new_db)
+        assert isinstance(config.endpoint, FileEndpoint)
+        assert config.endpoint.path == str(new_db)
         assert original_name == "prod-db"  # Original name preserved for edit
 
     @pytest.mark.asyncio
@@ -84,7 +87,7 @@ class TestConnectionScreen:
 
     @pytest.mark.asyncio
     async def test_empty_fields_shows_validation_errors(self):
-        app = ConnectionScreenTestApp()
+        app = ConnectionScreenTestApp(prefill_values={"db_type": "mssql"})
 
         async with app.run_test(size=(100, 35)) as pilot:
             screen = app.screen

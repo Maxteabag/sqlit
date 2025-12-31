@@ -22,9 +22,11 @@ def import_driver_module(
     driver_name: str,
     extra_name: str | None,
     package_name: str | None,
+    runtime: Any | None = None,
 ) -> Any:
     """Import a driver module, raising MissingDriverError with detail if it fails."""
-    if os.environ.get("SQLIT_MOCK_DRIVER_ERROR") and extra_name and package_name:
+    mock_driver_error = bool(getattr(getattr(runtime, "mock", None), "driver_error", False))
+    if (mock_driver_error or os.environ.get("SQLIT_MOCK_DRIVER_ERROR")) and extra_name and package_name:
         from sqlit.domains.connections.providers.exceptions import MissingDriverError
 
         raise MissingDriverError(
@@ -52,7 +54,7 @@ def import_driver_module(
         ) from e
 
 
-def ensure_driver_available(driver: DriverDescriptor) -> None:
+def ensure_driver_available(driver: DriverDescriptor, runtime: Any | None = None) -> None:
     if not driver.import_names:
         return
     for module_name in driver.import_names:
@@ -61,27 +63,30 @@ def ensure_driver_available(driver: DriverDescriptor) -> None:
             driver_name=driver.driver_name,
             extra_name=driver.extra_name,
             package_name=driver.package_name,
+            runtime=runtime,
         )
 
 
-def ensure_provider_driver_available(provider: Any) -> None:
+def ensure_provider_driver_available(provider: Any, runtime: Any | None = None) -> None:
     driver = getattr(provider, "driver", None)
     if driver is None:
         return
 
-    missing = os.environ.get("SQLIT_MOCK_MISSING_DRIVERS", "")
-    if missing:
+    mock_missing = getattr(getattr(runtime, "mock", None), "missing_drivers", None)
+    requested = {item.strip().lower() for item in mock_missing or [] if item.strip()}
+    if not requested:
+        missing = os.environ.get("SQLIT_MOCK_MISSING_DRIVERS", "")
         requested = {item.strip().lower() for item in missing.split(",") if item.strip()}
-        db_type = getattr(getattr(provider, "metadata", None), "db_type", "").lower()
-        if db_type and db_type in requested:
-            from sqlit.domains.connections.providers.exceptions import MissingDriverError
+    db_type = getattr(getattr(provider, "metadata", None), "db_type", "").lower()
+    if db_type and db_type in requested:
+        from sqlit.domains.connections.providers.exceptions import MissingDriverError
 
-            raise MissingDriverError(
-                driver.driver_name,
-                driver.extra_name or "",
-                driver.package_name or "",
-                module_name=None,
-                import_error=None,
-            )
+        raise MissingDriverError(
+            driver.driver_name,
+            driver.extra_name or "",
+            driver.package_name or "",
+            module_name=None,
+            import_error=None,
+        )
 
-    ensure_driver_available(driver)
+    ensure_driver_available(driver, runtime=runtime)

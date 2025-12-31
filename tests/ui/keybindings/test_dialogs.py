@@ -10,6 +10,16 @@ from sqlit.shared.ui.screens.confirm import ConfirmScreen
 from sqlit.shared.ui.screens.error import ErrorScreen
 from sqlit.domains.shell.ui.screens.help import HelpScreen
 
+from ..mocks import MockConnectionStore, MockSettingsStore, build_test_services
+
+
+def _make_app() -> SSMSTUI:
+    services = build_test_services(
+        connection_store=MockConnectionStore(),
+        settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+    )
+    return SSMSTUI(services=services)
+
 
 class TestDialogKeybindings:
     """Test that dialogs block normal keybindings and have their own actions."""
@@ -20,7 +30,7 @@ class TestDialogKeybindings:
         keymap = get_keymap()
         focus_query_key = keymap.action("focus_query")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Focus explorer first
@@ -48,7 +58,7 @@ class TestDialogKeybindings:
     @pytest.mark.asyncio
     async def test_error_dialog_close_with_enter(self):
         """Error dialog should close with enter key."""
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Open error dialog
@@ -68,7 +78,7 @@ class TestDialogKeybindings:
     @pytest.mark.asyncio
     async def test_error_dialog_close_with_escape(self):
         """Error dialog should close with escape key."""
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Open error dialog
@@ -86,7 +96,7 @@ class TestDialogKeybindings:
     @pytest.mark.asyncio
     async def test_error_dialog_copy_action(self):
         """Error dialog 'y' key should copy message."""
-        app = SSMSTUI()
+        app = _make_app()
         test_message = "This is a test error message"
         copied_text = {"value": None}
 
@@ -115,7 +125,7 @@ class TestDialogKeybindings:
     @pytest.mark.asyncio
     async def test_confirm_dialog_yes_action(self):
         """Confirm dialog 'y' key should confirm and close."""
-        app = SSMSTUI()
+        app = _make_app()
         result_holder = {"result": None}
 
         def capture_result(result):
@@ -140,7 +150,7 @@ class TestDialogKeybindings:
     @pytest.mark.asyncio
     async def test_confirm_dialog_no_action(self):
         """Confirm dialog 'n' key should cancel and close."""
-        app = SSMSTUI()
+        app = _make_app()
         result_holder = {"result": None}
 
         def capture_result(result):
@@ -165,7 +175,7 @@ class TestDialogKeybindings:
 
         Note: Escape returns None (cancelled) vs False (explicit No).
         """
-        app = SSMSTUI()
+        app = _make_app()
         result_holder = {"result": "not_called"}
 
         def capture_result(result):
@@ -188,7 +198,7 @@ class TestDialogKeybindings:
         keymap = get_keymap()
         focus_explorer_key = keymap.action("focus_explorer")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Focus query first
@@ -214,7 +224,7 @@ class TestDialogKeybindings:
     @pytest.mark.asyncio
     async def test_help_dialog_closes_with_escape(self):
         """Help dialog should close with escape."""
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Open help
@@ -239,7 +249,7 @@ class TestDialogKeybindings:
         leader_key = keymap.action("leader_key")
         theme_key = keymap.leader("change_theme")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Open error dialog
@@ -259,7 +269,7 @@ class TestDialogKeybindings:
     @pytest.mark.asyncio
     async def test_nested_dialogs_both_block(self):
         """When multiple dialogs are stacked, outer actions should be blocked."""
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Open first dialog

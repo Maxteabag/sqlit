@@ -11,7 +11,11 @@ from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
 from sqlit.domains.connections.providers.exceptions import MissingDriverError
-from sqlit.domains.connections.app.install_strategy import detect_install_method, get_install_options
+from sqlit.domains.connections.app.install_strategy import (
+    InstallOption,
+    detect_install_method,
+    get_install_options,
+)
 from sqlit.shared.ui.widgets import Dialog
 
 
@@ -66,7 +70,7 @@ class PackageSetupScreen(ModalScreen):
         super().__init__()
         self.error = error
         self._on_success = on_success
-        self._install_options = get_install_options(error.package_name)
+        self._install_options: list[InstallOption] = []
 
     def compose(self) -> ComposeResult:
         has_import_error = bool(getattr(self.error, "import_error", None))
@@ -80,10 +84,14 @@ class PackageSetupScreen(ModalScreen):
 
         shortcuts = [("Install", "<enter>"), ("Yank", "y"), ("Cancel", "<esc>")]
 
+        mock_pipx = getattr(getattr(self.app, "services", None), "runtime", None)
+        mock_pipx = getattr(getattr(mock_pipx, "mock", None), "pipx_mode", None)
+        self._install_options = get_install_options(self.error.package_name, mock_pipx=mock_pipx)
+
         with Dialog(id="package-dialog", title=title, shortcuts=shortcuts):
             yield Static(message, id="package-message")
 
-            detected = detect_install_method()
+            detected = detect_install_method(mock_pipx=mock_pipx)
             option_list = OptionList(id="install-options")
             for opt in self._install_options:
                 if opt.label == detected:

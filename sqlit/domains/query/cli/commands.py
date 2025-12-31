@@ -11,8 +11,8 @@ from typing import Any
 from sqlit.domains.connections.app.session import ConnectionSession
 from sqlit.domains.connections.cli.prompts import prompt_for_password
 from sqlit.domains.connections.domain.config import ConnectionConfig
-from sqlit.domains.connections.providers.catalog import get_provider
-from sqlit.domains.connections.store.connections import load_connections
+from sqlit.shared.app.runtime import RuntimeConfig
+from sqlit.shared.app.services import AppServices, build_app_services
 from sqlit.domains.query.app.query_service import (
     DialectQueryAnalyzer,
     QueryKind,
@@ -95,11 +95,13 @@ def _output_table(columns: list[str], rows: list[tuple], truncated: bool) -> Non
 def cmd_query(
     args: Any,
     *,
+    services: AppServices | None = None,
     session_factory: Callable[[ConnectionConfig], ConnectionSession] | None = None,
     query_service: QueryService | None = None,
 ) -> int:
     """Execute a SQL query against a connection."""
-    connections = load_connections()
+    services = services or build_app_services(RuntimeConfig.from_env())
+    connections = services.connection_store.load_all()
 
     config = None
     for c in connections:
@@ -111,7 +113,7 @@ def cmd_query(
         print(f"Error: Connection '{args.connection}' not found.")
         return 1
 
-    provider = get_provider(config.db_type)
+    provider = services.provider_factory(config.db_type)
     if args.database:
         config = provider.apply_database_override(config, args.database)
 
@@ -135,11 +137,9 @@ def cmd_query(
 
     max_rows = args.limit if args.limit > 0 else None
 
-    create_session = session_factory or ConnectionSession.create
+    create_session = session_factory or services.session_factory
     if query_service is None:
-        from sqlit.domains.query.store.history import HistoryStore
-
-        service = QueryService(HistoryStore(), analyzer=DialectQueryAnalyzer(provider.dialect))
+        service = QueryService(services.history_store, analyzer=DialectQueryAnalyzer(provider.dialect))
     else:
         service = query_service
     analyzer = DialectQueryAnalyzer(provider.dialect)

@@ -16,6 +16,7 @@ from .mocks import (
     MockDatabaseAdapter,
     MockHistoryStore,
     MockSettingsStore,
+    build_test_services,
     create_test_connection,
 )
 
@@ -26,12 +27,17 @@ class ConnectionScreenTestApp(App):
         config: ConnectionConfig | None = None,
         editing: bool = False,
         prefill_values: dict | None = None,
+        services=None,
     ):
         super().__init__()
         self._config = config
         self._editing = editing
         self._prefill_values = prefill_values
         self.screen_result = None
+        self.services = services or build_test_services(
+            connection_store=MockConnectionStore(),
+            settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+        )
 
     async def on_mount(self) -> None:
         screen = ConnectionScreen(
@@ -97,35 +103,29 @@ def mock_failing_adapter():
 @pytest.fixture
 def patch_stores(mock_connection_store, mock_settings_store):
     """Patch all stores with mocks for isolated testing."""
-    with (
-        patch("sqlit.domains.connections.store.connections.load_connections", mock_connection_store.load_all),
-        patch("sqlit.domains.connections.store.connections.save_connections", mock_connection_store.save_all),
-        patch(
-            "sqlit.domains.shell.store.settings.SettingsStore.get_instance",
-            return_value=mock_settings_store,
-        ),
-    ):
-        yield {
-            "connections": mock_connection_store,
-            "settings": mock_settings_store,
-        }
+    services = build_test_services(
+        connection_store=mock_connection_store,
+        settings_store=mock_settings_store,
+    )
+    yield {
+        "connections": mock_connection_store,
+        "settings": mock_settings_store,
+        "services": services,
+    }
 
 
 @pytest.fixture
 def patch_stores_with_data(mock_connection_store_with_data, mock_settings_store):
     """Patch stores with sample data."""
-    with (
-        patch("sqlit.domains.connections.store.connections.load_connections", mock_connection_store_with_data.load_all),
-        patch("sqlit.domains.connections.store.connections.save_connections", mock_connection_store_with_data.save_all),
-        patch(
-            "sqlit.domains.shell.store.settings.SettingsStore.get_instance",
-            return_value=mock_settings_store,
-        ),
-    ):
-        yield {
-            "connections": mock_connection_store_with_data,
-            "settings": mock_settings_store,
-        }
+    services = build_test_services(
+        connection_store=mock_connection_store_with_data,
+        settings_store=mock_settings_store,
+    )
+    yield {
+        "connections": mock_connection_store_with_data,
+        "settings": mock_settings_store,
+        "services": services,
+    }
 
 
 @pytest.fixture

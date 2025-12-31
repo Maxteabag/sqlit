@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
 from sqlit.domains.shell.app.main import SSMSTUI
 from sqlit.domains.shell.app.keymap import get_keymap
 
-from ..mocks import MockConnectionStore, MockSettingsStore, create_test_connection
+from ..mocks import MockConnectionStore, MockSettingsStore, build_test_services, create_test_connection
+
+
+def _make_app(connection_store: MockConnectionStore | None = None) -> SSMSTUI:
+    connection_store = connection_store or MockConnectionStore()
+    settings_store = MockSettingsStore({"theme": "tokyo-night"})
+    services = build_test_services(
+        connection_store=connection_store,
+        settings_store=settings_store,
+    )
+    return SSMSTUI(services=services)
 
 
 class TestContextualKeybindings:
@@ -21,7 +29,7 @@ class TestContextualKeybindings:
         keymap = get_keymap()
         focus_explorer_key = keymap.action("focus_explorer")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Focus query first
@@ -41,7 +49,7 @@ class TestContextualKeybindings:
         keymap = get_keymap()
         focus_query_key = keymap.action("focus_query")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Focus explorer first
@@ -63,34 +71,26 @@ class TestContextualKeybindings:
 
         connections = [create_test_connection("TestDB", "sqlite")]
         mock_connections = MockConnectionStore(connections)
-        mock_settings = MockSettingsStore({"theme": "tokyo-night"})
 
-        with (
-            patch("sqlit.domains.shell.app.startup_flow.load_connections", mock_connections.load_all),
-            patch(
-                "sqlit.domains.shell.app.theme_manager.SettingsStore.get_instance",
-                return_value=mock_settings,
-            ),
-        ):
-            app = SSMSTUI()
+        app = _make_app(mock_connections)
 
-            async with app.run_test(size=(100, 35)) as pilot:
-                # Focus query
-                app.action_focus_query()
-                await pilot.pause()
+        async with app.run_test(size=(100, 35)) as pilot:
+            # Focus query
+            app.action_focus_query()
+            await pilot.pause()
 
-                edit_called = False
-                original_edit = app.action_edit_connection
+            edit_called = False
+            original_edit = app.action_edit_connection
 
-                def mock_edit():
-                    nonlocal edit_called
-                    edit_called = True
-                    original_edit()
+            def mock_edit():
+                nonlocal edit_called
+                edit_called = True
+                original_edit()
 
-                app.action_edit_connection = mock_edit
+            app.action_edit_connection = mock_edit
 
-                # Press edit key - should focus explorer (since e is also focus_explorer), not edit connection
-                await pilot.press(edit_key)
-                await pilot.pause()
+            # Press edit key - should focus explorer (since e is also focus_explorer), not edit connection
+            await pilot.press(edit_key)
+            await pilot.pause()
 
-                assert not edit_called
+            assert not edit_called

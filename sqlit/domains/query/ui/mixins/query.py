@@ -409,9 +409,9 @@ class QueryMixin:
             text = result.text
             row, col = result.row, result.col
 
-        result = paste_text(text, row, col, clipboard)
-        self.query_input.text = result.text
-        self.query_input.cursor_location = (result.row, result.col)
+        paste_result = paste_text(text, row, col, clipboard)
+        self.query_input.text = paste_result.text
+        self.query_input.cursor_location = (paste_result.row, paste_result.col)
         # Clear selection by setting cursor position (start == end)
         cursor = self.query_input.cursor_location
         self.query_input.selection = Selection(cursor, cursor)
@@ -509,12 +509,9 @@ class QueryMixin:
 
     def _get_history_store(self: QueryMixinHost) -> Any:
         store = getattr(self, "_history_store", None)
-        if store is None:
-            from sqlit.domains.query.store.history import HistoryStore
-
-            store = HistoryStore()
-            self._history_store = store
-        return store
+        if store is not None:
+            return store
+        return self.services.history_store
 
     def _get_query_service(self: QueryMixinHost, provider: Any) -> QueryService:
         if self._query_service is None or (
@@ -589,9 +586,10 @@ class QueryMixin:
 
         try:
             start_time = time.perf_counter()
+            max_rows = self.services.runtime.max_rows or MAX_FETCH_ROWS
             result = await asyncio.to_thread(
                 cancellable.execute,
-                MAX_FETCH_ROWS,
+                max_rows,
             )
             elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -836,11 +834,10 @@ class QueryMixin:
             self.notify("Not connected", severity="warning")
             return
 
-        from sqlit.domains.query.store.starred import StarredStore
         from ..screens import QueryHistoryScreen
 
         history_store = self._get_history_store()
-        starred_store = StarredStore.get_instance()
+        starred_store = self.services.starred_store
         history = history_store.load_for_connection(self.current_config.name)
         starred = starred_store.load_for_connection(self.current_config.name)
         self.push_screen(
@@ -891,12 +888,10 @@ class QueryMixin:
 
     def _toggle_star(self: QueryMixinHost, query: str) -> None:
         """Toggle star status for a query."""
-        from sqlit.domains.query.store.starred import StarredStore
-
         if not self.current_config:
             return
 
-        is_now_starred = StarredStore.get_instance().toggle_star(self.current_config.name, query)
+        is_now_starred = self.services.starred_store.toggle_star(self.current_config.name, query)
         if is_now_starred:
             self.notify("Query starred")
         else:

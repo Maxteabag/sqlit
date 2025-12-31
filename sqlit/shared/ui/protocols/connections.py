@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 
 class ConnectionStateProtocol(Protocol):
+    services: Any
     connections: list[ConnectionConfig]
     current_connection: Any | None
     current_config: ConnectionConfig | None
@@ -27,7 +28,6 @@ class ConnectionStateProtocol(Protocol):
     _connect_spinner_timer: Timer | None
 
     _session: ConnectionSession | None
-    _session_factory: Callable[[ConnectionConfig], ConnectionSession] | None
     _connection_failed: bool
 
 

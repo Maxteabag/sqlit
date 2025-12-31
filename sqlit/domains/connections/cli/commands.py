@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .helpers import build_connection_config_from_args
 from sqlit.domains.connections.domain.config import (
@@ -13,36 +13,32 @@ from sqlit.domains.connections.domain.config import (
     DatabaseType,
     get_database_type_labels,
 )
-from sqlit.domains.connections.store.connections import load_connections, save_connections
-from sqlit.domains.connections.providers.catalog import get_provider, get_provider_schema
+from sqlit.domains.connections.providers.catalog import get_provider_schema
 
 from sqlit.domains.connections.app.credentials import (
     ALLOW_PLAINTEXT_CREDENTIALS_SETTING,
+    build_credentials_service,
     is_keyring_usable,
-    reset_credentials_service,
 )
+from sqlit.shared.app.runtime import RuntimeConfig
+from sqlit.shared.app.services import AppServices, build_app_services
 
-if TYPE_CHECKING:
-    pass
-
-
-def _maybe_prompt_plaintext_credentials() -> bool:
+def _maybe_prompt_plaintext_credentials(services: AppServices) -> bool:
     """Ensure plaintext credential storage preference is set when keyring isn't usable.
 
     Returns True if plaintext storage is allowed; False otherwise.
     """
-    from sqlit.domains.shell.store.settings import SettingsStore
-
     if is_keyring_usable():
         return False
 
-    store = SettingsStore.get_instance()
-    settings = store.load_all()
+    settings = services.settings_store.load_all()
     existing = settings.get(ALLOW_PLAINTEXT_CREDENTIALS_SETTING)
     if isinstance(existing, bool):
         if existing:
-            reset_credentials_service()
-        return bool(existing)
+            services.credentials_service = build_credentials_service(services.settings_store)
+            if hasattr(services.connection_store, "set_credentials_service"):
+                services.connection_store.set_credentials_service(services.credentials_service)
+        return existing
 
     if not sys.stdin.isatty():
         return False
@@ -50,9 +46,11 @@ def _maybe_prompt_plaintext_credentials() -> bool:
     answer = input("Keyring isn't available. Save passwords as plaintext in ~/.sqlit/? [y/N]: ").strip().lower()
     allow = answer in {"y", "yes"}
     settings[ALLOW_PLAINTEXT_CREDENTIALS_SETTING] = allow
-    store.save_all(settings)
+    services.settings_store.save_all(settings)
     if allow:
-        reset_credentials_service()
+        services.credentials_service = build_credentials_service(services.settings_store)
+        if hasattr(services.connection_store, "set_credentials_service"):
+            services.connection_store.set_credentials_service(services.credentials_service)
     return allow
 
 
@@ -64,9 +62,10 @@ def _clear_passwords_if_not_persisted(config: ConnectionConfig) -> None:
         config.tunnel.password = ""
 
 
-def cmd_connection_list(args: Any) -> int:
+def cmd_connection_list(args: Any, *, services: AppServices | None = None) -> int:
     """List all saved connections."""
-    connections = load_connections()
+    services = services or build_app_services(RuntimeConfig.from_env())
+    connections = services.connection_store.load_all()
     if not connections:
         print("No saved connections.")
         return 0
@@ -76,7 +75,7 @@ def cmd_connection_list(args: Any) -> int:
     labels = get_database_type_labels()
     for conn in connections:
         db_type_label = labels.get(conn.get_db_type(), conn.db_type)
-        provider = get_provider(conn.db_type)
+        provider = services.provider_factory(conn.db_type)
         if provider.metadata.is_file_based:
             file_endpoint = conn.file_endpoint
             file_path = str(file_endpoint.path if file_endpoint else "")
@@ -103,11 +102,12 @@ def cmd_connection_list(args: Any) -> int:
     return 0
 
 
-def cmd_connection_create(args: Any) -> int:
+def cmd_connection_create(args: Any, *, services: AppServices | None = None) -> int:
     """Create a new connection."""
     from sqlit.domains.connections.app.url_parser import is_connection_url, parse_connection_url
 
-    connections = load_connections()
+    services = services or build_app_services(RuntimeConfig.from_env())
+    connections = services.connection_store.load_all()
 
     # Handle URL-based connection creation
     url = getattr(args, "url", None)
@@ -135,9 +135,9 @@ def cmd_connection_create(args: Any) -> int:
         has_db_password = bool(config.tcp_endpoint and config.tcp_endpoint.password)
         has_ssh_password = bool(config.tunnel and config.tunnel.password)
         if (has_db_password or has_ssh_password) and not is_keyring_usable():
-            if not _maybe_prompt_plaintext_credentials():
+            if not _maybe_prompt_plaintext_credentials(services):
                 _clear_passwords_if_not_persisted(config)
-        save_connections(connections)
+        services.connection_store.save_all(connections)
         print(f"Connection '{url_name}' created successfully.")
         return 0
 
@@ -181,16 +181,17 @@ def cmd_connection_create(args: Any) -> int:
     has_db_password = bool(config.tcp_endpoint and config.tcp_endpoint.password)
     has_ssh_password = bool(config.tunnel and config.tunnel.password)
     if (has_db_password or has_ssh_password) and not is_keyring_usable():
-        if not _maybe_prompt_plaintext_credentials():
+        if not _maybe_prompt_plaintext_credentials(services):
             _clear_passwords_if_not_persisted(config)
-    save_connections(connections)
+    services.connection_store.save_all(connections)
     print(f"Connection '{args.name}' created successfully.")
     return 0
 
 
-def cmd_connection_edit(args: Any) -> int:
+def cmd_connection_edit(args: Any, *, services: AppServices | None = None) -> int:
     """Edit an existing connection."""
-    connections = load_connections()
+    services = services or build_app_services(RuntimeConfig.from_env())
+    connections = services.connection_store.load_all()
 
     conn_idx = None
     for i, c in enumerate(connections):
@@ -246,17 +247,18 @@ def cmd_connection_edit(args: Any) -> int:
     has_db_password = bool(conn.tcp_endpoint and conn.tcp_endpoint.password)
     has_ssh_password = bool(conn.tunnel and conn.tunnel.password)
     if (has_db_password or has_ssh_password) and not is_keyring_usable():
-        if not _maybe_prompt_plaintext_credentials():
+        if not _maybe_prompt_plaintext_credentials(services):
             _clear_passwords_if_not_persisted(conn)
 
-    save_connections(connections)
+    services.connection_store.save_all(connections)
     print(f"Connection '{conn.name}' updated successfully.")
     return 0
 
 
-def cmd_connection_delete(args: Any) -> int:
+def cmd_connection_delete(args: Any, *, services: AppServices | None = None) -> int:
     """Delete a connection."""
-    connections = load_connections()
+    services = services or build_app_services(RuntimeConfig.from_env())
+    connections = services.connection_store.load_all()
 
     conn_idx = None
     for i, c in enumerate(connections):
@@ -269,20 +271,20 @@ def cmd_connection_delete(args: Any) -> int:
         return 1
 
     deleted = connections.pop(conn_idx)
-    save_connections(connections)
+    services.connection_store.save_all(connections)
     print(f"Connection '{deleted.name}' deleted successfully.")
     return 0
 
 
-def cmd_docker_list(args: Any) -> int:
+def cmd_docker_list(args: Any, *, services: AppServices | None = None) -> int:
     """List detected Docker database containers."""
     from sqlit.domains.connections.discovery.docker_detector import (
         ContainerStatus,
         DockerStatus,
-        detect_database_containers,
     )
 
-    status, containers = detect_database_containers()
+    services = services or build_app_services(RuntimeConfig.from_env())
+    status, containers = services.docker_detector()
 
     if status == DockerStatus.NOT_INSTALLED:
         print("Error: Docker Python library not installed.")

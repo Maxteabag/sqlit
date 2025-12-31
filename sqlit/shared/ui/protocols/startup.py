@@ -8,6 +8,7 @@ from sqlit.domains.connections.domain.config import ConnectionConfig
 
 
 class StartupProtocol(Protocol):
+    services: Any
     _restart_argv: list[str] | None
     _startup_profile: bool
     _startup_mark: float | None
@@ -15,7 +16,6 @@ class StartupProtocol(Protocol):
     _startup_events: list[tuple[str, float]]
     _startup_connection: ConnectionConfig | None
     _startup_connect_config: ConnectionConfig | None
-    _mock_profile: Any
     _debug_mode: bool
     _debug_idle_scheduler: bool
     _idle_scheduler: Any | None
@@ -30,7 +30,4 @@ class StartupProtocol(Protocol):
         ...
 
     def _compute_restart_argv(self) -> list[str]:
-        ...
-
-    def _create_mock_session_factory(self, profile: Any) -> Any:
         ...

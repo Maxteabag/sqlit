@@ -83,49 +83,27 @@ class TunnelFactoryProtocol(Protocol):
 
 @runtime_checkable
 class ConnectionStoreProtocol(Protocol):
-    """Protocol for connection storage.
+    """Protocol for connection storage."""
 
-    This protocol defines the interface for storing and retrieving
-    database connection configurations.
-    """
+    is_persistent: bool
 
-    def load(self) -> list[ConnectionConfig]:
-        """Load all saved connections.
-
-        Returns:
-            List of connection configurations.
-        """
+    def load_all(self, load_credentials: bool = True) -> list[ConnectionConfig]:
+        """Load all saved connections."""
         ...
 
-    def save(self, connections: list[ConnectionConfig]) -> None:
-        """Save connections.
-
-        Args:
-            connections: List of connection configurations to save.
-        """
+    def save_all(self, connections: list[ConnectionConfig]) -> None:
+        """Save connections."""
         ...
 
 
 @runtime_checkable
 class SettingsStoreProtocol(Protocol):
-    """Protocol for settings storage.
+    """Protocol for settings storage."""
 
-    This protocol defines the interface for storing and retrieving
-    application settings.
-    """
-
-    def load(self) -> dict:
-        """Load settings.
-
-        Returns:
-            Settings dictionary.
-        """
+    def load_all(self) -> dict:
+        """Load settings."""
         ...
 
-    def save(self, settings: dict) -> None:
-        """Save settings.
-
-        Args:
-            settings: Settings dictionary to save.
-        """
+    def save_all(self, settings: dict) -> None:
+        """Save settings."""
         ...

@@ -8,11 +8,18 @@ from sqlit.domains.shell.app.main import SSMSTUI
 from sqlit.shared.ui.screens.confirm import ConfirmScreen
 from sqlit.domains.shell.ui.screens.leader_menu import LeaderMenuScreen
 
+from .mocks import MockSettingsStore, build_test_services
+
+
+def _make_app() -> SSMSTUI:
+    services = build_test_services(settings_store=MockSettingsStore({"theme": "tokyo-night"}))
+    return SSMSTUI(services=services)
+
 
 class TestLeaderMenu:
     @pytest.mark.asyncio
     async def test_leader_menu_blocked_when_dialog_open(self):
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.push_screen(ConfirmScreen("Test dialog"))
@@ -30,7 +37,7 @@ class TestExplorerToggle:
 
     @pytest.mark.asyncio
     async def test_toggle_explorer_hides_sidebar(self):
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             assert app.sidebar.display is True
@@ -42,7 +49,7 @@ class TestExplorerToggle:
 
     @pytest.mark.asyncio
     async def test_hiding_explorer_moves_focus_to_query(self):
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_explorer()
@@ -60,7 +67,7 @@ class TestFullscreen:
 
     @pytest.mark.asyncio
     async def test_explorer_fullscreen_hides_query_and_results(self):
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_explorer()
@@ -73,7 +80,7 @@ class TestFullscreen:
 
     @pytest.mark.asyncio
     async def test_query_fullscreen_hides_explorer_and_results(self):
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_query()
@@ -87,7 +94,7 @@ class TestFullscreen:
 
     @pytest.mark.asyncio
     async def test_results_fullscreen_hides_explorer_and_query(self):
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Wait for Lazy widget to render the results table
@@ -104,7 +111,7 @@ class TestFullscreen:
 
     @pytest.mark.asyncio
     async def test_toggle_explorer_exits_query_fullscreen(self):
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_query()

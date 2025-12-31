@@ -9,6 +9,16 @@ from sqlit.domains.shell.app.keymap import get_keymap
 from sqlit.domains.connections.ui.screens.connection_picker import ConnectionPickerScreen
 from sqlit.domains.shell.ui.screens.help import HelpScreen
 
+from ..mocks import MockConnectionStore, MockSettingsStore, build_test_services
+
+
+def _make_app() -> SSMSTUI:
+    services = build_test_services(
+        connection_store=MockConnectionStore(),
+        settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+    )
+    return SSMSTUI(services=services)
+
 
 class TestLeaderKeybindings:
     """Test leader combo keybindings (space + key)."""
@@ -20,7 +30,7 @@ class TestLeaderKeybindings:
         leader_key = keymap.action("leader_key")
         connection_key = keymap.leader("show_connection_picker")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Press leader and connection key quickly - must complete
@@ -38,7 +48,7 @@ class TestLeaderKeybindings:
         leader_key = keymap.action("leader_key")
         help_key = keymap.leader("show_help")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Press leader and help key quickly - must complete
@@ -55,7 +65,7 @@ class TestLeaderKeybindings:
         keymap = get_keymap()
         connection_key = keymap.leader("show_connection_picker")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             # Press connection key without leader - should not open connection picker

@@ -181,6 +181,8 @@ class MockDatabaseAdapter(DatabaseAdapter):
         allowed_connections: list[dict[str, Any]] | None = None,
         auth_error: str = "Authentication failed",
         query_delay: float = 0.0,
+        demo_rows: int = 0,
+        demo_long_text: bool = False,
     ):
         self._name = name
         self._tables = tables or []
@@ -200,16 +202,19 @@ class MockDatabaseAdapter(DatabaseAdapter):
         self._required_fields = required_fields or []
         self._allowed_connections = allowed_connections or []
         self._auth_error = auth_error or "Authentication failed"
-        # Use provided delay or fall back to environment variable
-        if query_delay > 0:
-            self._query_delay = query_delay
-        else:
-            import os
-            env_delay = os.environ.get("SQLIT_MOCK_QUERY_DELAY", "")
-            try:
-                self._query_delay = float(env_delay) if env_delay else 0.0
-            except ValueError:
-                self._query_delay = 0.0
+        self._query_delay = query_delay
+        self._demo_rows = demo_rows
+        self._demo_long_text = demo_long_text
+
+    def apply_query_delay(self, delay: float) -> None:
+        if delay > 0:
+            self._query_delay = delay
+
+    def apply_demo_options(self, demo_rows: int, demo_long_text: bool) -> None:
+        if demo_rows > 0:
+            self._demo_rows = demo_rows
+        if demo_long_text:
+            self._demo_long_text = True
 
     @property
     def name(self) -> str:
@@ -345,36 +350,47 @@ class MockDatabaseAdapter(DatabaseAdapter):
 
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query and return (columns, rows, truncated)."""
-        import os
         import time
 
         if self._query_delay > 0:
             time.sleep(self._query_delay)
 
         # Check if demo long text mode is enabled (for testing truncation)
-        if os.environ.get("SQLIT_DEMO_LONG_TEXT"):
-            demo_rows_env = os.environ.get("SQLIT_DEMO_ROWS", "10")
-            try:
-                demo_row_count = int(demo_rows_env)
-            except ValueError:
-                demo_row_count = 10
+        demo_long_text = self._demo_long_text
+        demo_rows = self._demo_rows
+        if not demo_long_text:
+            import os
+
+            demo_long_text = bool(os.environ.get("SQLIT_DEMO_LONG_TEXT"))
+            if demo_long_text and demo_rows == 0:
+                demo_rows_env = os.environ.get("SQLIT_DEMO_ROWS", "10")
+                try:
+                    demo_rows = int(demo_rows_env)
+                except ValueError:
+                    demo_rows = 10
+
+        if demo_long_text:
+            demo_row_count = demo_rows or 10
             cols, rows = _generate_long_text_data(demo_row_count)
             if max_rows and len(rows) > max_rows:
                 return cols, rows[:max_rows], True
             return cols, rows, False
 
         # Check if demo rows mode is enabled
-        demo_rows_env = os.environ.get("SQLIT_DEMO_ROWS", "")
-        if demo_rows_env:
-            try:
-                demo_row_count = int(demo_rows_env)
-                if demo_row_count > 0:
-                    cols, rows = _generate_fake_data(demo_row_count)
-                    if max_rows and len(rows) > max_rows:
-                        return cols, rows[:max_rows], True
-                    return cols, rows, False
-            except ValueError:
-                pass  # Invalid value, fall through to normal behavior
+        if demo_rows == 0:
+            import os
+
+            demo_rows_env = os.environ.get("SQLIT_DEMO_ROWS", "")
+            if demo_rows_env:
+                try:
+                    demo_rows = int(demo_rows_env)
+                except ValueError:
+                    demo_rows = 0
+        if demo_rows > 0:
+            cols, rows = _generate_fake_data(demo_rows)
+            if max_rows and len(rows) > max_rows:
+                return cols, rows[:max_rows], True
+            return cols, rows, False
 
         query_lower = query.lower().strip()
 
@@ -755,13 +771,27 @@ DEFAULT_MOCK_ADAPTERS: dict[str, Callable[[], MockDatabaseAdapter]] = {
 }
 
 
-def get_default_mock_adapter(db_type: str) -> MockDatabaseAdapter:
+def get_default_mock_adapter(
+    db_type: str,
+    *,
+    query_delay: float = 0.0,
+    demo_rows: int = 0,
+    demo_long_text: bool = False,
+) -> MockDatabaseAdapter:
     """Get a default mock adapter for a database type."""
     factory = DEFAULT_MOCK_ADAPTERS.get(db_type)
     if factory:
-        return factory()
+        adapter = factory()
+        adapter.apply_query_delay(query_delay)
+        adapter.apply_demo_options(demo_rows, demo_long_text)
+        return adapter
     # Fallback for unknown types
-    return MockDatabaseAdapter(name=f"Mock{db_type.title()}")
+    return MockDatabaseAdapter(
+        name=f"Mock{db_type.title()}",
+        query_delay=query_delay,
+        demo_rows=demo_rows,
+        demo_long_text=demo_long_text,
+    )
 
 
 def _matches_connection_rule(config: ConnectionConfig, rule: dict[str, Any]) -> bool:
@@ -784,15 +814,31 @@ class MockProfile:
     connections: list[ConnectionConfig] = field(default_factory=list)
     adapters: dict[str, MockDatabaseAdapter] = field(default_factory=dict)
     use_default_adapters: bool = True  # Use default adapters when profile doesn't define one
+    query_delay: float = 0.0
+    demo_rows: int = 0
+    demo_long_text: bool = False
     _providers: dict[str, DatabaseProvider] = field(default_factory=dict, init=False, repr=False)
 
     def get_adapter(self, db_type: str) -> MockDatabaseAdapter:
         """Get adapter for a database type, falling back to defaults."""
         if db_type in self.adapters:
-            return self.adapters[db_type]
+            adapter = self.adapters[db_type]
+            adapter.apply_query_delay(self.query_delay)
+            adapter.apply_demo_options(self.demo_rows, self.demo_long_text)
+            return adapter
         if self.use_default_adapters:
-            return get_default_mock_adapter(db_type)
-        return MockDatabaseAdapter(name=f"Mock{db_type.title()}")
+            return get_default_mock_adapter(
+                db_type,
+                query_delay=self.query_delay,
+                demo_rows=self.demo_rows,
+                demo_long_text=self.demo_long_text,
+            )
+        return MockDatabaseAdapter(
+            name=f"Mock{db_type.title()}",
+            query_delay=self.query_delay,
+            demo_rows=self.demo_rows,
+            demo_long_text=self.demo_long_text,
+        )
 
     def get_provider(self, db_type: str) -> DatabaseProvider:
         """Get provider for a database type, building one from mock adapters."""

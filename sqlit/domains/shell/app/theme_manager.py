@@ -17,6 +17,7 @@ from textual.timer import Timer
 from textual.widgets.text_area import TextAreaTheme
 
 from sqlit.domains.shell.store.settings import SettingsStore
+from sqlit.shared.core.protocols import SettingsStoreProtocol
 from .omarchy import (
     DEFAULT_THEME,
     get_current_theme_name,
@@ -491,8 +492,9 @@ class ThemeAppProtocol(Protocol):
 class ThemeManager:
     """Centralized theme handling for the app."""
 
-    def __init__(self, app: ThemeAppProtocol) -> None:
+    def __init__(self, app: ThemeAppProtocol, settings_store: SettingsStoreProtocol | None = None) -> None:
         self._app = app
+        self._settings_store = settings_store or SettingsStore.get_instance()
         self._custom_theme_names: set[str] = set()
         self._custom_theme_paths: dict[str, Path] = {}
         self._light_theme_names: set[str] = set(LIGHT_THEME_NAMES)
@@ -508,17 +510,16 @@ class ThemeManager:
             self._app.query_input.register_theme(textarea_theme)
 
     def initialize(self) -> dict:
-        settings = SettingsStore.get_instance().load_all()
+        settings = self._settings_store.load_all()
         self.load_custom_themes(settings)
         self._init_omarchy_theme(settings)
         self.apply_textarea_theme(self._app.theme)
         return settings
 
     def on_theme_changed(self, new_theme: str) -> None:
-        store = SettingsStore.get_instance()
-        settings = store.load_all()
+        settings = self._settings_store.load_all()
         settings["theme"] = new_theme
-        store.save_all(settings)
+        self._settings_store.save_all(settings)
         self.apply_textarea_theme(new_theme)
 
     def apply_omarchy_theme(self) -> None:
@@ -561,8 +562,7 @@ class ThemeManager:
         path = path.resolve()
 
         theme_name = self._register_custom_theme_path(path, expected_name)
-        store = SettingsStore.get_instance()
-        settings = store.load_all()
+        settings = self._settings_store.load_all()
         theme_paths = settings.get(CUSTOM_THEME_SETTINGS_KEY, [])
         if not isinstance(theme_paths, list):
             theme_paths = []
@@ -571,7 +571,7 @@ class ThemeManager:
         if entry_value not in theme_paths:
             theme_paths.append(entry_value)
         settings[CUSTOM_THEME_SETTINGS_KEY] = theme_paths
-        store.save_all(settings)
+        self._settings_store.save_all(settings)
         return theme_name
 
     def open_custom_theme_in_editor(self, theme_name: str) -> None:

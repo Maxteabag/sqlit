@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlit.domains.connections.domain.passwords import (
     needs_db_password as _needs_db_password,
@@ -33,9 +33,7 @@ class ConnectionMixin:
         endpoint = config.tcp_endpoint
         if endpoint and endpoint.password is not None and (not config.tunnel or config.tunnel.password is not None):
             return
-        from sqlit.domains.connections.app.credentials import get_credentials_service
-
-        service = get_credentials_service()
+        service = self.services.credentials_service
         if endpoint and endpoint.password is None:
             password = service.get_password(config.name)
             if password is not None:
@@ -156,8 +154,6 @@ class ConnectionMixin:
             pass
 
     def _do_connect(self: ConnectionMixinHost, config: ConnectionConfig) -> None:
-        from sqlit.domains.connections.app.session import ConnectionSession
-
         # Disconnect from current server first (if any)
         if self.current_connection:
             self._disconnect_silent()
@@ -171,10 +167,8 @@ class ConnectionMixin:
         self._connection_attempt_id += 1
         attempt_id = self._connection_attempt_id
 
-        create_session = self._session_factory or ConnectionSession.create
-
         def work() -> ConnectionSession:
-            return create_session(config)
+            return cast(ConnectionSession, self.services.session_factory(config))
 
         def on_success(session: ConnectionSession) -> None:
             # Ignore if a newer connection attempt was started
@@ -331,12 +325,11 @@ class ConnectionMixin:
         self.handle_connection_result(result)
 
     def handle_connection_result(self: ConnectionMixinHost, result: tuple | None) -> None:
-        from sqlit.domains.connections.store.connections import save_connections
-        from sqlit.domains.shell.store.settings import SettingsStore
         from sqlit.domains.connections.app.credentials import (
             ALLOW_PLAINTEXT_CREDENTIALS_SETTING,
             is_keyring_usable,
             reset_credentials_service,
+            build_credentials_service,
         )
         from sqlit.shared.ui.screens.confirm import ConfirmScreen
 
@@ -354,10 +347,9 @@ class ConnectionMixin:
                 # Also remove by new name to handle overwrites/duplicates
                 self.connections = [c for c in self.connections if c.name != with_config.name]
                 self.connections.append(with_config)
-                if getattr(self, "_mock_profile", None):
-                    self.notify("Mock mode: connection changes are not persisted")
-                else:
-                    save_connections(self.connections)
+                if not self.services.connection_store.is_persistent:
+                    self.notify("Connections are not persisted in this session")
+                self.services.connection_store.save_all(self.connections)
                 self.refresh_tree()
                 self.notify(f"Connection '{with_config.name}' saved")
 
@@ -365,13 +357,14 @@ class ConnectionMixin:
             needs_password_persist = bool(
                 (endpoint and endpoint.password) or (config.tunnel and config.tunnel.password)
             )
-            if not getattr(self, "_mock_profile", None) and needs_password_persist and not is_keyring_usable():
-                store = SettingsStore.get_instance()
-                settings = store.load_all()
+            if needs_password_persist and not is_keyring_usable():
+                settings = self.services.settings_store.load_all()
                 allow_plaintext = settings.get(ALLOW_PLAINTEXT_CREDENTIALS_SETTING)
 
                 if allow_plaintext is True:
                     reset_credentials_service()
+                    self.services.credentials_service = build_credentials_service(self.services.settings_store)
+                    self.services.connection_store.set_credentials_service(self.services.credentials_service)
                     do_save(config, original_name)
                     return
 
@@ -385,17 +378,19 @@ class ConnectionMixin:
                     return
 
                 def on_confirm(confirmed: bool | None) -> None:
-                    settings2 = store.load_all()
+                    settings2 = self.services.settings_store.load_all()
                     if confirmed is True:
                         settings2[ALLOW_PLAINTEXT_CREDENTIALS_SETTING] = True
-                        store.save_all(settings2)
+                        self.services.settings_store.save_all(settings2)
                         reset_credentials_service()
+                        self.services.credentials_service = build_credentials_service(self.services.settings_store)
+                        self.services.connection_store.set_credentials_service(self.services.credentials_service)
                         do_save(config, original_name)
                         self.notify("Saved passwords as plaintext in ~/.sqlit/ (0600)", severity="warning")
                         return
 
                     settings2[ALLOW_PLAINTEXT_CREDENTIALS_SETTING] = False
-                    store.save_all(settings2)
+                    self.services.settings_store.save_all(settings2)
                     if endpoint:
                         endpoint.password = ""
                     if config.tunnel:
@@ -469,13 +464,10 @@ class ConnectionMixin:
         )
 
     def _do_delete_connection(self: ConnectionMixinHost, config: ConnectionConfig) -> None:
-        from sqlit.domains.connections.store.connections import save_connections
-
         self.connections = [c for c in self.connections if c.name != config.name]
-        if getattr(self, "_mock_profile", None):
-            self.notify("Mock mode: connection changes are not persisted")
-        else:
-            save_connections(self.connections)
+        if not self.services.connection_store.is_persistent:
+            self.notify("Connections are not persisted in this session")
+        self.services.connection_store.save_all(self.connections)
         self.refresh_tree()
         self.notify(f"Connection '{config.name}' deleted")
 

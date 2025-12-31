@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+from dataclasses import dataclass
 from typing import Any
 
 from sqlit.domains.connections.domain.config import ConnectionConfig
@@ -10,26 +10,38 @@ from sqlit.domains.connections.providers.adapters.base import ColumnInfo
 from sqlit.domains.connections.app.mocks import MockDatabaseAdapter, MockProfile, get_mock_profile
 from sqlit.domains.connections.discovery.docker_detector import ContainerStatus, DetectedContainer
 
-# Global storage for mock docker containers
+@dataclass
+class MockSettings:
+    enabled: bool
+    profile: MockProfile | None
+    missing_drivers: set[str]
+    install_result: str | None
+    pipx_mode: str | None
+    docker_containers: list[DetectedContainer] | None
+
+
+# Legacy global storage for mock docker containers (use services/runtime instead).
 _mock_docker_containers: list[DetectedContainer] | None = None
 
 
 def set_mock_docker_containers(containers: list[DetectedContainer] | None) -> None:
-    """Set mock Docker containers for testing/demo purposes."""
     global _mock_docker_containers
     _mock_docker_containers = containers
 
 
 def get_mock_docker_containers() -> list[DetectedContainer] | None:
-    """Get mock Docker containers if set."""
     return _mock_docker_containers
 
 
-def apply_mock_environment(settings: dict[str, Any]) -> None:
-    """Apply environment-based mock settings for driver/install behavior."""
+def parse_mock_settings(settings: dict[str, Any]) -> MockSettings | None:
+    """Parse mock settings from settings.json into a structured config."""
     mock_settings = settings.get("mock")
     if not isinstance(mock_settings, dict) or not mock_settings.get("enabled"):
-        return
+        return None
+
+    missing_drivers: set[str] = set()
+    install_result: str | None = None
+    pipx_mode: str | None = None
 
     drivers = mock_settings.get("drivers", {})
     if isinstance(drivers, dict):
@@ -37,35 +49,34 @@ def apply_mock_environment(settings: dict[str, Any]) -> None:
         if missing_all is True:
             from sqlit.domains.connections.providers.catalog import get_supported_db_types
 
-            os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = ",".join(get_supported_db_types())
+            missing_drivers = {t for t in get_supported_db_types()}
         else:
             missing = drivers.get("missing")
             if isinstance(missing, list):
-                os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = ",".join(
-                    str(item).strip() for item in missing if str(item).strip()
-                )
+                missing_drivers = {str(item).strip() for item in missing if str(item).strip()}
             elif isinstance(missing, str) and missing.strip():
-                os.environ["SQLIT_MOCK_MISSING_DRIVERS"] = missing.strip()
-            elif missing == []:
-                os.environ.pop("SQLIT_MOCK_MISSING_DRIVERS", None)
+                missing_drivers = {missing.strip()}
 
-        install_result = str(drivers.get("install_result", "")).strip().lower()
-        if install_result in {"success", "fail"}:
-            os.environ["SQLIT_MOCK_INSTALL_RESULT"] = install_result
-        elif install_result == "real":
-            os.environ.pop("SQLIT_MOCK_INSTALL_RESULT", None)
+        install_result = str(drivers.get("install_result", "")).strip().lower() or None
+        if install_result not in {"success", "fail"}:
+            install_result = None
 
         pipx = str(drivers.get("pipx", "")).strip().lower()
         if pipx in {"pipx", "pip", "unknown"}:
-            os.environ["SQLIT_MOCK_PIPX"] = pipx
-        elif pipx == "auto":
-            os.environ.pop("SQLIT_MOCK_PIPX", None)
+            pipx_mode = pipx
 
-    # Parse and set mock Docker containers
     docker_containers = mock_settings.get("docker_containers")
-    if isinstance(docker_containers, list):
-        containers = _parse_docker_containers(docker_containers)
-        set_mock_docker_containers(containers)
+    containers = _parse_docker_containers(docker_containers) if isinstance(docker_containers, list) else None
+
+    profile = build_mock_profile_from_settings(settings)
+    return MockSettings(
+        enabled=True,
+        profile=profile,
+        missing_drivers=missing_drivers,
+        install_result=install_result,
+        pipx_mode=pipx_mode,
+        docker_containers=containers,
+    )
 
 
 def build_mock_profile_from_settings(settings: dict[str, Any]) -> MockProfile | None:

@@ -17,7 +17,6 @@ from textual.timer import Timer
 from textual.widgets import Static, Tree
 from textual.worker import Worker
 
-from sqlit.domains.connections.app.mocks import MockProfile
 from sqlit.domains.connections.domain.config import ConnectionConfig
 from sqlit.domains.connections.providers.model import DatabaseProvider
 from sqlit.domains.explorer.ui.mixins.tree import TreeMixin
@@ -43,6 +42,7 @@ from sqlit.shared.ui.widgets import (
     TreeFilterInput,
     VimMode,
 )
+from sqlit.shared.app import AppServices, RuntimeConfig, build_app_services
 from sqlit.shared.ui.protocols import AppProtocol
 
 if TYPE_CHECKING:
@@ -250,19 +250,21 @@ class SSMSTUI(
 
     def __init__(
         self,
-        mock_profile: MockProfile | None = None,
+        *,
+        services: AppServices | None = None,
+        runtime: RuntimeConfig | None = None,
         startup_connection: ConnectionConfig | None = None,
     ):
         super().__init__()
+        self.services = services or build_app_services(runtime or RuntimeConfig.from_env())
         self._base_bindings = self._bindings.copy()
         self._refresh_app_bindings()
-        self._mock_profile = mock_profile
         self._startup_connection = startup_connection
         self._startup_connect_config: ConnectionConfig | None = None
-        self._debug_mode = os.environ.get("SQLIT_DEBUG") == "1"
-        self._debug_idle_scheduler = os.environ.get("SQLIT_DEBUG_IDLE_SCHEDULER") == "1"
-        self._startup_profile = os.environ.get("SQLIT_PROFILE_STARTUP") == "1"
-        self._startup_mark = self._parse_startup_mark(os.environ.get("SQLIT_STARTUP_MARK"))
+        self._debug_mode = self.services.runtime.debug_mode
+        self._debug_idle_scheduler = self.services.runtime.debug_idle_scheduler
+        self._startup_profile = self.services.runtime.profile_startup
+        self._startup_mark = self.services.runtime.startup_mark
         self._startup_init_time = time.perf_counter()
         self._startup_events: list[tuple[str, float]] = []
         self._launch_ms: float | None = None
@@ -309,7 +311,7 @@ class SSMSTUI(
         self._query_worker: Worker[Any] | None = None
         self._query_executing: bool = False
         self._cancellable_query: Any | None = None
-        self._theme_manager = ThemeManager(self)
+        self._theme_manager = ThemeManager(self, settings_store=self.services.settings_store)
         self._spinner_index: int = 0
         self._spinner_timer: Timer | None = None
         # Schema indexing state
@@ -320,14 +322,10 @@ class SSMSTUI(
         self._table_metadata: dict[str, tuple[str, str, str | None]] = {}
         self._columns_loading: set[str] = set()
         self._state_machine = UIStateMachine()
-        self._session_factory: Callable[[ConnectionConfig], ConnectionSession] | None = None
         self._last_query_table: dict[str, Any] | None = None
         self._query_target_database: str | None = None  # Target DB for auto-generated queries
         # Idle scheduler for background work
         self._idle_scheduler: IdleScheduler | None = None
-
-        if mock_profile:
-            self._session_factory = self._create_mock_session_factory(mock_profile)
         self._startup_stamp("init_end")
 
     def _refresh_app_bindings(self) -> None:
@@ -348,29 +346,6 @@ class SSMSTUI(
             )
         self._bindings = merged
 
-    def _create_mock_session_factory(self, profile: MockProfile) -> Any:
-        """Create a session factory that uses mock adapters."""
-        from sqlit.domains.connections.app.session import ConnectionSession
-
-        def mock_provider_factory(db_type: str) -> Any:
-            """Return mock provider for the given db type."""
-            return profile.get_provider(db_type)
-
-        def mock_tunnel_factory(config: Any) -> Any:
-            """Return no tunnel for mock connections."""
-            endpoint = getattr(config, "tcp_endpoint", None)
-            host = endpoint.host if endpoint else ""
-            port = int(endpoint.port or "0") if endpoint else 0
-            return None, host, port
-
-        def factory(config: Any) -> Any:
-            return ConnectionSession.create(
-                config,
-                provider_factory=mock_provider_factory,
-                tunnel_factory=mock_tunnel_factory,
-            )
-
-        return factory
 
     @property
     def object_tree(self) -> Tree:
@@ -546,15 +521,6 @@ class SSMSTUI(
         if not self._startup_profile:
             return
         self._startup_events.append((name, time.perf_counter()))
-
-    @staticmethod
-    def _parse_startup_mark(value: str | None) -> float | None:
-        if not value:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
 
     def _record_launch_ms(self) -> None:
         base = self._startup_mark if self._startup_mark is not None else self._startup_init_time

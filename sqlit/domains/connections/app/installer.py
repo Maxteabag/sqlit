@@ -70,7 +70,12 @@ class Installer:
         Synchronous method to be run in a worker thread.
         Determines the command and executes it.
         """
-        mock_install = os.environ.get("SQLIT_MOCK_INSTALL_RESULT", "").strip().lower()
+        services = getattr(self.app, "services", None)
+        mock_install = None
+        if services is not None:
+            mock_install = services.runtime.mock.install_result
+        if not mock_install:
+            mock_install = os.environ.get("SQLIT_MOCK_INSTALL_RESULT", "").strip().lower()
         if mock_install in {"success", "ok", "pass"}:
             return True, "Mocked success (SQLIT_MOCK_INSTALL_RESULT=success)", error
         if mock_install in {"fail", "error"}:
@@ -79,7 +84,13 @@ class Installer:
         if os.environ.get("SQLIT_INSTALL_FORCE_FAIL") == "1":
             return False, "Forced failure (SQLIT_INSTALL_FORCE_FAIL=1)", error
 
-        strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
+        if services is not None:
+            strategy = services.install_strategy.detect(
+                extra_name=error.extra_name,
+                package_name=error.package_name,
+            )
+        else:
+            strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
         if not strategy.can_auto_install or not strategy.auto_install_command:
             reason = strategy.reason_unavailable or "Automatic installation is not available."
             return False, f"{reason}\n\n{strategy.manual_instructions}".strip(), error

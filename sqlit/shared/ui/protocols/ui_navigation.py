@@ -21,7 +21,6 @@ class UIStateProtocol(Protocol):
     _leader_pending_menu: str
     _last_active_pane: str | None
     _state_machine: Any
-    _mock_profile: Any
     _active_database: str | None
     _query_target_database: str | None
     log: Any

@@ -6,7 +6,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from rich.markup import escape
 from textual.app import ComposeResult
@@ -32,8 +32,7 @@ from sqlit.domains.connections.domain.config import (
     DatabaseType,
     get_database_type_labels,
 )
-from sqlit.domains.connections.app.tunnel import create_ssh_tunnel
-from sqlit.domains.connections.providers.catalog import get_provider, get_provider_schema
+from sqlit.domains.connections.providers.catalog import get_provider_schema
 from sqlit.domains.connections.providers.driver import ensure_provider_driver_available
 from sqlit.domains.connections.providers.metadata import has_advanced_auth, is_file_based, supports_ssh
 from sqlit.domains.connections.providers.exceptions import MissingDriverError
@@ -43,9 +42,9 @@ from sqlit.domains.connections.ui.fields import (
     FieldType,
     schema_to_field_definitions,
 )
-from sqlit.domains.connections.app.install_strategy import detect_strategy
 from sqlit.domains.connections.ui.validation import ValidationState, validate_connection_form
 from sqlit.shared.ui.widgets import Dialog
+from sqlit.shared.ui.protocols import AppProtocol
 from sqlit.shared.ui.spinner import Spinner, SPINNER_FRAMES
 
 
@@ -296,8 +295,11 @@ class ConnectionScreen(ModalScreen):
             return self.config.get_db_type()
         return next(iter(DatabaseType))
 
+    def _app(self) -> AppProtocol:
+        return cast(AppProtocol, self.app)
+
     def _get_provider_for_type(self, db_type: DatabaseType) -> Any:
-        return get_provider(db_type.value)
+        return self._app().services.provider_factory(db_type.value)
 
     def _get_field_groups_for_type(self, db_type: DatabaseType, tab: str | None = None) -> list[FieldGroup]:
         schema = get_provider_schema(db_type.value)
@@ -444,8 +446,8 @@ class ConnectionScreen(ModalScreen):
     def _check_driver_availability(self, db_type: DatabaseType) -> None:
         self._missing_driver_error = None
         try:
-            provider = get_provider(db_type.value)
-            ensure_provider_driver_available(provider)
+            provider = self._app().services.provider_factory(db_type.value)
+            ensure_provider_driver_available(provider, runtime=self._app().services.runtime)
         except MissingDriverError as e:
             self._missing_driver_error = e
 
@@ -512,7 +514,10 @@ class ConnectionScreen(ModalScreen):
                 )
                 dialog.border_subtitle = "[bold]Help ^i[/]  Cancel <esc>"
                 return
-            strategy = detect_strategy(extra_name=error.extra_name, package_name=error.package_name)
+            strategy = self._app().services.install_strategy.detect(
+                extra_name=error.extra_name,
+                package_name=error.package_name,
+            )
             if strategy.can_auto_install:
                 install_cmd = self._format_install_hint(strategy, error.package_name)
                 test_status.update(
@@ -1365,11 +1370,14 @@ class ConnectionScreen(ModalScreen):
 
     def _get_package_install_hint(self, db_type: str) -> str | None:
         try:
-            provider = get_provider(db_type)
+            provider = self._app().services.provider_factory(db_type)
             driver = provider.driver
             if driver is None or not driver.package_name or not driver.extra_name:
                 return None
-            strategy = detect_strategy(extra_name=driver.extra_name, package_name=driver.package_name)
+            strategy = self._app().services.install_strategy.detect(
+                extra_name=driver.extra_name,
+                package_name=driver.package_name,
+            )
             if strategy.can_auto_install:
                 return self._format_install_hint(strategy, driver.package_name)
             manual = getattr(strategy, "manual_instructions", "")
@@ -1446,8 +1454,6 @@ class ConnectionScreen(ModalScreen):
         self._last_test_ok = None
         self._last_test_error = ""
 
-        mock_profile = getattr(self.app, "_mock_profile", None)
-
         def on_test_success() -> None:
             """Handle successful connection test on main thread."""
             import time
@@ -1516,16 +1522,12 @@ class ConnectionScreen(ModalScreen):
             """Run the connection test in a background thread."""
             tunnel = None
             try:
-                if mock_profile:
-                    provider = mock_profile.get_provider(config.db_type)
-                    connect_config = config
+                tunnel, host, port = self._app().services.tunnel_factory(config)
+                if tunnel:
+                    connect_config = config.with_endpoint(host=host, port=str(port))
                 else:
-                    tunnel, host, port = create_ssh_tunnel(config)
-                    if tunnel:
-                        connect_config = config.with_endpoint(host=host, port=str(port))
-                    else:
-                        connect_config = config
-                    provider = get_provider(config.db_type)
+                    connect_config = config
+                provider = self._app().services.provider_factory(config.db_type)
 
                 conn = provider.connection_factory.connect(connect_config)
                 conn.close()
@@ -1552,13 +1554,12 @@ class ConnectionScreen(ModalScreen):
         if not config:
             return
 
-        if getattr(self.app, "_mock_profile", None):
-            original_name = self.config.name if self.editing and self.config else None
-            self.dismiss(("save", config, original_name))
-            return
-
         try:
-            ensure_provider_driver_available(get_provider(config.db_type))
+            if not self._app().services.runtime.mock.enabled:
+                ensure_provider_driver_available(
+                    self._app().services.provider_factory(config.db_type),
+                    runtime=self._app().services.runtime,
+                )
         except MissingDriverError as e:
             self._prompt_install_missing_driver(e)
             return

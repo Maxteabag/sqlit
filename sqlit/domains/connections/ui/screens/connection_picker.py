@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -17,6 +17,7 @@ from sqlit.domains.connections.providers.metadata import get_connection_display_
 from sqlit.domains.connections.discovery.cloud import ProviderState, ProviderStatus, get_providers
 from sqlit.shared.core.utils import fuzzy_match, highlight_matches
 from sqlit.shared.ui.widgets import Dialog, FilterInput
+from sqlit.shared.ui.protocols import AppProtocol
 
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
@@ -371,6 +372,9 @@ class ConnectionPickerScreen(ModalScreen):
             pass
         return None
 
+    def _app(self) -> AppProtocol:
+        return cast(AppProtocol, self.app)
+
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         """Update shortcuts when selection changes."""
         if event.option_list.id == "picker-list":
@@ -384,10 +388,8 @@ class ConnectionPickerScreen(ModalScreen):
 
     def _detect_docker_worker(self) -> None:
         """Worker function to detect containers off-thread."""
-        from sqlit.domains.connections.discovery.docker_detector import detect_database_containers
-
         # Add a small delay for visual feedback if desired, or just run
-        status, containers = detect_database_containers()
+        status, containers = self._app().services.docker_detector()
         self.app.call_from_thread(self._on_containers_loaded, status, containers)
 
     def _on_containers_loaded(
@@ -416,11 +418,8 @@ class ConnectionPickerScreen(ModalScreen):
 
     def _load_cloud_providers_async(self) -> None:
         """Start async loading of all cloud providers."""
-        from sqlit.domains.connections.discovery.cloud.mock import is_mock_cloud_enabled, get_mock_cloud_states
-
-        # Check for mock cloud mode
-        if is_mock_cloud_enabled():
-            mock_states = get_mock_cloud_states()
+        mock_states = self._app().services.cloud_discovery.load_mock_states(self._cloud_providers)
+        if mock_states is not None:
             for provider in self._cloud_providers:
                 if provider.id in mock_states:
                     self._cloud_states[provider.id] = mock_states[provider.id]
@@ -447,7 +446,7 @@ class ConnectionPickerScreen(ModalScreen):
         """Worker function to discover resources for a provider."""
         try:
             state = ProviderState(loading=True)
-            new_state = provider.discover(state)
+            new_state = self._app().services.cloud_discovery.discover(provider, state)
             self.app.call_from_thread(self._on_provider_loaded, provider.id, new_state)
         except Exception as e:
             self.app.call_from_thread(self._on_provider_error, provider.id, str(e))
@@ -1635,7 +1634,6 @@ class ConnectionPickerScreen(ModalScreen):
 
     def _save_container(self, container: DetectedContainer) -> None:
         """Save a Docker container as a connection without closing the modal."""
-        from sqlit.domains.connections.store.connections import save_connections
         from sqlit.domains.connections.discovery.docker_detector import container_to_connection_config
 
         config = container_to_connection_config(container)
@@ -1653,13 +1651,12 @@ class ConnectionPickerScreen(ModalScreen):
         # Add to connections list
         self.connections.append(config)
 
-        # Persist (check for mock mode via app)
+        # Persist (check for persistence capability)
         try:
-            if getattr(self.app, "_mock_profile", None):
-                self.notify(f"Mock mode: '{config.name}' not persisted")
-            else:
-                save_connections(self.connections)
-                self.notify(f"Saved '{config.name}'")
+            if not self._app().services.connection_store.is_persistent:
+                self.notify("Connections are not persisted in this session")
+            self._app().services.connection_store.save_all(self.connections)
+            self.notify(f"Saved '{config.name}'")
         except Exception as e:
             self.notify(f"Failed to save: {e}", severity="error")
             return
@@ -1679,8 +1676,6 @@ class ConnectionPickerScreen(ModalScreen):
 
     def _save_cloud_connection(self, config: ConnectionConfig, option_id: str) -> None:
         """Save a cloud connection without closing the modal."""
-        from sqlit.domains.connections.store.connections import save_connections
-
         # Generate unique name if needed
         existing_names = {c.name for c in self.connections}
         base_name = config.name
@@ -1694,13 +1689,12 @@ class ConnectionPickerScreen(ModalScreen):
         # Add to connections list
         self.connections.append(config)
 
-        # Persist (check for mock mode via app)
+        # Persist (check for persistence capability)
         try:
-            if getattr(self.app, "_mock_profile", None):
-                self.notify(f"Mock mode: '{config.name}' not persisted")
-            else:
-                save_connections(self.connections)
-                self.notify(f"Saved '{config.name}'")
+            if not self._app().services.connection_store.is_persistent:
+                self.notify("Connections are not persisted in this session")
+            self._app().services.connection_store.save_all(self.connections)
+            self.notify(f"Saved '{config.name}'")
         except Exception as e:
             self.notify(f"Failed to save: {e}", severity="error")
             return
@@ -1717,8 +1711,6 @@ class ConnectionPickerScreen(ModalScreen):
 
     def _save_cloud_connection_from_tree(self, config: ConnectionConfig) -> None:
         """Save a cloud connection from tree widget without closing the modal."""
-        from sqlit.domains.connections.store.connections import save_connections
-
         # Generate unique name if needed
         existing_names = {c.name for c in self.connections}
         base_name = config.name
@@ -1732,13 +1724,12 @@ class ConnectionPickerScreen(ModalScreen):
         # Add to connections list
         self.connections.append(config)
 
-        # Persist (check for mock mode via app)
+        # Persist (check for persistence capability)
         try:
-            if getattr(self.app, "_mock_profile", None):
-                self.notify(f"Mock mode: '{config.name}' not persisted")
-            else:
-                save_connections(self.connections)
-                self.notify(f"Saved '{config.name}'")
+            if not self._app().services.connection_store.is_persistent:
+                self.notify("Connections are not persisted in this session")
+            self._app().services.connection_store.save_all(self.connections)
+            self.notify(f"Saved '{config.name}'")
         except Exception as e:
             self.notify(f"Failed to save: {e}", severity="error")
             return

@@ -9,12 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from sqlit.domains.connections.app.mock_settings import (
-    apply_mock_environment,
-    build_mock_profile_from_settings,
-)
 from sqlit.domains.connections.domain.config import ConnectionConfig
-from sqlit.domains.connections.store.connections import load_connections
 from sqlit.domains.shell.app.idle_scheduler import init_idle_scheduler
 from sqlit.shared.ui.protocols import AppProtocol
 
@@ -44,10 +39,7 @@ def run_on_mount(app: AppProtocol) -> None:
 
     apply_mock_settings(app, settings)
 
-    if app._mock_profile:
-        app.connections = app._mock_profile.connections.copy()
-    else:
-        app.connections = load_connections(load_credentials=False)
+    app.connections = app.services.connection_store.load_all(load_credentials=False)
     if app._startup_connection:
         setup_startup_connection(app, app._startup_connection)
     app._startup_stamp("connections_loaded")
@@ -79,13 +71,7 @@ def run_on_mount(app: AppProtocol) -> None:
 
 
 def apply_mock_settings(app: AppProtocol, settings: dict) -> None:
-    apply_mock_environment(settings)
-    if app._mock_profile:
-        return
-    mock_profile = build_mock_profile_from_settings(settings)
-    if mock_profile:
-        app._mock_profile = mock_profile
-        app._session_factory = app._create_mock_session_factory(mock_profile)
+    app.services.apply_mock_settings(settings)
 
 
 def setup_startup_connection(app: AppProtocol, config: ConnectionConfig) -> None:

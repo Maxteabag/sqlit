@@ -22,6 +22,7 @@ class QueryStateProtocol(Protocol):
     _cancellable_query: Any | None
     _query_spinner: Spinner | None
     _query_cursor_cache: dict[str, tuple[int, int]] | None
+    _undo_history: Any | None
 
 
 class QueryActionsProtocol(Protocol):
@@ -89,6 +90,27 @@ class QueryActionsProtocol(Protocol):
         ...
 
     def _clear_leader_pending(self) -> None:
+        ...
+
+    def _delete_with_motion(self, motion_key: str, char: str | None = None) -> None:
+        ...
+
+    def _delete_with_text_object(self, obj_char: str, around: bool) -> None:
+        ...
+
+    def _show_char_pending_menu(self, motion: str) -> None:
+        ...
+
+    def _show_text_object_menu(self, mode: str) -> None:
+        ...
+
+    def _get_clipboard_text(self) -> str:
+        ...
+
+    def _get_undo_history(self) -> Any:
+        ...
+
+    def _push_undo_state(self) -> None:
         ...
 
     def _apply_edit_result(self, result: "EditResult") -> None:

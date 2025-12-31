@@ -33,8 +33,8 @@ def _in_venv() -> bool:
     return sys.prefix != base_prefix
 
 
-def _is_pipx() -> bool:
-    pipx_override = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
+def _is_pipx(mock_pipx: str | None = None) -> bool:
+    pipx_override = (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower()
     if pipx_override in {"1", "true", "yes", "pipx"}:
         return True
     if pipx_override in {"0", "false", "no", "pip", "unknown", "no-pip", "uvx", "conda", "uv"}:
@@ -48,9 +48,9 @@ def _is_pipx() -> bool:
     return "/pipx/venvs/" in exe or "\\pipx\\venvs\\" in exe
 
 
-def _is_uvx() -> bool:
+def _is_uvx(mock_pipx: str | None = None) -> bool:
     """Check if running via uvx or uv tool install."""
-    mock = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
+    mock = (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower()
     if mock == "uvx":
         return True
     if mock in {"pipx", "pip", "conda", "uv"}:
@@ -62,9 +62,9 @@ def _is_uvx() -> bool:
     return "/uv/tools/" in exe or "\\uv\\tools\\" in exe
 
 
-def _is_uv_run() -> bool:
+def _is_uv_run(mock_pipx: str | None = None) -> bool:
     """Check if running via uv run (uv-managed project environment)."""
-    mock = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
+    mock = (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower()
     if mock == "uv":
         return True
     if mock in {"pipx", "pip", "conda", "uvx"}:
@@ -74,9 +74,9 @@ def _is_uv_run() -> bool:
     return bool(os.environ.get("UV"))
 
 
-def _is_conda() -> bool:
+def _is_conda(mock_pipx: str | None = None) -> bool:
     """Check if running in a conda environment."""
-    mock = os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower()
+    mock = (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower()
     if mock == "conda":
         return True
     if mock in {"pipx", "pip", "uvx"}:
@@ -85,9 +85,9 @@ def _is_conda() -> bool:
     return bool(os.environ.get("CONDA_PREFIX"))
 
 
-def _is_unknown_install() -> bool:
+def _is_unknown_install(mock_pipx: str | None = None) -> bool:
     """Check if we should mock an unknown installation method (e.g., uvx)."""
-    return os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower() == "unknown"
+    return (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower() == "unknown"
 
 
 def _pep668_externally_managed() -> bool:
@@ -110,8 +110,8 @@ def _pep668_externally_managed() -> bool:
     return False
 
 
-def _pip_available() -> bool:
-    if os.environ.get("SQLIT_MOCK_PIPX", "").strip().lower() == "no-pip":
+def _pip_available(mock_no_pip: bool = False, mock_pipx: str | None = None) -> bool:
+    if mock_no_pip or (mock_pipx or os.environ.get("SQLIT_MOCK_PIPX", "")).strip().lower() == "no-pip":
         return False
     return importlib.util.find_spec("pip") is not None
 
@@ -179,27 +179,27 @@ class InstallOption:
     command: str
 
 
-def detect_install_method() -> str:
+def detect_install_method(mock_pipx: str | None = None) -> str:
     """Detect how sqlit was installed/is running.
 
     Returns one of: 'pipx', 'uvx', 'uv', 'conda', 'pip'.
     'pipx', 'uvx', 'uv' (uv run), and 'conda' are high-confidence detections.
     """
     # Check high-confidence detections first (runtime environment)
-    if _is_pipx():
+    if _is_pipx(mock_pipx):
         return "pipx"
-    if _is_uvx():
+    if _is_uvx(mock_pipx):
         return "uvx"
-    if _is_uv_run():
+    if _is_uv_run(mock_pipx):
         return "uv"
-    if _is_conda():
+    if _is_conda(mock_pipx):
         return "conda"
 
     # Default to pip (most common)
     return "pip"
 
 
-def get_install_options(package_name: str) -> list[InstallOption]:
+def get_install_options(package_name: str, mock_pipx: str | None = None) -> list[InstallOption]:
     """Get list of install options for a package, ordered by detected install method."""
     # All available options
     all_options = {
@@ -213,7 +213,7 @@ def get_install_options(package_name: str) -> list[InstallOption]:
     }
 
     # Detect install method and set preferred order
-    detected = detect_install_method()
+    detected = detect_install_method(mock_pipx)
 
     # Order based on detection - detected method first, then common alternatives
     if detected == "pipx":
@@ -241,44 +241,53 @@ def get_install_options(package_name: str) -> list[InstallOption]:
     return options
 
 
-def _format_manual_instructions(package_name: str, reason: str) -> str:
+def _format_manual_instructions(package_name: str, reason: str, mock_pipx: str | None = None) -> str:
     """Format manual installation instructions with rich markup."""
     lines = [
         f"{reason}\n",
         "[bold]Install the driver using your preferred package manager:[/]\n",
     ]
-    for opt in get_install_options(package_name):
+    for opt in get_install_options(package_name, mock_pipx):
         lines.append(f"  [cyan]{opt.label}[/]     {opt.command}")
 
     return "\n".join(lines)
 
 
-def detect_strategy(*, extra_name: str, package_name: str) -> InstallStrategy:
+def detect_strategy(
+    *,
+    extra_name: str,
+    package_name: str,
+    mock_pipx: str | None = None,
+    mock_no_pip: bool = False,
+    mock_driver_error: bool = False,
+) -> InstallStrategy:
     """Detect the best installation strategy for optional driver dependencies."""
     # When mocking driver errors, also force the no-pip path to show full instructions
-    if os.environ.get("SQLIT_MOCK_DRIVER_ERROR"):
+    if mock_driver_error or os.environ.get("SQLIT_MOCK_DRIVER_ERROR"):
         return InstallStrategy(
             kind="no-pip",
             can_auto_install=False,
             manual_instructions=_format_manual_instructions(
                 package_name,
                 "pip is not available for this Python interpreter.",
+                mock_pipx,
             ),
             reason_unavailable="pip is not available.",
         )
 
-    if _is_unknown_install():
+    if _is_unknown_install(mock_pipx):
         return InstallStrategy(
             kind="unknown",
             can_auto_install=False,
             manual_instructions=_format_manual_instructions(
                 package_name,
                 "Unable to detect how sqlit was installed.",
+                mock_pipx,
             ),
             reason_unavailable="Unable to detect installation method.",
         )
 
-    if _is_pipx():
+    if _is_pipx(mock_pipx):
         cmd = ["pipx", "inject", "sqlit-tui", package_name]
         return InstallStrategy(
             kind="pipx",
@@ -294,17 +303,19 @@ def detect_strategy(*, extra_name: str, package_name: str) -> InstallStrategy:
             manual_instructions=_format_manual_instructions(
                 package_name,
                 "This Python environment is externally managed (PEP 668).",
+                mock_pipx,
             ),
             reason_unavailable="Externally managed Python environment (PEP 668).",
         )
 
-    if not _pip_available():
+    if not _pip_available(mock_no_pip, mock_pipx):
         return InstallStrategy(
             kind="no-pip",
             can_auto_install=False,
             manual_instructions=_format_manual_instructions(
                 package_name,
                 "pip is not available for this Python interpreter.",
+                mock_pipx,
             ),
             reason_unavailable="pip is not available.",
         )
@@ -334,6 +345,7 @@ def detect_strategy(*, extra_name: str, package_name: str) -> InstallStrategy:
         manual_instructions=_format_manual_instructions(
             package_name,
             "This Python environment is not writable and user-site installs are disabled.",
+            mock_pipx,
         ),
         reason_unavailable="Python environment not writable and user-site disabled.",
     )

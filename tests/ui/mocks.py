@@ -9,16 +9,21 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from tests.helpers import ConnectionConfig
+from sqlit.shared.app.runtime import RuntimeConfig
+from sqlit.shared.app.services import AppServices, build_app_services
 from sqlit.domains.connections.providers.adapters.base import ColumnInfo, DatabaseAdapter
 
 
 class MockConnectionStore:
     """Mock connection store for testing."""
 
+    is_persistent: bool = True
+
     def __init__(self, connections: list[ConnectionConfig] | None = None):
         self.connections = connections or []
         self.save_called = False
         self.last_saved: list[ConnectionConfig] = []
+        self._credentials_service = None
 
     def load_all(self, load_credentials: bool = True) -> list[ConnectionConfig]:
         return self.connections.copy()
@@ -27,6 +32,9 @@ class MockConnectionStore:
         self.save_called = True
         self.last_saved = connections.copy()
         self.connections = connections.copy()
+
+    def set_credentials_service(self, service: Any) -> None:
+        self._credentials_service = service
 
     def get_by_name(self, name: str) -> ConnectionConfig | None:
         for conn in self.connections:
@@ -92,6 +100,25 @@ class MockSettingsStore:
 
     def set(self, key: str, value: Any) -> None:
         self.settings[key] = value
+
+
+def build_test_services(
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection_store: MockConnectionStore | None = None,
+    settings_store: MockSettingsStore | None = None,
+    history_store: MockHistoryStore | None = None,
+    docker_detector: Any | None = None,
+) -> AppServices:
+    runtime = runtime or RuntimeConfig()
+    history_store = history_store or MockHistoryStore()
+    return build_app_services(
+        runtime,
+        connection_store=connection_store,
+        settings_store=settings_store,
+        history_store=history_store,
+        docker_detector=docker_detector,
+    )
 
 
 class MockDatabaseAdapter(DatabaseAdapter):

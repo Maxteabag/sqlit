@@ -23,6 +23,7 @@ class ConnectionStore(JSONFileStore):
     _VERSION_KEY = "version"
 
     _instance: ConnectionStore | None = None
+    is_persistent: bool = True
 
     def __init__(self, credentials_service: CredentialsService | None = None) -> None:
         super().__init__(CONFIG_DIR / "connections.json")
@@ -36,6 +37,10 @@ class ConnectionStore(JSONFileStore):
 
             return get_credentials_service()
         return self._credentials_service
+
+    def set_credentials_service(self, service: CredentialsService) -> None:
+        """Override the credentials service instance."""
+        self._credentials_service = service
 
     @classmethod
     def get_instance(cls) -> ConnectionStore:
@@ -252,11 +257,19 @@ class ConnectionStore(JSONFileStore):
 _store = ConnectionStore()
 
 
-def load_connections(load_credentials: bool = True) -> list[ConnectionConfig]:
+def load_connections(
+    load_credentials: bool = True,
+    store: ConnectionStore | None = None,
+) -> list[ConnectionConfig]:
     """Load saved connections from config file."""
-    return _store.load_all(load_credentials=load_credentials)
+    store = store or _store
+    return store.load_all(load_credentials=load_credentials)
 
 
-def save_connections(connections: list[ConnectionConfig]) -> None:
+def save_connections(
+    connections: list[ConnectionConfig],
+    store: ConnectionStore | None = None,
+) -> None:
     """Save connections to config file."""
-    _store.save_all(connections)
+    store = store or _store
+    store.save_all(connections)
