@@ -15,9 +15,6 @@ class TestTextObjectMenuTitle:
         # We can inspect the _mode and _operator attributes
         assert screen._mode == "around"
         assert screen._operator == "yank"
-        # The title should be built using the operator
-        prefix = "around"
-        expected_title = f"Yank {prefix}..."
         # We can't easily test the rendered content, but we can verify
         # the screen has the right attributes to build the correct title
 

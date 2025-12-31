@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from tests.test_database_docker import DockerDiscoveryTests
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -34,7 +36,7 @@ class DatabaseTestConfig:
     timezone_datetime_type: str | None = None
 
 
-class BaseDatabaseTests(ABC):
+class BaseDatabaseTests(DockerDiscoveryTests, ABC):
     """Base class for database integration tests.
 
     Subclasses must define the `config` class attribute with a DatabaseTestConfig.
@@ -53,180 +55,6 @@ class BaseDatabaseTests(ABC):
         assert result.returncode == 0
         assert connection in result.stdout
         assert self.config.display_name in result.stdout
-
-    def test_docker_container_detection(self, request):
-        """Test that docker discovery detects the database container.
-
-        This ensures that the docker auto-discovery feature can find
-        containers for this database type in the connection picker.
-        """
-        # Skip for file-based databases (they don't use Docker containers)
-        from sqlit.domains.connections.providers.registry import is_file_based
-
-        if is_file_based(self.config.db_type):
-            pytest.skip(f"{self.config.display_name} is file-based, no Docker container")
-
-        from sqlit.domains.connections.discovery.docker_detector import (
-            DockerStatus,
-            detect_database_containers,
-        )
-        from sqlit.domains.connections.providers.catalog import get_provider
-
-        # Skip if this database type has no Docker image patterns defined
-        provider = get_provider(self.config.db_type)
-        if provider.docker_detector is None:
-            pytest.skip(f"{self.config.display_name} has no Docker image patterns")
-
-        status, containers = detect_database_containers()
-
-        if status != DockerStatus.AVAILABLE:
-            pytest.skip("Docker is not available")
-
-        # Find a container matching this database type
-        matching_containers = [
-            c for c in containers if c.db_type == self.config.db_type
-        ]
-
-        assert len(matching_containers) > 0, (
-            f"No Docker container detected for {self.config.display_name}. "
-            f"Found containers: {[(c.container_name, c.db_type) for c in containers]}"
-        )
-
-        # Verify the container has a port detected
-        container = matching_containers[0]
-        assert container.port is not None, (
-            f"Container {container.container_name} has no port detected"
-        )
-
-    def test_docker_container_no_password_prompt_when_not_needed(self, request):
-        """Test that docker discovery doesn't trigger password prompts for no-auth databases.
-
-        Some databases (CockroachDB, Turso) can run without authentication in
-        local/insecure mode. When docker discovery detects these containers,
-        it should return password="" (empty string) rather than password=None.
-
-        - password=None means "not set" -> UI will prompt for password
-        - password="" means "explicitly empty" -> UI will NOT prompt
-
-        This test ensures users aren't asked for passwords for databases
-        that don't need them.
-        """
-        # Skip for file-based databases (they don't use Docker containers)
-        from sqlit.domains.connections.providers.registry import is_file_based
-
-        if is_file_based(self.config.db_type):
-            pytest.skip(f"{self.config.display_name} is file-based, no Docker container")
-
-        from sqlit.domains.connections.discovery.docker_detector import (
-            DockerStatus,
-            container_to_connection_config,
-            detect_database_containers,
-        )
-
-        status, containers = detect_database_containers()
-
-        if status != DockerStatus.AVAILABLE:
-            pytest.skip("Docker is not available")
-
-        # Find a container matching this database type
-        matching_containers = [
-            c for c in containers if c.db_type == self.config.db_type
-        ]
-
-        if not matching_containers:
-            pytest.skip(f"No Docker container found for {self.config.display_name}")
-
-        container = matching_containers[0]
-        config = container_to_connection_config(container)
-
-        # Databases that don't require auth should have password="" not None
-        # This prevents the UI from showing "Password Required" dialog
-        from sqlit.domains.connections.providers.registry import requires_auth
-
-        if not requires_auth(self.config.db_type):
-            assert config.password is not None, (
-                f"{self.config.display_name} doesn't require authentication, but "
-                f"password is None. This will cause the UI to prompt for a password. "
-                f"Set password='' (empty string) in docker_detector.py for databases "
-                f"that don't need auth."
-            )
-
-    def test_docker_container_connection(self, request):
-        """Test that docker-discovered credentials actually work.
-
-        This tests the full docker discovery flow:
-        1. Detect the container
-        2. Convert to ConnectionConfig
-        3. Connect using discovered credentials
-        4. Run a simple query
-
-        This catches issues like:
-        - Wrong host (localhost vs 127.0.0.1 for MySQL/MariaDB)
-        - Missing or incorrect credentials
-        - Wrong port mappings
-        """
-        # Skip for file-based databases (they don't use Docker containers)
-        from sqlit.domains.connections.providers.registry import is_file_based
-
-        if is_file_based(self.config.db_type):
-            pytest.skip(f"{self.config.display_name} is file-based, no Docker container")
-
-        from sqlit.domains.connections.discovery.docker_detector import (
-            DockerStatus,
-            container_to_connection_config,
-            detect_database_containers,
-        )
-        from sqlit.domains.connections.providers.registry import get_adapter
-
-        status, containers = detect_database_containers()
-
-        if status != DockerStatus.AVAILABLE:
-            pytest.skip("Docker is not available")
-
-        # Find a container matching this database type
-        matching_containers = [
-            c for c in containers if c.db_type == self.config.db_type
-        ]
-
-        if not matching_containers:
-            pytest.skip(f"No Docker container found for {self.config.display_name}")
-
-        container = matching_containers[0]
-        if not container.connectable:
-            pytest.skip(f"Container {container.container_name} is not connectable")
-
-        # Convert to ConnectionConfig (this is what the UI does)
-        config = container_to_connection_config(container)
-
-        # Get the adapter and try to connect
-        adapter = get_adapter(config.db_type)
-
-        try:
-            conn = adapter.connect(config)
-        except Exception as e:
-            pytest.fail(
-                f"Failed to connect using docker-discovered credentials:\n"
-                f"  Container: {container.container_name}\n"
-                f"  Host: {config.server}\n"
-                f"  Port: {config.port}\n"
-                f"  Username: {config.username}\n"
-                f"  Password: {'***' if config.password else 'None'}\n"
-                f"  Database: {config.database}\n"
-                f"  Error: {e}"
-            )
-
-        # Run a simple query to verify connection works
-        try:
-            adapter.execute_test_query(conn)
-        except Exception as e:
-            pytest.fail(
-                f"Connected but failed to execute query: {e}"
-            )
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
 
     def test_query_select(self, request, cli_runner):
         """Test executing SELECT query."""

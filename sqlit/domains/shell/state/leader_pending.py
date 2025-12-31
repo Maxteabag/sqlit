@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from sqlit.core.input_context import InputContext
 from sqlit.core.leader_commands import get_leader_binding_actions, get_leader_commands
 from sqlit.core.state_base import ActionResult, DisplayBinding, State
-from sqlit.core.input_context import InputContext
 
 
 class LeaderPendingState(State):

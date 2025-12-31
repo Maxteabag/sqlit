@@ -8,6 +8,8 @@ from typing import Any, Protocol
 class ExplorerStateProtocol(Protocol):
     _expanded_paths: set[str]
     _loading_nodes: set[str]
+    _schema_service: Any | None
+    _schema_service_session: Any | None
     _tree_filter_visible: bool
     _tree_filter_text: str
     _tree_filter_query: str

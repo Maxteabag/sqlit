@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from textual.timer import Timer
 
+    from sqlit.core.connection_manager import ConnectionManager
+    from sqlit.domains.connections.app.connection_flow import ConnectionFlow
     from sqlit.domains.connections.app.session import ConnectionSession
     from sqlit.domains.connections.domain.config import ConnectionConfig
     from sqlit.domains.connections.providers.model import DatabaseProvider
@@ -26,6 +28,8 @@ class ConnectionStateProtocol(Protocol):
     _connect_spinner: Spinner | None
     _connect_spinner_index: int
     _connect_spinner_timer: Timer | None
+    _connection_manager: ConnectionManager | None
+    _connection_flow: ConnectionFlow | None
 
     _session: ConnectionSession | None
     _connection_failed: bool
@@ -62,7 +66,7 @@ class ConnectionActionsProtocol(Protocol):
     def _do_delete_connection(self, config: ConnectionConfig) -> None:
         ...
 
-    def _handle_connection_picker_result(self, result: str | None) -> None:
+    def _handle_connection_picker_result(self, result: Any | None) -> None:
         ...
 
     def _populate_credentials_if_missing(self, config: ConnectionConfig) -> None:
@@ -92,7 +96,7 @@ class ConnectionActionsProtocol(Protocol):
     def _get_connection_config_from_node(self, node: Any) -> ConnectionConfig | None:
         ...
 
-    def _get_connection_result_registry(self) -> Any:
+    def _get_connection_flow(self) -> Any:
         ...
 
 

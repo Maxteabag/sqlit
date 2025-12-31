@@ -28,6 +28,7 @@ class ResultsStateProtocol(Protocol):
     _results_filter_pending_update: bool
     _tooltip_cell_coord: tuple[int, int] | None
     _tooltip_showing: bool
+    _value_view_active: bool
     MAX_FILTER_MATCHES: int
 
 
@@ -84,6 +85,9 @@ class ResultsActionsProtocol(Protocol):
         ...
 
     def _highlight_substring(self, text: str, search_lower: str) -> str:
+        ...
+
+    def action_view_cell_full(self) -> None:
         ...
 
 

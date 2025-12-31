@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from sqlit.core.state_base import DisplayBinding, State, resolve_display_key
 from sqlit.core.input_context import InputContext
+from sqlit.core.state_base import DisplayBinding, State, resolve_display_key
 
 
 class TreeOnObjectState(State):

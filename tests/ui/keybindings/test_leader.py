@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from sqlit.domains.connections.ui.screens.connection_picker import ConnectionPickerScreen
 from sqlit.core.keymap import get_keymap
+from sqlit.domains.connections.ui.screens import ConnectionPickerScreen
 from sqlit.domains.shell.app.main import SSMSTUI
 from sqlit.domains.shell.ui.screens.help import HelpScreen
 

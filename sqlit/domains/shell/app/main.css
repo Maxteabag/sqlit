@@ -1,0 +1,177 @@
+    Screen {
+        background: $surface;
+    }
+
+    TextArea {
+        & > .text-area--cursor-line {
+            background: transparent;
+        }
+        &:focus > .text-area--cursor-line {
+            background: $surface-lighten-1;
+        }
+    }
+
+    DataTable.flash-cell:focus > .datatable--cursor,
+    DataTable.flash-row:focus > .datatable--cursor,
+    DataTable.flash-all:focus > .datatable--cursor {
+        background: $success 30%;
+    }
+
+    DataTable.flash-all {
+        border: solid $success 30%;
+    }
+
+    .flash {
+        background: $success 30%;
+    }
+
+    Screen.results-fullscreen #sidebar {
+        display: none;
+    }
+
+    Screen.results-fullscreen #query-area {
+        display: none;
+    }
+
+    Screen.results-fullscreen #results-area {
+        height: 1fr;
+    }
+
+    Screen.query-fullscreen #sidebar {
+        display: none;
+    }
+
+    Screen.query-fullscreen #results-area {
+        display: none;
+    }
+
+    Screen.query-fullscreen #query-area {
+        height: 1fr;
+        border-bottom: none;
+    }
+
+    Screen.explorer-fullscreen #main-panel {
+        display: none;
+    }
+
+    Screen.explorer-fullscreen #sidebar {
+        width: 1fr;
+    }
+
+    Screen.explorer-hidden #sidebar {
+        display: none;
+    }
+
+    #main-container {
+        width: 100%;
+        height: 100%;
+    }
+
+    #content {
+        height: 1fr;
+    }
+
+    #sidebar {
+        width: 35;
+        border: round $border;
+        padding: 1;
+        margin: 0;
+    }
+
+    #object-tree {
+        height: 1fr;
+    }
+
+    #main-panel {
+        width: 1fr;
+    }
+
+    #query-area {
+        height: 50%;
+        border: round $border;
+        padding: 1;
+        margin: 0;
+    }
+
+    #query-input {
+        height: 1fr;
+        border: none;
+    }
+
+    #results-area {
+        height: 50%;
+        padding: 1;
+        border: round $border;
+        margin: 0;
+    }
+
+    #sidebar.active-pane,
+    #query-area.active-pane,
+    #results-area.active-pane {
+        border: round $primary;
+        border-title-color: $primary;
+    }
+
+
+    #results-area DataTable {
+        height: 1fr;
+    }
+
+    /* Hide results table when value view is visible */
+    #results-area.value-view-active DataTable {
+        display: none;
+    }
+
+    #results-area.value-view-active #results-filter {
+        display: none;
+    }
+
+    /* FastDataTable header styling */
+    DataTable > .datatable--header {
+        background: $surface-lighten-1;
+        color: $primary;
+        text-style: bold;
+    }
+
+    DataTable:focus > .datatable--header {
+        background: $primary 20%;
+        color: $text;
+    }
+
+    /* FastDataTable already has zebra stripes with $primary 10% */
+
+    #status-bar {
+        height: 1;
+        background: $surface-darken-1;
+        padding: 0 1;
+    }
+
+    #idle-scheduler-bar {
+        height: 1;
+        background: $primary-darken-3;
+        padding: 0 1;
+        display: none;
+    }
+
+    #idle-scheduler-bar.visible {
+        display: block;
+    }
+
+    #sidebar,
+    #query-area,
+    #results-area {
+        border-title-align: left;
+        border-title-color: $border;
+        border-title-background: $surface;
+        border-title-style: bold;
+    }
+
+    #autocomplete-dropdown {
+        layer: autocomplete;
+        position: absolute;
+        display: none;
+    }
+
+    #autocomplete-dropdown.visible {
+        display: block;
+    }

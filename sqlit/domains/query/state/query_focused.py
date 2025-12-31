@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from sqlit.core.state_base import State
 from sqlit.core.input_context import InputContext
+from sqlit.core.state_base import State
 
 
 class QueryFocusedState(State):

@@ -8,7 +8,7 @@ import pytest
 
 from sqlit.domains.connections.discovery.docker_detector import DetectedContainer, DockerStatus
 from sqlit.domains.connections.ui.screens import ConnectionPickerScreen
-from sqlit.domains.connections.ui.screens.connection_picker import DockerConnectionResult
+from sqlit.domains.connections.ui.screens.connection_picker.tabs import is_container_saved
 from sqlit.domains.explorer.domain.tree_nodes import ConnectionNode
 from sqlit.domains.shell.app.main import SSMSTUI
 
@@ -258,9 +258,9 @@ class TestDockerContainerPicker:
             assert picker is not None
 
             # First container should be detected as saved
-            assert picker._is_container_saved(mock_containers[0]) is True
+            assert is_container_saved(connections, mock_containers[0]) is True
             # Second container should not be saved
-            assert picker._is_container_saved(mock_containers[1]) is False
+            assert is_container_saved(connections, mock_containers[1]) is False
 
     @pytest.mark.asyncio
     async def test_connection_picker_select_docker_container(self):
@@ -336,6 +336,6 @@ class TestDockerContainerPicker:
             # Verify result
             assert len(result_holder) == 1
             result = result_holder[0]
-            assert isinstance(result, DockerConnectionResult)
-            assert result.container.container_name == "test-postgres"
-            assert result.action == "connect"
+            assert result is not None
+            assert result.name == "test-postgres"
+            assert result.db_type == "postgresql"

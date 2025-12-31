@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from rich.markup import escape as escape_markup
 from textual.widgets import Tree
 
-from sqlit.domains.connections.providers.metadata import get_badge_label, get_connection_display_info
+from sqlit.domains.connections.providers.metadata import get_connection_display_info
 from sqlit.domains.explorer.domain.tree_nodes import (
     ColumnNode,
     ConnectionNode,
@@ -23,7 +23,9 @@ from sqlit.domains.explorer.domain.tree_nodes import (
     ViewNode,
 )
 from sqlit.shared.ui.protocols import TreeMixinHost
-from sqlit.shared.ui.spinner import SPINNER_FRAMES
+
+from .tree_labels import TreeLabelMixin
+from .tree_schema import TreeSchemaMixin
 
 if TYPE_CHECKING:
     from sqlit.domains.connections.app.session import ConnectionSession
@@ -31,7 +33,7 @@ if TYPE_CHECKING:
     from sqlit.domains.connections.providers.model import DatabaseProvider
 
 
-class TreeMixin:
+class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
     """Mixin providing tree/explorer functionality."""
 
     _active_database: str | None = None
@@ -43,70 +45,6 @@ class TreeMixin:
     _last_query_table: dict[str, Any] | None = None
     _schema_service: Any | None = None
     _schema_service_session: Any | None = None
-
-    def _get_object_cache(self) -> dict[str, dict[str, Any]]:
-        cache = getattr(self, "_db_object_cache", None)
-        if cache is None:
-            cache = {}
-            self._db_object_cache = cache
-        return cache
-
-    def _get_schema_service(self) -> Any | None:
-        if not self._session:
-            return None
-        if self._schema_service is None or self._schema_service_session is not self._session:
-            from sqlit.domains.explorer.app.schema_service import DbArgResolver, ExplorerSchemaService
-
-            db_arg_resolver = getattr(self, "_get_metadata_db_arg", None)
-            if not callable(db_arg_resolver):
-                db_arg_resolver = None
-            else:
-                db_arg_resolver = cast(DbArgResolver, db_arg_resolver)
-            self._schema_service = ExplorerSchemaService(
-                session=self._session,
-                object_cache=self._get_object_cache(),
-                db_arg_resolver=db_arg_resolver,
-            )
-            self._schema_service_session = self._session
-        return self._schema_service
-
-    def _db_type_badge(self, db_type: str) -> str:
-        """Get short badge for database type."""
-        return get_badge_label(db_type)
-
-    def _format_connection_label(self, conn: Any, status: str, spinner: str | None = None) -> str:
-        display_info = escape_markup(get_connection_display_info(conn))
-        db_type_label = self._db_type_badge(conn.db_type)
-        escaped_name = escape_markup(conn.name)
-        source_emoji = conn.get_source_emoji()
-
-        if status == "connected":
-            return f"[#4ADE80]* {source_emoji}{escaped_name}[/] [{db_type_label}] ({display_info})"
-        if status == "connecting":
-            frame = spinner or SPINNER_FRAMES[0]
-            return (
-                f"[#FBBF24]{frame}[/] {source_emoji}{escaped_name} [dim italic]Connecting...[/]"
-            )
-        return f"{source_emoji}[dim]{escaped_name}[/dim] [{db_type_label}] ({display_info})"
-
-    def _connect_spinner_frame(self) -> str:
-        spinner = getattr(self, "_connect_spinner", None)
-        return spinner.frame if spinner else SPINNER_FRAMES[0]
-
-    def _get_node_kind(self, node: Any) -> str:
-        data = getattr(node, "data", None)
-        if data is None:
-            return ""
-        getter = getattr(data, "get_node_kind", None)
-        if callable(getter):
-            return str(getter())
-        return ""
-
-    def _get_node_path_part(self, data: Any) -> str:
-        getter = getattr(data, "get_node_path_part", None)
-        if callable(getter):
-            return str(getter())
-        return ""
 
     def _update_connecting_indicator(self: TreeMixinHost) -> None:
         connecting_config = getattr(self, "_connecting_config", None)

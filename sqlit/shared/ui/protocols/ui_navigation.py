@@ -8,6 +8,8 @@ if TYPE_CHECKING:
     from textual.timer import Timer
     from textual.widgets import Static
 
+    from sqlit.core.input_context import InputContext
+
 
 class UIStateProtocol(Protocol):
     _fullscreen_mode: str
@@ -61,6 +63,9 @@ class UINavigationActionsProtocol(Protocol):
         ...
 
     def _execute_leader_command(self, action: str) -> None:
+        ...
+
+    def _get_input_context(self) -> InputContext:
         ...
 
     def action_close_value_view(self) -> None:

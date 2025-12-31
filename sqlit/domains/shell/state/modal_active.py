@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from sqlit.core.state_base import ActionResult, DisplayBinding, State
 from sqlit.core.input_context import InputContext
+from sqlit.core.state_base import ActionResult, DisplayBinding, State
 
 
 class ModalActiveState(State):

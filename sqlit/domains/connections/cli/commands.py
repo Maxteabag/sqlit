@@ -24,6 +24,24 @@ from sqlit.shared.app.services import AppServices, build_app_services
 from .helpers import build_connection_config_from_args
 
 
+def _find_connection_index(connections: list[ConnectionConfig], name: str) -> int | None:
+    for idx, conn in enumerate(connections):
+        if conn.name == name:
+            return idx
+    return None
+
+
+def _ensure_password_storage(
+    services: AppServices,
+    config: ConnectionConfig,
+) -> None:
+    has_db_password = bool(config.tcp_endpoint and config.tcp_endpoint.password)
+    has_ssh_password = bool(config.tunnel and config.tunnel.password)
+    if (has_db_password or has_ssh_password) and not is_keyring_usable():
+        if not _maybe_prompt_plaintext_credentials(services):
+            _clear_passwords_if_not_persisted(config)
+
+
 def _maybe_prompt_plaintext_credentials(services: AppServices) -> bool:
     """Ensure plaintext credential storage preference is set when keyring isn't usable.
 
@@ -179,11 +197,7 @@ def cmd_connection_create(args: Any, *, services: AppServices | None = None) -> 
         return 1
 
     connections.append(config)
-    has_db_password = bool(config.tcp_endpoint and config.tcp_endpoint.password)
-    has_ssh_password = bool(config.tunnel and config.tunnel.password)
-    if (has_db_password or has_ssh_password) and not is_keyring_usable():
-        if not _maybe_prompt_plaintext_credentials(services):
-            _clear_passwords_if_not_persisted(config)
+    _ensure_password_storage(services, config)
     services.connection_store.save_all(connections)
     print(f"Connection '{args.name}' created successfully.")
     return 0
@@ -194,12 +208,7 @@ def cmd_connection_edit(args: Any, *, services: AppServices | None = None) -> in
     services = services or build_app_services(RuntimeConfig.from_env())
     connections = services.connection_store.load_all()
 
-    conn_idx = None
-    for i, c in enumerate(connections):
-        if c.name == args.connection_name:
-            conn_idx = i
-            break
-
+    conn_idx = _find_connection_index(connections, args.connection_name)
     if conn_idx is None:
         print(f"Error: Connection '{args.connection_name}' not found.")
         return 1
@@ -245,11 +254,7 @@ def cmd_connection_edit(args: Any, *, services: AppServices | None = None) -> in
 
             conn.endpoint = FileEndpoint(path=file_path)
 
-    has_db_password = bool(conn.tcp_endpoint and conn.tcp_endpoint.password)
-    has_ssh_password = bool(conn.tunnel and conn.tunnel.password)
-    if (has_db_password or has_ssh_password) and not is_keyring_usable():
-        if not _maybe_prompt_plaintext_credentials(services):
-            _clear_passwords_if_not_persisted(conn)
+    _ensure_password_storage(services, conn)
 
     services.connection_store.save_all(connections)
     print(f"Connection '{conn.name}' updated successfully.")
@@ -261,12 +266,7 @@ def cmd_connection_delete(args: Any, *, services: AppServices | None = None) -> 
     services = services or build_app_services(RuntimeConfig.from_env())
     connections = services.connection_store.load_all()
 
-    conn_idx = None
-    for i, c in enumerate(connections):
-        if c.name == args.connection_name:
-            conn_idx = i
-            break
-
+    conn_idx = _find_connection_index(connections, args.connection_name)
     if conn_idx is None:
         print(f"Error: Connection '{args.connection_name}' not found.")
         return 1

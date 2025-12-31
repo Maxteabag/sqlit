@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from sqlit.core.input_context import InputContext
 from sqlit.core.vim import VimMode
-from sqlit.domains.shell.state import QueryExecutingState
-from sqlit.domains.shell.state import UIStateMachine
+from sqlit.domains.shell.state import QueryExecutingState, UIStateMachine
 
 
 def make_context(**overrides: object) -> InputContext:

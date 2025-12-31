@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import cast
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -13,10 +13,8 @@ from textual.widgets.option_list import Option
 
 from sqlit.domains.connections.app.install_strategy import InstallOption
 from sqlit.domains.connections.providers.exceptions import MissingDriverError
+from sqlit.shared.app.services import InstallStrategyProvider
 from sqlit.shared.ui.widgets import Dialog
-
-if TYPE_CHECKING:
-    from sqlit.shared.app.services import InstallStrategyProvider
 
 
 class PackageSetupScreen(ModalScreen):
@@ -80,9 +78,8 @@ class PackageSetupScreen(ModalScreen):
         if services is not None:
             strategy = getattr(services, "install_strategy", None)
             if strategy is not None:
-                self._install_strategy = strategy
-                return strategy
-        from sqlit.shared.app.services import InstallStrategyProvider
+                self._install_strategy = cast(InstallStrategyProvider, strategy)
+                return self._install_strategy
         from sqlit.shared.core.system_probe import SystemProbe
 
         self._install_strategy = InstallStrategyProvider(SystemProbe())

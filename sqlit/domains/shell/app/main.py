@@ -18,6 +18,9 @@ from textual.timer import Timer
 from textual.widgets import Static, Tree
 from textual.worker import Worker
 
+from sqlit.core.input_context import InputContext
+from sqlit.core.key_router import resolve_action
+from sqlit.core.vim import VimMode
 from sqlit.domains.connections.domain.config import ConnectionConfig
 from sqlit.domains.connections.providers.model import DatabaseProvider
 from sqlit.domains.connections.ui.mixins.connection import ConnectionMixin
@@ -30,14 +33,11 @@ from sqlit.domains.results.ui.mixins.results_filter import ResultsFilterMixin
 from sqlit.domains.shell.app.idle_scheduler import IdleScheduler
 from sqlit.domains.shell.app.omarchy import DEFAULT_THEME
 from sqlit.domains.shell.app.startup_flow import run_on_mount
-from sqlit.domains.shell.state import UIStateMachine
 from sqlit.domains.shell.app.theme_manager import ThemeManager
-from sqlit.core.input_context import InputContext
-from sqlit.core.key_router import resolve_action
-from sqlit.core.vim import VimMode
+from sqlit.domains.shell.state import UIStateMachine
 from sqlit.domains.shell.ui.mixins.ui_navigation import UINavigationMixin
 from sqlit.shared.app import AppServices, RuntimeConfig, build_app_services
-from sqlit.shared.ui.protocols import AppProtocol
+from sqlit.shared.ui.protocols import AppProtocol, UINavigationMixinHost
 from sqlit.shared.ui.widgets import (
     AutocompleteDropdown,
     ContextFooter,
@@ -66,186 +66,7 @@ class SSMSTUI(
     """Main SSMS TUI application."""
 
     TITLE = "sqlit"
-
-    CSS = """
-    Screen {
-        background: $surface;
-    }
-
-    TextArea {
-        & > .text-area--cursor-line {
-            background: transparent;
-        }
-        &:focus > .text-area--cursor-line {
-            background: $surface-lighten-1;
-        }
-    }
-
-    DataTable.flash-cell:focus > .datatable--cursor,
-    DataTable.flash-row:focus > .datatable--cursor,
-    DataTable.flash-all:focus > .datatable--cursor {
-        background: $success 30%;
-    }
-
-    DataTable.flash-all {
-        border: solid $success 30%;
-    }
-
-    .flash {
-        background: $success 30%;
-    }
-
-    Screen.results-fullscreen #sidebar {
-        display: none;
-    }
-
-    Screen.results-fullscreen #query-area {
-        display: none;
-    }
-
-    Screen.results-fullscreen #results-area {
-        height: 1fr;
-    }
-
-    Screen.query-fullscreen #sidebar {
-        display: none;
-    }
-
-    Screen.query-fullscreen #results-area {
-        display: none;
-    }
-
-    Screen.query-fullscreen #query-area {
-        height: 1fr;
-        border-bottom: none;
-    }
-
-    Screen.explorer-fullscreen #main-panel {
-        display: none;
-    }
-
-    Screen.explorer-fullscreen #sidebar {
-        width: 1fr;
-    }
-
-    Screen.explorer-hidden #sidebar {
-        display: none;
-    }
-
-    #main-container {
-        width: 100%;
-        height: 100%;
-    }
-
-    #content {
-        height: 1fr;
-    }
-
-    #sidebar {
-        width: 35;
-        border: round $border;
-        padding: 1;
-        margin: 0;
-    }
-
-    #object-tree {
-        height: 1fr;
-    }
-
-    #main-panel {
-        width: 1fr;
-    }
-
-    #query-area {
-        height: 50%;
-        border: round $border;
-        padding: 1;
-        margin: 0;
-    }
-
-    #query-input {
-        height: 1fr;
-        border: none;
-    }
-
-    #results-area {
-        height: 50%;
-        padding: 1;
-        border: round $border;
-        margin: 0;
-    }
-
-    #sidebar.active-pane,
-    #query-area.active-pane,
-    #results-area.active-pane {
-        border: round $primary;
-        border-title-color: $primary;
-    }
-
-
-    #results-area DataTable {
-        height: 1fr;
-    }
-
-    /* Hide results table when value view is visible */
-    #results-area.value-view-active DataTable {
-        display: none;
-    }
-
-    #results-area.value-view-active #results-filter {
-        display: none;
-    }
-
-    /* FastDataTable header styling */
-    DataTable > .datatable--header {
-        background: $surface-lighten-1;
-        color: $primary;
-        text-style: bold;
-    }
-
-    DataTable:focus > .datatable--header {
-        background: $primary 20%;
-        color: $text;
-    }
-
-    /* FastDataTable already has zebra stripes with $primary 10% */
-
-    #status-bar {
-        height: 1;
-        background: $surface-darken-1;
-        padding: 0 1;
-    }
-
-    #idle-scheduler-bar {
-        height: 1;
-        background: $primary-darken-3;
-        padding: 0 1;
-        display: none;
-    }
-
-    #idle-scheduler-bar.visible {
-        display: block;
-    }
-
-    #sidebar,
-    #query-area,
-    #results-area {
-        border-title-align: left;
-        border-title-color: $border;
-        border-title-background: $surface;
-        border-title-style: bold;
-    }
-
-    #autocomplete-dropdown {
-        layer: autocomplete;
-        position: absolute;
-        display: none;
-    }
-
-    #autocomplete-dropdown.visible {
-        display: block;
-    }
-    """
+    CSS_PATH = "main.css"
 
     LAYERS = ["autocomplete"]
 
@@ -315,7 +136,7 @@ class SSMSTUI(
         self._last_active_pane: str | None = None
         self._query_worker: Worker[Any] | None = None
         self._query_executing: bool = False
-        self._cancellable_query: Any | None = None
+        self._query_handle: Any | None = None
         self._theme_manager = ThemeManager(self, settings_store=self.services.settings_store)
         self._spinner_index: int = 0
         self._spinner_timer: Timer | None = None
@@ -401,7 +222,7 @@ class SSMSTUI(
         )
 
         if action is None and ctx.leader_pending and hasattr(self, "_cancel_leader_pending"):
-            self._cancel_leader_pending()
+            cast(UINavigationMixinHost, self)._cancel_leader_pending()
             ctx = self._get_input_context()
             action = resolve_action(
                 event.key,

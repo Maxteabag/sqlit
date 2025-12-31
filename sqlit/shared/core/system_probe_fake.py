@@ -30,7 +30,7 @@ class FakeSystemProbe(SystemProbeProtocol):
         in_venv: bool | None = None,
         pep668_externally_managed: bool | None = None,
         is_arch_linux: bool | None = None,
-    ) -> "FakeSystemProbe":
+    ) -> FakeSystemProbe:
         return cls(
             executable=probe.executable,
             pip_available_value=probe.pip_available() if pip_available is None else pip_available,

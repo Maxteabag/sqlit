@@ -7,8 +7,9 @@ import os
 import site
 import sys
 import sysconfig
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Callable, Mapping, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 def _safe_sysconfig_paths() -> dict[str, str]:

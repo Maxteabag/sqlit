@@ -21,6 +21,48 @@ from sqlit.shared.app.runtime import RuntimeConfig
 from sqlit.shared.app.services import AppServices, build_app_services
 
 
+def _find_connection(connections: list[ConnectionConfig], name: str) -> ConnectionConfig | None:
+    for conn in connections:
+        if conn.name == name:
+            return conn
+    return None
+
+
+def _load_query_text(args: Any) -> tuple[str | None, str | None]:
+    if args.query:
+        return args.query, None
+    if args.file:
+        try:
+            with open(args.file, encoding="utf-8") as f:
+                return f.read(), None
+        except FileNotFoundError:
+            return None, f"Error: File '{args.file}' not found."
+        except OSError as exc:
+            return None, f"Error reading file: {exc}"
+    return None, "Error: Either --query or --file must be provided."
+
+
+def _get_query_service(
+    services: AppServices,
+    provider: Any,
+    query_service: QueryService | None,
+) -> QueryService:
+    if query_service is not None:
+        return query_service
+    return QueryService(services.history_store, analyzer=DialectQueryAnalyzer(provider.dialect))
+
+
+def _should_stream_results(
+    *, max_rows: int | None, fmt: str, analyzer: DialectQueryAnalyzer, query: str, has_cursor: bool
+) -> bool:
+    return (
+        max_rows is None
+        and fmt in ("csv", "json")
+        and analyzer.classify(query) == QueryKind.RETURNS_ROWS
+        and has_cursor
+    )
+
+
 def _stream_csv_output(cursor: Any, columns: list[str]) -> int:
     """Stream CSV output from cursor using fetchmany."""
     writer = csv.writer(sys.stdout)
@@ -103,12 +145,7 @@ def cmd_query(
     services = services or build_app_services(RuntimeConfig.from_env())
     connections = services.connection_store.load_all()
 
-    config = None
-    for c in connections:
-        if c.name == args.connection:
-            config = c
-            break
-
+    config = _find_connection(connections, args.connection)
     if config is None:
         print(f"Error: Connection '{args.connection}' not found.")
         return 1
@@ -119,40 +156,30 @@ def cmd_query(
 
     config = prompt_for_password(config)
 
-    if args.query:
-        query = args.query
-    elif args.file:
-        try:
-            with open(args.file, encoding="utf-8") as f:
-                query = f.read()
-        except FileNotFoundError:
-            print(f"Error: File '{args.file}' not found.")
-            return 1
-        except OSError as e:
-            print(f"Error reading file: {e}")
-            return 1
-    else:
-        print("Error: Either --query or --file must be provided.")
+    query, error = _load_query_text(args)
+    if error:
+        print(error)
+        return 1
+    if query is None:
+        print("Error: No query provided.")
         return 1
 
     max_rows = args.limit if args.limit > 0 else None
 
     create_session = session_factory or services.session_factory
-    if query_service is None:
-        service = QueryService(services.history_store, analyzer=DialectQueryAnalyzer(provider.dialect))
-    else:
-        service = query_service
+    service = _get_query_service(services, provider, query_service)
     analyzer = DialectQueryAnalyzer(provider.dialect)
 
     try:
         with create_session(config) as session:
             has_cursor = hasattr(session.connection, "cursor") and callable(getattr(session.connection, "cursor", None))
 
-            if (
-                max_rows is None
-                and args.format in ("csv", "json")
-                and analyzer.classify(query) == QueryKind.RETURNS_ROWS
-                and has_cursor
+            if _should_stream_results(
+                max_rows=max_rows,
+                fmt=args.format,
+                analyzer=analyzer,
+                query=query,
+                has_cursor=has_cursor,
             ):
                 cursor = session.connection.cursor()
                 cursor.execute(query)

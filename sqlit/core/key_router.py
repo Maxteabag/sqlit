@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from sqlit.core.binding_contexts import get_binding_contexts
 from sqlit.core.input_context import InputContext
 from sqlit.core.keymap import get_keymap
 from sqlit.core.leader_commands import get_leader_commands
 
 
-def resolve_action(key: str, ctx: InputContext, *, is_allowed) -> str | None:
+def resolve_action(
+    key: str,
+    ctx: InputContext,
+    *,
+    is_allowed: Callable[[str], bool],
+) -> str | None:
     """Resolve a key to an action name for the given context.
 
     Args:

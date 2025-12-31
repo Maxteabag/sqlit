@@ -58,6 +58,7 @@ def run_on_mount(app: AppProtocol) -> None:
     app.call_after_refresh(app._update_status_bar)
     app._update_footer_bindings()
     app._startup_stamp("footer_updated")
+    _warn_on_missing_actions(app, is_headless)
     startup_config = app._startup_connect_config
     if startup_config is not None:
         config = startup_config
@@ -67,6 +68,22 @@ def run_on_mount(app: AppProtocol) -> None:
 
         app.call_after_refresh(_connect_startup)
     log_startup_timing(app)
+
+
+def _warn_on_missing_actions(app: AppProtocol, is_headless: bool) -> None:
+    from sqlit.core.action_validation import validate_actions
+
+    missing = validate_actions(app)
+    if not missing:
+        return
+    message = f"Missing actions: {', '.join(missing)}"
+    if is_headless:
+        print(f"[sqlit] {message}", file=sys.stderr)
+        return
+    try:
+        app.notify(message, severity="warning")
+    except Exception:
+        print(f"[sqlit] {message}", file=sys.stderr)
 
 
 def apply_mock_settings(app: AppProtocol, settings: dict) -> None:

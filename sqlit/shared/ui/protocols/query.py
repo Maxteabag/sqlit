@@ -9,9 +9,9 @@ if TYPE_CHECKING:
     from textual.timer import Timer
     from textual.worker import Worker
 
-    from sqlit.domains.query.app.query_service import QueryService
     from sqlit.domains.query.editing.deletion import EditResult
     from sqlit.shared.ui.spinner import Spinner
+    from sqlit.shared.ui.widgets import SqlitDataTable
 
 
 class QueryStateProtocol(Protocol):
@@ -20,6 +20,9 @@ class QueryStateProtocol(Protocol):
     _query_start_time: float
     _spinner_index: int
     _spinner_timer: Timer | None
+    _query_handle: Any | None
+    _query_service: Any | None
+    _query_service_db_type: str | None
     _cancellable_query: Any | None
     _query_spinner: Spinner | None
     _query_cursor_cache: dict[str, tuple[int, int]] | None
@@ -27,9 +30,7 @@ class QueryStateProtocol(Protocol):
 
 
 class QueryActionsProtocol(Protocol):
-    _query_service: QueryService | None
     _history_store: Any | None
-    _query_service_db_type: str | None
 
     def action_execute_query(self) -> None:
         ...
@@ -37,7 +38,7 @@ class QueryActionsProtocol(Protocol):
     def _get_history_store(self) -> Any:
         ...
 
-    def _get_query_service(self, provider: Any) -> QueryService:
+    def _get_query_service(self, provider: Any) -> Any:
         ...
 
     def _execute_query_common(self, keep_insert_mode: bool) -> None:
@@ -115,6 +116,66 @@ class QueryActionsProtocol(Protocol):
         ...
 
     def _apply_edit_result(self, result: EditResult) -> None:
+        ...
+
+    def _has_selection(self) -> bool:
+        ...
+
+    def _flash_yank_range(self, start_row: int, start_col: int, end_row: int, end_col: int) -> None:
+        ...
+
+    def _yank_selection(self) -> None:
+        ...
+
+    def _show_yank_char_pending_menu(self, motion: str) -> None:
+        ...
+
+    def _show_yank_text_object_menu(self, mode: str) -> None:
+        ...
+
+    def _yank_with_motion(self, motion_key: str, char: str | None = None) -> None:
+        ...
+
+    def _yank_with_text_object(self, obj_char: str, around: bool) -> None:
+        ...
+
+    def _change_selection(self) -> None:
+        ...
+
+    def _enter_insert_mode(self) -> None:
+        ...
+
+    def _show_change_char_pending_menu(self, motion: str) -> None:
+        ...
+
+    def _show_change_text_object_menu(self, mode: str) -> None:
+        ...
+
+    def _change_with_motion(self, motion_key: str, char: str | None = None) -> None:
+        ...
+
+    def _change_with_text_object(self, obj_char: str, around: bool) -> None:
+        ...
+
+    def _extend_selection(self, new_row: int, new_col: int) -> None:
+        ...
+
+    def _replace_results_table_with_data(
+        self,
+        columns: list[str],
+        rows: list[tuple],
+        *,
+        escape: bool,
+    ) -> None:
+        ...
+
+    def _build_results_table(
+        self,
+        columns: list[str],
+        rows: list[tuple],
+        *,
+        escape: bool,
+    ) -> SqlitDataTable:
         ...
 
 

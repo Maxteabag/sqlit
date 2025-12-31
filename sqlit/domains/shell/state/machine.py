@@ -10,6 +10,15 @@ adding or overriding specific behaviors.
 
 from __future__ import annotations
 
+from sqlit.core.input_context import InputContext
+from sqlit.core.leader_commands import get_leader_commands
+from sqlit.core.state_base import (
+    ActionResult,
+    DisplayBinding,
+    HelpEntry,
+    State,
+    resolve_display_key,
+)
 from sqlit.domains.explorer.state import (
     TreeFilterActiveState,
     TreeFocusedState,
@@ -35,15 +44,6 @@ from sqlit.domains.shell.state.main_screen import MainScreenState
 from sqlit.domains.shell.state.modal_active import ModalActiveState
 from sqlit.domains.shell.state.query_executing import QueryExecutingState
 from sqlit.domains.shell.state.root import RootState
-from sqlit.core.leader_commands import get_leader_commands
-from sqlit.core.state_base import (
-    ActionResult,
-    DisplayBinding,
-    HelpEntry,
-    State,
-    resolve_display_key,
-)
-from sqlit.core.input_context import InputContext
 
 
 class UIStateMachine:

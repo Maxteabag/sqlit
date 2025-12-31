@@ -4,12 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlit.domains.connections.domain.passwords import (
-    needs_db_password as _needs_db_password,
-)
-from sqlit.domains.connections.domain.passwords import (
-    needs_ssh_password as _needs_ssh_password,
-)
+from sqlit.domains.connections.app.connection_flow import ConnectionFlow, ConnectionPrompter
 from sqlit.domains.connections.app.session import ConnectionSession
 from sqlit.shared.ui.protocols import ConnectionMixinHost
 from sqlit.shared.ui.spinner import Spinner
@@ -17,6 +12,27 @@ from sqlit.shared.ui.spinner import Spinner
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
     from sqlit.domains.connections.providers.model import DatabaseProvider
+
+
+class _ScreenPrompter(ConnectionPrompter):
+    def __init__(self, host: ConnectionMixinHost) -> None:
+        self._host = host
+
+    def prompt_ssh_password(self, config: ConnectionConfig, on_done: Any) -> None:
+        from ..screens import PasswordInputScreen
+
+        self._host.push_screen(
+            PasswordInputScreen(config.name, password_type="ssh"),
+            on_done,
+        )
+
+    def prompt_db_password(self, config: ConnectionConfig, on_done: Any) -> None:
+        from ..screens import PasswordInputScreen
+
+        self._host.push_screen(
+            PasswordInputScreen(config.name, password_type="database"),
+            on_done,
+        )
 
 
 class ConnectionMixin:
@@ -30,23 +46,21 @@ class ConnectionMixin:
     _session: ConnectionSession | None = None
     _query_target_database: str | None = None
 
-    def _populate_credentials_if_missing(self: ConnectionMixinHost, config: ConnectionConfig) -> None:
-        """Populate missing credentials from the credentials service."""
-        if hasattr(self, "_connection_manager"):
-            self._connection_manager.populate_credentials(config)
-            return
-        endpoint = config.tcp_endpoint
-        if endpoint and endpoint.password is not None and (not config.tunnel or config.tunnel.password is not None):
-            return
-        service = self.services.credentials_service
-        if endpoint and endpoint.password is None:
-            password = service.get_password(config.name)
-            if password is not None:
-                endpoint.password = password
-        if config.tunnel and config.tunnel.password is None:
-            ssh_password = service.get_ssh_password(config.name)
-            if ssh_password is not None:
-                config.tunnel.password = ssh_password
+    _connection_flow: ConnectionFlow | None = None
+
+    def _get_connection_flow(self: ConnectionMixinHost) -> ConnectionFlow:
+        flow = getattr(self, "_connection_flow", None)
+        manager = getattr(self, "_connection_manager", None)
+        if flow is None:
+            flow = ConnectionFlow(
+                services=self.services,
+                connection_manager=manager,
+                prompter=_ScreenPrompter(self),
+            )
+            self._connection_flow = flow
+        else:
+            flow.connection_manager = manager
+        return flow
 
     def _get_connection_config_from_data(self, data: Any) -> ConnectionConfig | None:
         if data is None:
@@ -69,47 +83,8 @@ class ConnectionMixin:
         If the connection requires a password that is not stored (empty),
         the user will be prompted to enter the password before connecting.
         """
-
-        from ..screens import PasswordInputScreen
-
-        self._populate_credentials_if_missing(config)
-
-        if _needs_ssh_password(config):
-
-            def on_ssh_password(password: str | None) -> None:
-                if password is None:
-                    return
-                temp_config = config.with_tunnel(password=password)
-                self._connect_with_db_password_check(temp_config)
-
-            self.push_screen(
-                PasswordInputScreen(config.name, password_type="ssh"),
-                on_ssh_password,
-            )
-            return
-
-        self._connect_with_db_password_check(config)
-
-    def _connect_with_db_password_check(self: ConnectionMixinHost, config: ConnectionConfig) -> None:
-        """Check for database password and prompt if needed, then connect."""
-
-        from ..screens import PasswordInputScreen
-
-        if _needs_db_password(config):
-
-            def on_db_password(password: str | None) -> None:
-                if password is None:
-                    return
-                temp_config = config.with_endpoint(password=password)
-                self._do_connect(temp_config)
-
-            self.push_screen(
-                PasswordInputScreen(config.name, password_type="database"),
-                on_db_password,
-            )
-            return
-
-        self._do_connect(config)
+        flow = self._get_connection_flow()
+        flow.start(config, self._do_connect)
 
     def _set_connecting_state(self: ConnectionMixinHost, config: ConnectionConfig | None, refresh: bool = True) -> None:
         """Track which connection is currently being attempted."""
@@ -171,8 +146,9 @@ class ConnectionMixin:
         attempt_id = self._connection_attempt_id
 
         def work() -> ConnectionSession:
-            if hasattr(self, "_connection_manager"):
-                return cast(ConnectionSession, self._connection_manager.connect(config))
+            manager = getattr(self, "_connection_manager", None)
+            if manager is not None:
+                return cast(ConnectionSession, manager.connect(config))
             return cast(ConnectionSession, self.services.session_factory(config))
 
         def on_success(session: ConnectionSession) -> None:
@@ -499,17 +475,6 @@ class ConnectionMixin:
             self._handle_connection_picker_result,
         )
 
-    def _get_connection_result_registry(self) -> Any:
-        registry = getattr(self, "_connection_result_registry", None)
-        if registry is None:
-            from sqlit.domains.connections.ui.handlers.connection_picker import (
-                get_default_connection_result_registry,
-            )
-
-            registry = get_default_connection_result_registry()
-            self._connection_result_registry = registry
-        return registry
-
     def _handle_connection_picker_result(self: ConnectionMixinHost, result: Any) -> None:
         if result is None:
             return
@@ -519,24 +484,34 @@ class ConnectionMixin:
             self.action_new_connection()
             return
 
-        result_kind = getattr(result, "get_result_kind", None)
-        if callable(result_kind):
-            kind = result_kind()
-            registry = self._get_connection_result_registry()
-            if registry.handle(self, kind, result):
-                return
+        from sqlit.domains.connections.domain.config import ConnectionConfig
 
-        # Handle saved connection selection
-        config = next((c for c in self.connections if c.name == result), None)
-        if config:
+        if isinstance(result, ConnectionConfig):
+            config = result
+            matching_config = next((c for c in self.connections if c.name == config.name), None)
+            if matching_config:
+                config = matching_config
+            for node in self.object_tree.root.children:
+                node_config = self._get_connection_config_from_node(node)
+                if node_config and node_config.name == config.name:
+                    self.object_tree.select_node(node)
+                    break
+            if self.current_config and self.current_config.name == config.name:
+                self.notify(f"Already connected to {config.name}")
+                return
+            self.connect_to_server(config)
+            return
+
+        selected_config = next((c for c in self.connections if c.name == result), None)
+        if selected_config:
             for node in self.object_tree.root.children:
                 node_config = self._get_connection_config_from_node(node)
                 if node_config and node_config.name == result:
                     self.object_tree.select_node(node)
                     break
 
-            if self.current_config and self.current_config.name == config.name:
-                self.notify(f"Already connected to {config.name}")
+            if self.current_config and self.current_config.name == selected_config.name:
+                self.notify(f"Already connected to {selected_config.name}")
                 return
             # Don't disconnect here - we'll disconnect only after successful connection
-            self.connect_to_server(config)
+            self.connect_to_server(selected_config)

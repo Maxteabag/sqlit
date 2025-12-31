@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import os
-import tempfile
-from pathlib import Path
 from typing import Any, cast
 
-from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal
+from textual.containers import Container
 from textual.events import ScreenResume, ScreenSuspend
 from textual.screen import ModalScreen
 from textual.widget import Widget
@@ -23,7 +19,6 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
-from textual.widgets.option_list import Option
 
 from sqlit.domains.connections.domain.config import (
     ConnectionConfig,
@@ -34,12 +29,10 @@ from sqlit.domains.connections.providers.catalog import get_provider_schema
 from sqlit.domains.connections.providers.driver import ensure_provider_driver_available
 from sqlit.domains.connections.providers.exceptions import MissingDriverError
 from sqlit.domains.connections.providers.metadata import has_advanced_auth, is_file_based, supports_ssh
-from sqlit.domains.connections.ui.fields import (
-    FieldDefinition,
-    FieldGroup,
-    FieldType,
-    schema_to_field_definitions,
-)
+from sqlit.domains.connections.ui.driver_status import build_driver_status_display
+from sqlit.domains.connections.ui.field_widgets import FieldWidgetBuilder
+from sqlit.domains.connections.ui.fields import FieldDefinition, FieldGroup, schema_to_field_definitions
+from sqlit.domains.connections.ui.restart_cache import clear_restart_cache, write_restart_cache
 from sqlit.domains.connections.ui.validation import ValidationState, validate_connection_form
 from sqlit.shared.ui.protocols import AppProtocol
 from sqlit.shared.ui.spinner import SPINNER_FRAMES, Spinner
@@ -343,80 +336,30 @@ class ConnectionScreen(ModalScreen):
                 values[name] = str(widget.value) if widget.value is not None else ""
         return values
 
-    def _create_field_widget(self, field_def: FieldDefinition, group_name: str) -> ComposeResult:
-        field_id = f"field-{field_def.name}"
-        container_id = f"container-{field_def.name}"
+    def _get_field_builder(self) -> FieldWidgetBuilder:
+        return FieldWidgetBuilder(
+            field_widgets=self._field_widgets,
+            field_definitions=self._field_definitions,
+            get_field_value=self._get_field_value,
+            resolve_select_value=self._resolve_select_value,
+            get_current_form_values=self._get_current_form_values,
+        )
 
-        initial_visible = True
-        if field_def.visible_when:
-            initial_values = {}
-            if self.config:
-                for attr in ["auth_type", "driver", "server", "port", "database", "username", "password", "file_path"]:
-                    initial_values[attr] = self.config.get_field_value(attr, "")
-            initial_visible = field_def.visible_when(initial_values)
+    def _get_initial_visibility_values(self) -> dict[str, Any]:
+        initial_values: dict[str, Any] = {}
+        if self.config:
+            for attr in ["auth_type", "driver", "server", "port", "database", "username", "password", "file_path"]:
+                initial_values[attr] = self.config.get_field_value(attr, "")
+        return initial_values
 
-        hidden_class = "" if initial_visible else " hidden"
-
-        if field_def.field_type == FieldType.DROPDOWN:
-            container = Container(id=container_id, classes=f"field-container{hidden_class}")
-            container.border_title = field_def.label
-            with container:
-                select = Select(
-                    options=[(opt.label, opt.value) for opt in field_def.options],
-                    value=self._resolve_select_value(field_def),
-                    allow_blank=False,
-                    compact=True,
-                    id=field_id,
-                )
-                self._field_widgets[field_def.name] = select
-                self._field_definitions[field_def.name] = field_def
-                yield select
-                yield Static("", id=f"error-{field_def.name}", classes="error-text hidden")
-        elif field_def.field_type == FieldType.SELECT:
-            container = Container(id=container_id, classes=f"field-container{hidden_class}")
-            container.border_title = field_def.label
-            with container:
-                options = [Option(opt.label, id=opt.value) for opt in field_def.options]
-                option_list = OptionList(*options, id=field_id, classes="select-field")
-                self._field_widgets[field_def.name] = option_list
-                self._field_definitions[field_def.name] = field_def
-                yield option_list
-                yield Static("", id=f"error-{field_def.name}", classes="error-text hidden")
-        else:
-            value = self._get_field_value(field_def.name) or field_def.default
-            container = Container(id=container_id, classes=f"field-container{hidden_class}")
-            container.border_title = field_def.label
-            with container:
-                input_widget = Input(
-                    value=value,
-                    placeholder=field_def.placeholder,
-                    id=field_id,
-                    password=False,
-                )
-                self._field_widgets[field_def.name] = input_widget
-                self._field_definitions[field_def.name] = field_def
-                yield input_widget
-                yield Static("", id=f"error-{field_def.name}", classes="error-text hidden")
-
-    def _create_field_group(self, group: FieldGroup) -> ComposeResult:
-        row_groups: dict[str | None, list[FieldDefinition]] = {}
-        for field_def in group.fields:
-            row_key = field_def.row_group
-            if row_key not in row_groups:
-                row_groups[row_key] = []
-            row_groups[row_key].append(field_def)
-
-        with Container(classes="field-group"):
-            for row_key, fields in row_groups.items():
-                if row_key is None:
-                    for field_def in fields:
-                        yield from self._create_field_widget(field_def, group.name)
-                else:
-                    with Horizontal(classes="field-row"):
-                        for field_def in fields:
-                            width_class = "field-flex" if field_def.width == "flex" else "field-fixed"
-                            with Container(classes=width_class):
-                                yield from self._create_field_widget(field_def, group.name)
+    def _create_field_group(
+        self,
+        group: FieldGroup,
+        *,
+        initial_values: dict[str, Any] | None = None,
+    ) -> ComposeResult:
+        builder = self._get_field_builder()
+        yield builder.build_group_container(group, initial_values=initial_values)
 
     def _update_ssh_tab_enabled(self, db_type: DatabaseType) -> None:
         try:
@@ -472,25 +415,6 @@ class ConnectionScreen(ModalScreen):
         except Exception:
             return "tab-general"
 
-    def _format_install_target(self, target: str) -> str:
-        if any(ch in target for ch in (" ", "[", "]")):
-            return f"\"{target}\""
-        return target
-
-    def _format_install_hint(self, strategy: Any) -> str:
-        target = str(getattr(strategy, "install_target", "") or "")
-        target_hint = self._format_install_target(target) if target else ""
-        if strategy.kind == "pip":
-            return f"pip install {target_hint}".strip()
-        if strategy.kind == "pip-user":
-            return f"pip install --user {target_hint}".strip()
-        if strategy.kind == "pipx":
-            return f"pipx inject sqlit-tui {target_hint}".strip()
-        manual = getattr(strategy, "manual_instructions", "")
-        if isinstance(manual, str) and manual:
-            return manual.split("\n")[0].strip()
-        return ""
-
     def _update_driver_status_ui(self) -> None:
         try:
             test_status = self.query_one("#test-status", Static)
@@ -509,45 +433,18 @@ class ConnectionScreen(ModalScreen):
         else:
             error = self._missing_driver_error
 
-        if error:
-            if getattr(error, "import_error", None):
-                detail = str(error.import_error).splitlines()[0].strip()
-                detail_hint = escape(detail) if detail else "Import failed."
-                test_status.update(
-                    f"[yellow]⚠ Driver failed to load:[/] {error.package_name}\n"
-                    f"[dim]{detail_hint} Press ^i for details.[/]"
-                )
-                dialog.border_subtitle = "[bold]Help ^i[/]  Cancel <esc>"
-                return
-            strategy = self._app().services.install_strategy.detect(
-                extra_name=error.extra_name,
-                package_name=error.package_name,
-            )
-            if strategy.can_auto_install:
-                install_cmd = self._format_install_hint(strategy)
-                test_status.update(
-                    f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
-                    f"[dim]Install with:[/] {escape(install_cmd)}"
-                )
-                dialog.border_subtitle = "[bold]Install ^i[/]  Cancel <esc>"
-            else:
-                # For unknown install methods, show reason and hint to press ^i for details
-                reason = strategy.reason_unavailable or "Auto-install not available"
-                test_status.update(
-                    f"[yellow]⚠ Missing driver:[/] {error.package_name}\n"
-                    f"[dim]{escape(reason)} Press ^i for install instructions.[/]"
-                )
-                dialog.border_subtitle = "[bold]Help ^i[/]  Cancel <esc>"
-        else:
-            if self._post_install_message:
-                test_status.update(f"✓ {self._post_install_message}")
-                try:
-                    test_status.add_class("success")
-                except Exception:
-                    pass
-            else:
-                test_status.update("")
-            dialog.border_subtitle = "[bold]Test ^t[/]  Save ^s  Cancel <esc>"
+        display = build_driver_status_display(
+            error,
+            self._post_install_message,
+            self._app().services.install_strategy,
+        )
+        test_status.update(display.message)
+        if display.success:
+            try:
+                test_status.add_class("success")
+            except Exception:
+                pass
+        dialog.border_subtitle = display.subtitle
 
     def _start_test_spinner(self) -> None:
         """Start the connection test spinner animation."""
@@ -582,9 +479,6 @@ class ConnectionScreen(ModalScreen):
             test_status.update(f"{spinner_frame} Testing ({elapsed:.1f}s)...")
         # When not in progress, status is updated by success/error handlers
 
-    def _get_restart_cache_path(self) -> Path:
-        return Path(tempfile.gettempdir()) / "sqlit-driver-install-restore.json"
-
     def _write_restart_cache(self, *, post_install_message: str | None = None) -> None:
         try:
             values = self._get_current_form_values()
@@ -605,22 +499,20 @@ class ConnectionScreen(ModalScreen):
                 "values": values,
                 "post_install_message": post_install_message,
             }
-            self._get_restart_cache_path().write_text(json.dumps(payload), encoding="utf-8")
+            write_restart_cache(payload)
         except Exception:
             # Best-effort; don't block installation due to caching failure.
             pass
 
     def _clear_restart_cache(self) -> None:
-        try:
-            self._get_restart_cache_path().unlink(missing_ok=True)
-        except Exception:
-            pass
+        clear_restart_cache()
 
     def compose(self) -> ComposeResult:
         title = "Edit Connection" if self.editing else "New Connection"
         db_type = self._get_initial_db_type()
 
         shortcuts = [("Test", "^t"), ("Save", "^s"), ("Cancel", "<esc>")]
+        initial_values = self._get_initial_visibility_values()
 
         with Dialog(id="connection-dialog", title=title, shortcuts=shortcuts):
             with TabbedContent(id="connection-tabs", initial="tab-general"):
@@ -652,13 +544,13 @@ class ConnectionScreen(ModalScreen):
                     with Container(id="dynamic-fields-general"):
                         field_groups = self._get_field_groups_for_type(db_type, tab="general")
                         for group in field_groups:
-                            yield from self._create_field_group(group)
+                            yield from self._create_field_group(group, initial_values=initial_values)
 
                 with TabPane("SSH", id="tab-ssh"):
                     with Container(id="dynamic-fields-ssh"):
                         ssh_groups = self._get_field_groups_for_type(db_type, tab="ssh")
                         for group in ssh_groups:
-                            yield from self._create_field_group(group)
+                            yield from self._create_field_group(group, initial_values=initial_values)
 
             yield Static("", id="test-status")
 
@@ -862,85 +754,9 @@ class ConnectionScreen(ModalScreen):
         self._update_field_visibility()
         self._focus_first_visible_field()
 
-    def _create_field_group_widgets(self, group: FieldGroup) -> list:
-        widgets = []
-
-        row_groups: dict[str | None, list[FieldDefinition]] = {}
-        for field_def in group.fields:
-            row_key = field_def.row_group
-            if row_key not in row_groups:
-                row_groups[row_key] = []
-            row_groups[row_key].append(field_def)
-
-        group_container = Container(classes="field-group")
-
-        for row_key, fields in row_groups.items():
-            if row_key is None:
-                for field_def in fields:
-                    for w in self._create_field_widget_instances(field_def, group.name):
-                        group_container.compose_add_child(w)
-            else:
-                row = Horizontal(classes="field-row")
-                for field_def in fields:
-                    width_class = "field-flex" if field_def.width == "flex" else "field-fixed"
-                    field_container = Container(classes=width_class)
-                    for w in self._create_field_widget_instances(field_def, group.name):
-                        field_container.compose_add_child(w)
-                    row.compose_add_child(field_container)
-                group_container.compose_add_child(row)
-
-        widgets.append(group_container)
-        return widgets
-
-    def _create_field_widget_instances(self, field_def: FieldDefinition, group_name: str) -> list:
-        widgets = []
-        field_id = f"field-{field_def.name}"
-        container_id = f"container-{field_def.name}"
-
-        initial_visible = True
-        if field_def.visible_when:
-            initial_values = self._get_current_form_values()
-            initial_visible = field_def.visible_when(initial_values)
-
-        hidden_class = "" if initial_visible else " hidden"
-
-        container = Container(id=container_id, classes=f"field-container{hidden_class}")
-        container.border_title = field_def.label
-
-        if field_def.field_type == FieldType.DROPDOWN:
-            select = Select(
-                options=[(opt.label, opt.value) for opt in field_def.options],
-                value=self._resolve_select_value(field_def),
-                allow_blank=False,
-                compact=True,
-                id=field_id,
-            )
-            self._field_widgets[field_def.name] = select
-            self._field_definitions[field_def.name] = field_def
-            container.compose_add_child(select)
-            container.compose_add_child(Static("", id=f"error-{field_def.name}", classes="error-text hidden"))
-        elif field_def.field_type == FieldType.SELECT:
-            options = [Option(opt.label, id=opt.value) for opt in field_def.options]
-            option_list = OptionList(*options, id=field_id, classes="select-field")
-            self._field_widgets[field_def.name] = option_list
-            self._field_definitions[field_def.name] = field_def
-            container.compose_add_child(option_list)
-            container.compose_add_child(Static("", id=f"error-{field_def.name}", classes="error-text hidden"))
-        else:
-            value = self._get_field_value(field_def.name) or field_def.default
-            input_widget = Input(
-                value=value,
-                placeholder=field_def.placeholder,
-                id=field_id,
-                password=False,
-            )
-            self._field_widgets[field_def.name] = input_widget
-            self._field_definitions[field_def.name] = field_def
-            container.compose_add_child(input_widget)
-            container.compose_add_child(Static("", id=f"error-{field_def.name}", classes="error-text hidden"))
-
-        widgets.append(container)
-        return widgets
+    def _create_field_group_widgets(self, group: FieldGroup) -> list[Widget]:
+        builder = self._get_field_builder()
+        return [builder.build_group_container(group)]
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "dbtype-select":
@@ -1390,6 +1206,11 @@ class ConnectionScreen(ModalScreen):
         except (ValueError, ImportError):
             return None
 
+    def _format_install_hint(self, strategy: Any) -> str:
+        from sqlit.domains.connections.ui.driver_status import _format_install_hint
+
+        return _format_install_hint(strategy)
+
     def _prompt_install_missing_driver(self, error: Exception) -> None:
         from ..screens import PackageSetupScreen
 
@@ -1522,7 +1343,9 @@ class ConnectionScreen(ModalScreen):
         def do_test() -> None:
             """Run the connection test in a background thread."""
             try:
-                result = self._app()._connection_manager.test_connection(config)
+                manager = self._app()._connection_manager
+                assert manager is not None
+                result = manager.test_connection(config)
                 if result.ok:
                     self.app.call_from_thread(on_test_success)
                 else:

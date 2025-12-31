@@ -6,20 +6,20 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlit.shared.app.runtime import RuntimeConfig
 from sqlit.domains.connections.providers.driver import (
     ConfigurableDriverResolver,
     DefaultDriverResolver,
     DriverResolver,
     attach_driver_resolver,
 )
+from sqlit.shared.app.runtime import RuntimeConfig
 from sqlit.shared.core.processes import (
     AsyncProcessRunner,
     AsyncSubprocessRunner,
     FixedResultAsyncRunner,
     FixedResultSyncRunner,
-    SyncProcessRunner,
     SubprocessRunner,
+    SyncProcessRunner,
 )
 from sqlit.shared.core.protocols import (
     ConnectionStoreProtocol,
