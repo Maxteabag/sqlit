@@ -205,6 +205,10 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("c", "cell", "Copy cell", "Copy", menu="ry"),
             LeaderCommandDef("y", "row", "Copy row", "Copy", menu="ry"),
             LeaderCommandDef("a", "all", "Copy all", "Copy", menu="ry"),
+            LeaderCommandDef("e", "export", "Export...", "Export", menu="ry"),
+            # rye results export menu
+            LeaderCommandDef("c", "csv", "Export as CSV", "Export", menu="rye"),
+            LeaderCommandDef("j", "json", "Export as JSON", "Export", menu="rye"),
         ]
 
     def get_action_keys(self) -> list[ActionKeyDef]:

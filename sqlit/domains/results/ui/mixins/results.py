@@ -304,6 +304,37 @@ class ResultsMixin:
         self._copy_text(text)
         self._flash_table_yank(self.results_table, "all")
 
+    def action_ry_export(self: ResultsMixinHost) -> None:
+        """Open the export submenu."""
+        self._clear_leader_pending()
+        self._start_leader_pending("rye")
+
+    def action_rye_csv(self: ResultsMixinHost) -> None:
+        """Export results as CSV to clipboard."""
+        self._clear_leader_pending()
+        if not self._last_result_columns and not self._last_result_rows:
+            self.notify("No results", severity="warning")
+            return
+        from sqlit.domains.results.formatters import format_csv
+
+        text = format_csv(self._last_result_columns, self._last_result_rows)
+        self._copy_text(text)
+        self._flash_table_yank(self.results_table, "all")
+        self.notify(f"Copied {len(self._last_result_rows)} rows as CSV")
+
+    def action_rye_json(self: ResultsMixinHost) -> None:
+        """Export results as JSON to clipboard."""
+        self._clear_leader_pending()
+        if not self._last_result_columns and not self._last_result_rows:
+            self.notify("No results", severity="warning")
+            return
+        from sqlit.domains.results.formatters import format_json
+
+        text = format_json(self._last_result_columns, self._last_result_rows)
+        self._copy_text(text)
+        self._flash_table_yank(self.results_table, "all")
+        self.notify(f"Copied {len(self._last_result_rows)} rows as JSON")
+
     def action_results_cursor_left(self: ResultsMixinHost) -> None:
         """Move results cursor left (vim h)."""
         if self.results_table.has_focus:

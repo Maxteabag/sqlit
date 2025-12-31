@@ -148,7 +148,7 @@ services:
     ports:
       - "2222:2222"
     volumes:
-      - ./tests/fixtures/99-fix-sshd-config.sh:/custom-cont-init.d/99-fix-sshd-config
+      - ../../tests/fixtures/99-fix-sshd-config.sh:/custom-cont-init.d/99-fix-sshd-config
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "2222"]
       interval: 5s
@@ -179,14 +179,14 @@ services:
 
   miniflare:
     build:
-      context: ./tests/fixtures/d1
+      context: ../../tests/fixtures/d1
     container_name: sqlit-test-miniflare
     command: ["wrangler", "dev", "--local", "--ip", "0.0.0.0", "--port", "8787"]
     ports:
       - "8787:8787"
     volumes:
-      - ./tests/fixtures/d1/wrangler.toml:/app/wrangler.toml
-      - ./tests/fixtures/d1/index.js:/app/index.js
+      - ../../tests/fixtures/d1/wrangler.toml:/app/wrangler.toml
+      - ../../tests/fixtures/d1/index.js:/app/index.js
     working_dir: /app
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8787/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]

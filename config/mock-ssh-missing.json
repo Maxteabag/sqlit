@@ -1,5 +1,5 @@
 {
-  "_note": "Run: sqlit --settings mock-ssh-missing.json",
+  "_note": "Run: sqlit --settings config/mock-ssh-missing.json",
   "mock": {
     "enabled": true,
     "profile": "empty",

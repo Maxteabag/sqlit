@@ -69,7 +69,7 @@ def _create_sqlite_demo_profile() -> MockProfile:
             {
                 "name": "Demo SQLite",
                 "db_type": "sqlite",
-                "endpoint": {"kind": "file", "path": "./demo.db"},
+                "endpoint": {"kind": "file", "path": "./docs/demos/demo.db"},
             }
         ),
     ]
