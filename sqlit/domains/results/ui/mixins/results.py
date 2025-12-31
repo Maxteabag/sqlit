@@ -261,6 +261,49 @@ class ResultsMixin:
         self._copy_text(text)
         self._flash_table_yank(self.results_table, "all")
 
+    def action_results_yank_leader_key(self: ResultsMixinHost) -> None:
+        """Open the results yank (copy) leader menu."""
+        self._start_leader_pending("ry")
+
+    def action_ry_cell(self: ResultsMixinHost) -> None:
+        """Copy cell (from yank menu)."""
+        self._clear_leader_pending()
+        table = self.results_table
+        if table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+        try:
+            value = table.get_cell_at(table.cursor_coordinate)
+        except Exception:
+            return
+        self._copy_text(str(value) if value is not None else "NULL")
+        self._flash_table_yank(table, "cell")
+
+    def action_ry_row(self: ResultsMixinHost) -> None:
+        """Copy row (from yank menu)."""
+        self._clear_leader_pending()
+        table = self.results_table
+        if table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+        try:
+            row_values = table.get_row_at(table.cursor_row)
+        except Exception:
+            return
+        text = self._format_tsv([], [tuple(row_values)])
+        self._copy_text(text)
+        self._flash_table_yank(table, "row")
+
+    def action_ry_all(self: ResultsMixinHost) -> None:
+        """Copy all results (from yank menu)."""
+        self._clear_leader_pending()
+        if not self._last_result_columns and not self._last_result_rows:
+            self.notify("No results", severity="warning")
+            return
+        text = self._format_tsv(self._last_result_columns, self._last_result_rows)
+        self._copy_text(text)
+        self._flash_table_yank(self.results_table, "all")
+
     def action_results_cursor_left(self: ResultsMixinHost) -> None:
         """Move results cursor left (vim h)."""
         if self.results_table.has_focus:

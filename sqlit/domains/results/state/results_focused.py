@@ -15,9 +15,7 @@ class ResultsFocusedState(State):
         self.allows("view_cell", key="v", label="View cell", help="Preview cell (tooltip)")
         self.allows("view_cell_full", key="V", label="View full", help="View full cell value")
         self.allows("edit_cell", key="u", label="Update cell", help="Update cell (generate UPDATE)")
-        self.allows("copy_context", key="y", label="Copy cell", help="Copy selected cell")
-        self.allows("copy_row", key="Y", label="Copy row", help="Copy selected row")
-        self.allows("copy_results", key="a", label="Copy all", help="Copy all results")
+        self.allows("results_yank_leader_key", key="y", label="Copy", help="Copy menu (cell/row/all)")
         self.allows("clear_results", key="x", label="Clear", help="Clear results")
         self.allows("results_filter", key="slash", label="Filter", help="Filter rows")
         self.allows("results_cursor_left")  # vim h
@@ -41,9 +39,9 @@ class ResultsFocusedState(State):
             )
             left.append(
                 DisplayBinding(
-                    key=resolve_display_key("copy_context") or "y",
-                    label="Copy error",
-                    action="copy_context",
+                    key=resolve_display_key("results_yank_leader_key") or "y",
+                    label="Copy",
+                    action="results_yank_leader_key",
                 )
             )
         else:
@@ -70,23 +68,9 @@ class ResultsFocusedState(State):
             )
             left.append(
                 DisplayBinding(
-                    key=resolve_display_key("copy_context") or "y",
-                    label="Copy cell",
-                    action="copy_context",
-                )
-            )
-            left.append(
-                DisplayBinding(
-                    key=resolve_display_key("copy_row") or "Y",
-                    label="Copy row",
-                    action="copy_row",
-                )
-            )
-            left.append(
-                DisplayBinding(
-                    key=resolve_display_key("copy_results") or "a",
-                    label="Copy all",
-                    action="copy_results",
+                    key=resolve_display_key("results_yank_leader_key") or "y",
+                    label="Copy",
+                    action="results_yank_leader_key",
                 )
             )
         left.append(
@@ -104,7 +88,7 @@ class ResultsFocusedState(State):
             )
         )
 
-        seen.update(["view_cell", "view_cell_full", "copy_context", "copy_row", "copy_results", "clear_results", "results_filter"])
+        seen.update(["view_cell", "view_cell_full", "results_yank_leader_key", "clear_results", "results_filter"])
 
         right: list[DisplayBinding] = []
         if self.parent:

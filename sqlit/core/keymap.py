@@ -201,6 +201,10 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("j", "down", "Comment line down", "Comment", menu="gc"),
             LeaderCommandDef("k", "up", "Comment line up", "Comment", menu="gc"),
             LeaderCommandDef("G", "to_end", "Comment to end", "Comment", menu="gc"),
+            # ry results yank menu
+            LeaderCommandDef("c", "cell", "Copy cell", "Copy", menu="ry"),
+            LeaderCommandDef("y", "row", "Copy row", "Copy", menu="ry"),
+            LeaderCommandDef("a", "all", "Copy all", "Copy", menu="ry"),
         ]
 
     def get_action_keys(self) -> list[ActionKeyDef]:
@@ -263,9 +267,7 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("v", "view_cell", "results"),
             ActionKeyDef("V", "view_cell_full", "results"),
             ActionKeyDef("u", "edit_cell", "results"),
-            ActionKeyDef("y", "copy_context", "results"),
-            ActionKeyDef("Y", "copy_row", "results"),
-            ActionKeyDef("a", "copy_results", "results"),
+            ActionKeyDef("y", "results_yank_leader_key", "results"),
             ActionKeyDef("x", "clear_results", "results"),
             ActionKeyDef("slash", "results_filter", "results"),
             ActionKeyDef("h", "results_cursor_left", "results"),
