@@ -165,14 +165,28 @@ class DefaultKeymapProvider(KeymapProvider):
             # Delete menu (vim-style)
             LeaderCommandDef("d", "line", "Delete line", "Delete", menu="delete"),
             LeaderCommandDef("w", "word", "Delete word", "Delete", menu="delete"),
+            LeaderCommandDef("W", "WORD", "Delete WORD", "Delete", menu="delete"),
             LeaderCommandDef("b", "word_back", "Delete word back", "Delete", menu="delete"),
+            LeaderCommandDef("B", "WORD_back", "Delete WORD back", "Delete", menu="delete"),
             LeaderCommandDef("e", "word_end", "Delete to word end", "Delete", menu="delete"),
+            LeaderCommandDef("E", "WORD_end", "Delete to WORD end", "Delete", menu="delete"),
             LeaderCommandDef("0", "line_start", "Delete to line start", "Delete", menu="delete"),
+            LeaderCommandDef("$", "line_end_motion", "Delete to line end", "Delete", menu="delete"),
             LeaderCommandDef("D", "line_end", "Delete to line end", "Delete", menu="delete"),
             LeaderCommandDef("x", "char", "Delete char", "Delete", menu="delete"),
             LeaderCommandDef("X", "char_back", "Delete char back", "Delete", menu="delete"),
+            LeaderCommandDef("h", "left", "Delete left", "Delete", menu="delete"),
+            LeaderCommandDef("j", "down", "Delete line down", "Delete", menu="delete"),
+            LeaderCommandDef("k", "up", "Delete line up", "Delete", menu="delete"),
+            LeaderCommandDef("l", "right", "Delete right", "Delete", menu="delete"),
             LeaderCommandDef("G", "to_end", "Delete to end", "Delete", menu="delete"),
-            LeaderCommandDef("a", "all", "Delete all", "Delete", menu="delete"),
+            LeaderCommandDef("f", "find_char", "Delete to char...", "Delete", menu="delete"),
+            LeaderCommandDef("F", "find_char_back", "Delete back to char...", "Delete", menu="delete"),
+            LeaderCommandDef("t", "till_char", "Delete till char...", "Delete", menu="delete"),
+            LeaderCommandDef("T", "till_char_back", "Delete back till char...", "Delete", menu="delete"),
+            LeaderCommandDef("%", "matching_bracket", "Delete to bracket", "Delete", menu="delete"),
+            LeaderCommandDef("i", "inner", "Delete inside...", "Delete", menu="delete"),
+            LeaderCommandDef("a", "around", "Delete around...", "Delete", menu="delete"),
         ]
 
     def get_action_keys(self) -> list[ActionKeyDef]:
@@ -213,6 +227,10 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("n", "new_query", "query_normal"),
             ActionKeyDef("h", "show_history", "query_normal"),
             ActionKeyDef("y", "copy_context", "query_normal"),
+            # Query clipboard (both modes)
+            ActionKeyDef("ctrl+a", "select_all", "query"),
+            ActionKeyDef("ctrl+c", "copy_selection", "query"),
+            ActionKeyDef("ctrl+v", "paste", "query"),
             # Results
             ActionKeyDef("v", "view_cell", "results"),
             ActionKeyDef("V", "view_cell_full", "results"),

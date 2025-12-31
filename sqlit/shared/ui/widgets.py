@@ -20,18 +20,43 @@ if TYPE_CHECKING:
 
 
 class QueryTextArea(TextArea):
-    """TextArea that defers Enter key to app when autocomplete is visible."""
+    """TextArea that intercepts clipboard keys and defers Enter to app."""
 
     async def _on_key(self, event: Key) -> None:
-        """Intercept Enter key when autocomplete is visible."""
+        """Intercept clipboard and Enter keys."""
+        # Handle CTRL+A (select all) - override Emacs beginning-of-line
+        if event.key == "ctrl+a":
+            if hasattr(self.app, "action_select_all"):
+                self.app.action_select_all()
+            event.prevent_default()
+            event.stop()
+            return
+
+        # Handle CTRL+C (copy) - override default behavior
+        if event.key == "ctrl+c":
+            if hasattr(self.app, "action_copy_selection"):
+                self.app.action_copy_selection()
+            event.prevent_default()
+            event.stop()
+            return
+
+        # Handle CTRL+V (paste) - override default behavior
+        if event.key == "ctrl+v":
+            if hasattr(self.app, "action_paste"):
+                self.app.action_paste()
+            event.prevent_default()
+            event.stop()
+            return
+
+        # Handle Enter key when autocomplete is visible
         if event.key == "enter":
-            # Check if autocomplete is visible on the app
             app = cast("AutocompleteProtocol", self.app)
             if getattr(app, "_autocomplete_visible", False):
                 # Hide autocomplete and suppress re-triggering from the newline
                 if hasattr(app, "_hide_autocomplete"):
                     app._hide_autocomplete()
                 app._suppress_autocomplete_on_newline = True
+
         # For all other keys, use default TextArea behavior
         await super()._on_key(event)
 

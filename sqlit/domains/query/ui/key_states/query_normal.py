@@ -19,6 +19,10 @@ class QueryNormalModeState(State):
         self.allows("new_query", label="New", help="New query (clear all)")
         self.allows("copy_context", label="Copy query", help="Copy current query")
         self.allows("show_history", label="History", help="Query history")
+        # Clipboard actions
+        self.allows("select_all", help="Select all text")
+        self.allows("copy_selection", help="Copy selection")
+        self.allows("paste", help="Paste")
 
     def get_display_bindings(self, app: UIContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []

@@ -17,6 +17,10 @@ class QueryInsertModeState(State):
         self.allows("execute_query_insert", label="Execute", help="Execute query (stay INSERT)")
         self.allows("autocomplete_accept", help="Accept autocomplete")
         self.allows("quit")
+        # Clipboard actions
+        self.allows("select_all", help="Select all text")
+        self.allows("copy_selection", help="Copy selection")
+        self.allows("paste", help="Paste")
         self.forbids(
             "focus_explorer",
             "focus_results",

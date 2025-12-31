@@ -165,6 +165,134 @@ class QueryMixin:
         )
         self._apply_edit_result(result)
 
+    # ========================================================================
+    # New vim motion delete actions
+    # ========================================================================
+
+    def action_delete_WORD(self: QueryMixinHost) -> None:
+        """Delete WORD (whitespace-delimited) forward."""
+        self._clear_leader_pending()
+        self._delete_with_motion("W")
+
+    def action_delete_WORD_back(self: QueryMixinHost) -> None:
+        """Delete WORD backward."""
+        self._clear_leader_pending()
+        self._delete_with_motion("B")
+
+    def action_delete_WORD_end(self: QueryMixinHost) -> None:
+        """Delete to WORD end."""
+        self._clear_leader_pending()
+        self._delete_with_motion("E")
+
+    def action_delete_left(self: QueryMixinHost) -> None:
+        """Delete character to the left (like backspace)."""
+        self._clear_leader_pending()
+        self._delete_with_motion("h")
+
+    def action_delete_right(self: QueryMixinHost) -> None:
+        """Delete character to the right."""
+        self._clear_leader_pending()
+        self._delete_with_motion("l")
+
+    def action_delete_up(self: QueryMixinHost) -> None:
+        """Delete current and previous line."""
+        self._clear_leader_pending()
+        self._delete_with_motion("k")
+
+    def action_delete_down(self: QueryMixinHost) -> None:
+        """Delete current and next line."""
+        self._clear_leader_pending()
+        self._delete_with_motion("j")
+
+    def action_delete_line_end_motion(self: QueryMixinHost) -> None:
+        """Delete to end of line ($ motion)."""
+        self._clear_leader_pending()
+        self._delete_with_motion("$")
+
+    def action_delete_matching_bracket(self: QueryMixinHost) -> None:
+        """Delete to matching bracket."""
+        self._clear_leader_pending()
+        self._delete_with_motion("%")
+
+    def action_delete_find_char(self: QueryMixinHost) -> None:
+        """Start delete to char (f motion) - needs follow-up char."""
+        self._clear_leader_pending()
+        # Set pending state for char input
+        self._pending_delete_motion = "f"
+        self._update_footer_bindings()
+
+    def action_delete_find_char_back(self: QueryMixinHost) -> None:
+        """Start delete back to char (F motion) - needs follow-up char."""
+        self._clear_leader_pending()
+        self._pending_delete_motion = "F"
+        self._update_footer_bindings()
+
+    def action_delete_till_char(self: QueryMixinHost) -> None:
+        """Start delete till char (t motion) - needs follow-up char."""
+        self._clear_leader_pending()
+        self._pending_delete_motion = "t"
+        self._update_footer_bindings()
+
+    def action_delete_till_char_back(self: QueryMixinHost) -> None:
+        """Start delete back till char (T motion) - needs follow-up char."""
+        self._clear_leader_pending()
+        self._pending_delete_motion = "T"
+        self._update_footer_bindings()
+
+    def action_delete_inner(self: QueryMixinHost) -> None:
+        """Start delete inside text object - needs follow-up object char."""
+        self._clear_leader_pending()
+        self._pending_delete_text_object = "inner"
+        self._update_footer_bindings()
+
+    def action_delete_around(self: QueryMixinHost) -> None:
+        """Start delete around text object - needs follow-up object char."""
+        self._clear_leader_pending()
+        self._pending_delete_text_object = "around"
+        self._update_footer_bindings()
+
+    def _delete_with_motion(self: QueryMixinHost, motion_key: str, char: str | None = None) -> None:
+        """Execute delete with a motion."""
+        from sqlit.domains.query.editing import MOTIONS, operator_delete
+
+        motion_func = MOTIONS.get(motion_key)
+        if not motion_func:
+            return
+
+        text = self.query_input.text
+        row, col = self.query_input.cursor_location
+
+        result = motion_func(text, row, col, char)
+        if not result.range:
+            return
+
+        op_result = operator_delete(text, result.range)
+        self.query_input.text = op_result.text
+        self.query_input.cursor_location = (op_result.row, op_result.col)
+
+        # Copy deleted text to system clipboard
+        if op_result.yanked:
+            self._copy_text(op_result.yanked)
+
+    def _delete_with_text_object(self: QueryMixinHost, obj_char: str, around: bool) -> None:
+        """Execute delete with a text object."""
+        from sqlit.domains.query.editing import get_text_object, operator_delete
+
+        text = self.query_input.text
+        row, col = self.query_input.cursor_location
+
+        range_obj = get_text_object(obj_char, text, row, col, around)
+        if not range_obj:
+            return
+
+        op_result = operator_delete(text, range_obj)
+        self.query_input.text = op_result.text
+        self.query_input.cursor_location = (op_result.row, op_result.col)
+
+        # Copy deleted text to system clipboard
+        if op_result.yanked:
+            self._copy_text(op_result.yanked)
+
     def _clear_leader_pending(self: QueryMixinHost) -> None:
         """Clear any leader pending state if supported by the host."""
         cancel = getattr(self, "_cancel_leader_pending", None)
@@ -174,6 +302,102 @@ class QueryMixin:
     def _apply_edit_result(self: QueryMixinHost, result: edit_delete.EditResult) -> None:
         self.query_input.text = result.text
         self.query_input.cursor_location = (max(0, result.row), max(0, result.col))
+
+    # ========================================================================
+    # Clipboard actions (CTRL+A/C/V)
+    # ========================================================================
+
+    def action_select_all(self: QueryMixinHost) -> None:
+        """Select all text in query editor (CTRL+A)."""
+        from textual.widgets.text_area import Selection
+
+        from sqlit.domains.query.editing import select_all_range
+
+        text = self.query_input.text
+        if not text:
+            return
+
+        start_row, start_col, end_row, end_col = select_all_range(text)
+        # TextArea selection requires a Selection object
+        self.query_input.selection = Selection(
+            (start_row, start_col), (end_row, end_col)
+        )
+
+    def action_copy_selection(self: QueryMixinHost) -> None:
+        """Copy selected text to clipboard (CTRL+C)."""
+        from sqlit.domains.query.editing import get_selection_text
+        from sqlit.shared.ui.widgets import flash_widget
+
+        selection = self.query_input.selection
+        # Check if there's an actual selection (start != end)
+        if selection.start == selection.end:
+            # No selection, copy current line or do nothing
+            return
+
+        start_row, start_col = selection.start
+        end_row, end_col = selection.end
+
+        text = get_selection_text(
+            self.query_input.text,
+            start_row,
+            start_col,
+            end_row,
+            end_col,
+        )
+
+        if text:
+            self._copy_text(text)
+            flash_widget(self.query_input)
+
+    def action_paste(self: QueryMixinHost) -> None:
+        """Paste text from clipboard (CTRL+V)."""
+        from textual.widgets.text_area import Selection
+
+        from sqlit.domains.query.editing import paste_text
+
+        clipboard = self._get_clipboard_text()
+        if not clipboard:
+            return
+
+        text = self.query_input.text
+        row, col = self.query_input.cursor_location
+
+        # If there's a selection, delete it first
+        selection = self.query_input.selection
+        if selection.start != selection.end:
+            start = selection.start
+            end = selection.end
+            # Order the selection
+            if start > end:
+                start, end = end, start
+            # Delete selection by replacing with paste content
+            from sqlit.domains.query.editing.types import MotionType, Position, Range
+            from sqlit.domains.query.editing import operator_delete
+
+            range_obj = Range(
+                Position(start[0], start[1]),
+                Position(end[0], end[1]),
+                MotionType.CHARWISE,
+                inclusive=False,
+            )
+            result = operator_delete(text, range_obj)
+            text = result.text
+            row, col = result.row, result.col
+
+        result = paste_text(text, row, col, clipboard)
+        self.query_input.text = result.text
+        self.query_input.cursor_location = (result.row, result.col)
+        # Clear selection by setting cursor position (start == end)
+        cursor = self.query_input.cursor_location
+        self.query_input.selection = Selection(cursor, cursor)
+
+    def _get_clipboard_text(self: QueryMixinHost) -> str:
+        """Get text from system clipboard."""
+        try:
+            import pyperclip
+            return pyperclip.paste() or ""
+        except Exception:
+            return ""
     def _execute_query_common(self: QueryMixinHost, keep_insert_mode: bool) -> None:
         """Common query execution logic."""
         if not self.current_connection or not self.current_provider:
