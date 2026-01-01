@@ -31,6 +31,7 @@ class FilePickerScreen(ModalScreen[str | None]):
         Binding("escape", "cancel", "Cancel", priority=True),
         Binding("tab", "toggle_focus", "Switch focus", show=False),
         Binding("shift+tab", "toggle_focus", "Switch focus", show=False),
+        Binding("s", "save", "Save", show=False),
     ]
 
     CSS = """
@@ -142,8 +143,10 @@ class FilePickerScreen(ModalScreen[str | None]):
             self._initial_filename = default_filename
 
     def compose(self) -> ComposeResult:
-        action_label = "Save" if self.mode == FilePickerMode.SAVE else "Select"
-        shortcuts: list[tuple[str, str]] = [(action_label, "enter"), ("Cancel", "esc"), ("Navigate", "tab")]
+        if self.mode == FilePickerMode.SAVE:
+            shortcuts: list[tuple[str, str]] = [("Save", "s")]
+        else:
+            shortcuts = [("Select", "enter")]
         with Dialog(id="file-picker-dialog", title=self.title_text, shortcuts=shortcuts):
             with Container(id="file-browser"):
                 yield ListView(id="file-list")
@@ -323,10 +326,18 @@ class FilePickerScreen(ModalScreen[str | None]):
         else:
             file_list.focus()
 
+    async def action_save(self) -> None:
+        if self.mode != FilePickerMode.SAVE:
+            return
+        path_input = self.query_one("#path-input", Input)
+        await self._submit_path(path_input.value)
+
     def action_cancel(self) -> None:
         self.dismiss(None)
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         if self.app.screen is not self:
+            return False
+        if action == "save" and self.mode != FilePickerMode.SAVE:
             return False
         return super().check_action(action, parameters)
