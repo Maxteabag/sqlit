@@ -66,8 +66,19 @@ class QueryAnalyzer(Protocol):
 
 class KeywordQueryAnalyzer:
     def classify(self, query: str) -> QueryKind:
-        query_type = query.strip().upper().split()[0] if query.strip() else ""
-        return QueryKind.RETURNS_ROWS if query_type in SELECT_KEYWORDS else QueryKind.NON_QUERY
+        """Classify query based on keyword of the last statement.
+
+        For multi-statement queries like 'BEGIN; INSERT...; SELECT * FROM t;',
+        we check the last statement to determine if results should be returned.
+        """
+        # Split by semicolons and find the last non-empty statement
+        statements = [s.strip() for s in query.split(";") if s.strip()]
+        if not statements:
+            return QueryKind.NON_QUERY
+
+        last_statement = statements[-1].upper()
+        first_word = last_statement.split()[0] if last_statement else ""
+        return QueryKind.RETURNS_ROWS if first_word in SELECT_KEYWORDS else QueryKind.NON_QUERY
 
 
 class DialectQueryAnalyzer:

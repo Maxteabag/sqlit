@@ -339,3 +339,115 @@ class TestDockerContainerPicker:
             assert result is not None
             assert result.name == "test-postgres"
             assert result.db_type == "postgresql"
+
+
+class TestConnectionPickerCursorPreservation:
+    """Tests for cursor preservation when list is rebuilt."""
+
+    @pytest.mark.asyncio
+    async def test_cursor_preserved_after_container_load(self):
+        """Test that cursor position is preserved when Docker containers finish loading.
+
+        This tests the fix for the bug where cursor would reset to index 0
+        whenever async operations (like Docker container detection) completed.
+        """
+        connections = [
+            create_test_connection("AAA-first", "sqlite"),
+            create_test_connection("BBB-second", "sqlite"),
+            create_test_connection("CCC-third", "sqlite"),
+        ]
+        mock_connections = MockConnectionStore(connections)
+        mock_settings = MockSettingsStore({"theme": "tokyo-night"})
+
+        services = build_test_services(
+            connection_store=mock_connections,
+            settings_store=mock_settings,
+        )
+        app = SSMSTUI(services=services)
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.action_show_connection_picker()
+            await pilot.pause()
+
+            picker = next(
+                (s for s in app.screen_stack if isinstance(s, ConnectionPickerScreen)),
+                None,
+            )
+            assert picker is not None
+
+            from textual.widgets import OptionList
+
+            option_list = picker.query_one("#picker-list", OptionList)
+
+            # Navigate down to BBB-second (index 1)
+            await pilot.press("j")  # Move down
+            await pilot.pause()
+
+            # Get current highlighted position
+            highlighted_before = option_list.highlighted
+            assert highlighted_before is not None
+            highlighted_option = option_list.get_option_at_index(highlighted_before)
+            assert highlighted_option is not None
+            highlighted_id_before = highlighted_option.id
+
+            # Simulate Docker containers loading (triggers _rebuild_list)
+            picker._on_containers_loaded(DockerStatus.AVAILABLE, [])
+            await pilot.pause()
+
+            # Cursor should still be on the same item
+            highlighted_after = option_list.highlighted
+            assert highlighted_after is not None
+            highlighted_option_after = option_list.get_option_at_index(highlighted_after)
+            assert highlighted_option_after is not None
+
+            # The same option should be highlighted (by ID)
+            assert highlighted_option_after.id == highlighted_id_before
+
+    @pytest.mark.asyncio
+    async def test_cursor_falls_back_to_first_when_item_removed(self):
+        """Test that cursor moves to first selectable item when selected item is removed."""
+        connections = [
+            create_test_connection("AAA-first", "sqlite"),
+            create_test_connection("BBB-second", "sqlite"),
+        ]
+        mock_connections = MockConnectionStore(connections)
+        mock_settings = MockSettingsStore({"theme": "tokyo-night"})
+
+        services = build_test_services(
+            connection_store=mock_connections,
+            settings_store=mock_settings,
+        )
+        app = SSMSTUI(services=services)
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.action_show_connection_picker()
+            await pilot.pause()
+
+            picker = next(
+                (s for s in app.screen_stack if isinstance(s, ConnectionPickerScreen)),
+                None,
+            )
+            assert picker is not None
+
+            from textual.widgets import OptionList
+
+            option_list = picker.query_one("#picker-list", OptionList)
+
+            # Navigate to BBB-second
+            await pilot.press("j")
+            await pilot.pause()
+
+            # Remove BBB-second from connections
+            picker.connections = [connections[0]]
+
+            # Trigger rebuild (simulating what happens after a delete)
+            picker._rebuild_list()
+            await pilot.pause()
+
+            # Cursor should have fallen back to first selectable item
+            highlighted = option_list.highlighted
+            assert highlighted is not None
+            # Should be on AAA-first now (first actual connection option)
+            opt = option_list.get_option_at_index(highlighted)
+            assert opt is not None
+            assert opt.id == "AAA-first"

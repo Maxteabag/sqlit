@@ -59,6 +59,7 @@ class TestMySQLDatabaseBrowsing(BaseDatabaseBrowsingTest):
             pytest.skip("MySQL is not available")
         # Update TEST_DATABASE with the actual database name from fixture
         self.TEST_DATABASE = mysql_db
+        yield
 
     @pytest.mark.asyncio
     async def test_browse_all_databases_and_query(self, connection_config: ConnectionConfig, temp_config_dir: str):
@@ -101,6 +102,7 @@ class TestPostgreSQLDatabaseBrowsing(BaseDatabaseBrowsingTest):
         if not postgres_server_ready:
             pytest.skip("PostgreSQL is not available")
         self.TEST_DATABASE = postgres_db
+        yield
 
     @pytest.mark.asyncio
     async def test_browse_all_databases_and_query(self, connection_config: ConnectionConfig, temp_config_dir: str):
@@ -114,7 +116,7 @@ class TestMSSQLDatabaseBrowsing(BaseDatabaseBrowsingTest):
     DB_TYPE = "mssql"
     TEST_DATABASE = os.environ.get("MSSQL_DATABASE", "test_sqlit")
     SERVER_HOST = os.environ.get("MSSQL_HOST", "localhost")
-    SERVER_PORT = os.environ.get("MSSQL_PORT", "1433")
+    SERVER_PORT = os.environ.get("MSSQL_PORT", "1434")
     USERNAME = os.environ.get("MSSQL_USER", "sa")
     PASSWORD = os.environ.get("MSSQL_PASSWORD", "TestPassword123!")
 
@@ -140,6 +142,7 @@ class TestMSSQLDatabaseBrowsing(BaseDatabaseBrowsingTest):
         if not mssql_server_ready:
             pytest.skip("SQL Server is not available")
         self.TEST_DATABASE = mssql_db
+        yield
 
     @pytest.mark.asyncio
     async def test_browse_all_databases_and_query(self, connection_config: ConnectionConfig, temp_config_dir: str):
@@ -175,6 +178,7 @@ class TestMariaDBDatabaseBrowsing(BaseDatabaseBrowsingTest):
         if not mariadb_server_ready:
             pytest.skip("MariaDB is not available")
         self.TEST_DATABASE = mariadb_db
+        yield
 
     @pytest.mark.asyncio
     async def test_browse_all_databases_and_query(self, connection_config: ConnectionConfig, temp_config_dir: str):
@@ -216,6 +220,7 @@ class TestCockroachDBDatabaseBrowsing(BaseDatabaseBrowsingTest):
         if not cockroachdb_server_ready:
             pytest.skip("CockroachDB is not available")
         self.TEST_DATABASE = cockroachdb_db
+        yield
 
     @pytest.mark.asyncio
     async def test_browse_all_databases_and_query(self, connection_config: ConnectionConfig, temp_config_dir: str):

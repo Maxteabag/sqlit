@@ -10,7 +10,7 @@ import pytest
 from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
 
 MSSQL_HOST = os.environ.get("MSSQL_HOST", "localhost")
-MSSQL_PORT = int(os.environ.get("MSSQL_PORT", "1433"))
+MSSQL_PORT = int(os.environ.get("MSSQL_PORT", "1434"))
 MSSQL_USER = os.environ.get("MSSQL_USER", "sa")
 MSSQL_PASSWORD = os.environ.get("MSSQL_PASSWORD", "TestPassword123!")
 MSSQL_DATABASE = os.environ.get("MSSQL_DATABASE", "test_sqlit")

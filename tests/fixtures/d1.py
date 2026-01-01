@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
+from urllib import error, request
 
 import pytest
 
@@ -16,6 +18,56 @@ D1_ACCOUNT_ID = "test-account"
 D1_DATABASE = "test-d1"
 D1_API_TOKEN = "test-token"
 os.environ["D1_API_BASE_URL"] = f"http://{D1_HOST}:{D1_PORT}"
+
+
+class _D1Client:
+    """Minimal D1 client using the local miniflare worker endpoints."""
+
+    def __init__(self, account_id: str, api_token: str) -> None:
+        self._account_id = account_id
+        self._api_token = api_token
+        self._base_url = os.environ.get("D1_API_BASE_URL", f"http://{D1_HOST}:{D1_PORT}")
+
+    def _request(self, method: str, path: str, payload: dict | None = None) -> dict:
+        url = f"{self._base_url}{path}"
+        data = None
+        headers = {"Content-Type": "application/json"}
+        if self._api_token:
+            headers["Authorization"] = f"Bearer {self._api_token}"
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+        req = request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with request.urlopen(req, timeout=10) as resp:
+                body = resp.read()
+        except error.HTTPError as exc:
+            body = exc.read()
+            try:
+                payload = json.loads(body.decode("utf-8"))
+            except json.JSONDecodeError:
+                raise RuntimeError(f"D1 API error {exc.code}: {body.decode('utf-8', 'ignore')}") from exc
+            raise RuntimeError(payload.get("errors") or payload) from exc
+        if not body:
+            return {}
+        return json.loads(body.decode("utf-8"))
+
+    def create_database(self, name: str) -> None:
+        data = self._request("GET", f"/client/v4/accounts/{self._account_id}/d1/database")
+        results = data.get("result", [])
+        if any(db.get("name") == name for db in results):
+            return
+
+    def execute(self, db_name: str, sql: str) -> dict | None:
+        payload = self._request(
+            "POST",
+            f"/client/v4/accounts/{self._account_id}/d1/database/{db_name}/execute",
+            {"sql": sql},
+        )
+        if not payload.get("success", False):
+            errors = payload.get("errors") or []
+            message = errors[0].get("message") if errors else "D1 execute failed"
+            raise RuntimeError(message)
+        return payload.get("result")
 
 
 def d1_available() -> bool:
@@ -39,13 +91,8 @@ def d1_db(d1_server_ready: bool) -> str:
         pytest.skip("D1 is not available")
 
     try:
-        import d1api
-    except ImportError:
-        pytest.skip("d1api is not installed")
-
-    try:
-        # Use D1 API client to set up test data
-        client = d1api.D1Client(D1_ACCOUNT_ID, D1_API_TOKEN)
+        # Use local D1 API endpoints to set up test data
+        client = _D1Client(D1_ACCOUNT_ID, D1_API_TOKEN)
 
         # Create the database if it doesn't exist
         client.create_database(D1_DATABASE)

@@ -51,6 +51,18 @@ services:
     tmpfs:
       - /var/lib/mysql
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: sqlit-test-clickhouse
+    environment:
+      CLICKHOUSE_USER: "default"
+      CLICKHOUSE_PASSWORD: "TestPassword123!"
+      CLICKHOUSE_DB: "test_sqlit"
+    ports:
+      - "8123:8123"
+    tmpfs:
+      - /var/lib/clickhouse
+
   oracle:
     image: gvenzl/oracle-free:23-slim
     container_name: sqlit-test-oracle

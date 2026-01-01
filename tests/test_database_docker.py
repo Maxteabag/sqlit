@@ -168,6 +168,9 @@ class DockerDiscoveryTests:
         adapter = get_adapter(self.config.db_type)
         conn = adapter.connect(config)
         try:
-            adapter.execute_query(conn, "SELECT 1")
+            test_query = "SELECT 1"
+            if self.config.db_type == "firebird":
+                test_query = "SELECT 1 FROM RDB$DATABASE"
+            adapter.execute_query(conn, test_query)
         finally:
             adapter.disconnect(conn)

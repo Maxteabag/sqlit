@@ -544,6 +544,9 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         # Force schema service to be recreated on next access
         self._schema_service = None
         self.refresh_tree()
+        # Reload autocomplete schema cache
+        if hasattr(self, "_load_schema_cache"):
+            self._load_schema_cache()
         self.notify("Refreshed")
 
     def action_collapse_tree(self: TreeMixinHost) -> None:

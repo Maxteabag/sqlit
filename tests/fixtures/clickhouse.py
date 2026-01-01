@@ -13,7 +13,7 @@ from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "localhost")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
-CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
+CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "TestPassword123!")
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "test_sqlit")
 
 

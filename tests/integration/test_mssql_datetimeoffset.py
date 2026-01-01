@@ -11,7 +11,7 @@ import os
 import pytest
 
 MSSQL_HOST = os.environ.get("MSSQL_HOST", "localhost")
-MSSQL_PORT = int(os.environ.get("MSSQL_PORT", "1433"))
+MSSQL_PORT = int(os.environ.get("MSSQL_PORT", "1434"))
 MSSQL_USER = os.environ.get("MSSQL_USER", "sa")
 MSSQL_PASSWORD = os.environ.get("MSSQL_PASSWORD", "YourStrong@Passw0rd")
 MSSQL_DATABASE = os.environ.get("MSSQL_DATABASE", "master")

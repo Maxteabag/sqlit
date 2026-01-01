@@ -15,6 +15,11 @@ Thank you for considering a contribution to sqlit! This guide walks you through 
    pip install -e ".[dev]"
    ```
 
+   For the full integration suite (all database drivers):
+   ```bash
+   pip install -e ".[dev,all]"
+   ```
+
 ## Running Tests
 
 ### CLI E2E Tests
@@ -35,7 +40,7 @@ pytest tests/ -v -k sqlite
 
 ### Full Test Suite (Requires Docker)
 
-To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB, FirebirdSQL, Oracle, DuckDB, and CockroachDB tests:
+To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB, FirebirdSQL, Oracle, ClickHouse, Turso (libsql), D1 (miniflare), SSH tunnel, DuckDB, and CockroachDB tests:
 
 1. Start the test database containers:
    ```bash
@@ -45,6 +50,11 @@ To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB,
 2. Wait for the databases to be ready (about 30-45 seconds), then run tests:
    ```bash
    pytest tests/ -v
+   ```
+
+   To include Docker detection tests that spin up temporary containers:
+   ```bash
+   pytest tests/integration/docker_detect/ -v --run-docker-container
    ```
 
 You can leave the containers running between test runs - the test fixtures handle database setup/teardown automatically. Stop them when you're done developing:
