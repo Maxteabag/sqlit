@@ -28,6 +28,28 @@ class DatabaseType(str, Enum):
     TURSO = "turso"
 
 
+# Display order: sqlite first, then by popularity
+DATABASE_TYPE_DISPLAY_ORDER: list[DatabaseType] = [
+    DatabaseType.SQLITE,
+    DatabaseType.POSTGRESQL,
+    DatabaseType.MYSQL,
+    DatabaseType.MSSQL,
+    DatabaseType.MARIADB,
+    DatabaseType.ORACLE,
+    DatabaseType.SNOWFLAKE,
+    DatabaseType.BIGQUERY,
+    DatabaseType.DUCKDB,
+    DatabaseType.REDSHIFT,
+    DatabaseType.CLICKHOUSE,
+    DatabaseType.COCKROACHDB,
+    DatabaseType.SUPABASE,
+    DatabaseType.TURSO,
+    DatabaseType.D1,
+    DatabaseType.ATHENA,
+    DatabaseType.FIREBIRD,
+]
+
+
 def get_database_type_labels() -> dict[DatabaseType, str]:
     from sqlit.domains.connections.providers.metadata import get_display_name
 

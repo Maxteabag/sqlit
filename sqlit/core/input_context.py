@@ -26,3 +26,4 @@ class InputContext:
     tree_node_kind: str | None
     tree_node_connection_name: str | None
     last_result_is_error: bool
+    has_results: bool

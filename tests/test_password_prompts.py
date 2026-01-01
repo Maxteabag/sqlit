@@ -5,12 +5,12 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from sqlit.domains.connections.cli.prompts import prompt_for_password
-from sqlit.domains.connections.ui.mixins.connection import _needs_db_password, _needs_ssh_password
+from sqlit.domains.connections.domain.passwords import needs_db_password, needs_ssh_password
 from tests.helpers import ConnectionConfig
 
 
 class TestNeedsDbPassword:
-    """Test _needs_db_password helper function."""
+    """Test needs_db_password helper function."""
 
     def test_file_based_database_does_not_need_password(self) -> None:
         """SQLite and DuckDB don't need passwords."""
@@ -20,7 +20,7 @@ class TestNeedsDbPassword:
             options={"file_path": "/tmp/test.db"},
             password="",
         )
-        assert not _needs_db_password(sqlite_config)
+        assert not needs_db_password(sqlite_config)
 
         duckdb_config = ConnectionConfig(
             name="test",
@@ -28,7 +28,7 @@ class TestNeedsDbPassword:
             options={"file_path": "/tmp/test.duckdb"},
             password="",
         )
-        assert not _needs_db_password(duckdb_config)
+        assert not needs_db_password(duckdb_config)
 
     def test_server_database_with_none_password_needs_prompt(self) -> None:
         """PostgreSQL/MySQL with None password (not set) needs prompt."""
@@ -39,7 +39,7 @@ class TestNeedsDbPassword:
             username="user",
             password=None,
         )
-        assert _needs_db_password(postgres_config)
+        assert needs_db_password(postgres_config)
 
         mysql_config = ConnectionConfig(
             name="test",
@@ -48,7 +48,7 @@ class TestNeedsDbPassword:
             username="user",
             password=None,
         )
-        assert _needs_db_password(mysql_config)
+        assert needs_db_password(mysql_config)
 
     def test_server_database_with_empty_password_no_prompt(self) -> None:
         """PostgreSQL/MySQL with empty string password (explicitly empty) doesn't need prompt."""
@@ -59,7 +59,7 @@ class TestNeedsDbPassword:
             username="user",
             password="",  # Explicitly empty, valid for some DBs
         )
-        assert not _needs_db_password(postgres_config)
+        assert not needs_db_password(postgres_config)
 
         mysql_config = ConnectionConfig(
             name="test",
@@ -68,7 +68,7 @@ class TestNeedsDbPassword:
             username="user",
             password="",
         )
-        assert not _needs_db_password(mysql_config)
+        assert not needs_db_password(mysql_config)
 
     def test_server_database_with_stored_password_does_not_need_prompt(self) -> None:
         """Database with stored password doesn't need prompt."""
@@ -79,7 +79,7 @@ class TestNeedsDbPassword:
             username="user",
             password="stored_password",
         )
-        assert not _needs_db_password(config)
+        assert not needs_db_password(config)
 
     def test_mssql_with_none_password_needs_prompt(self) -> None:
         """SQL Server with SQL auth and None password needs prompt."""
@@ -91,7 +91,7 @@ class TestNeedsDbPassword:
             password=None,
             options={"auth_type": "sql"},
         )
-        assert _needs_db_password(config)
+        assert needs_db_password(config)
 
     def test_mssql_windows_auth_with_none_password(self) -> None:
         """SQL Server with Windows auth doesn't need a password prompt.
@@ -106,7 +106,7 @@ class TestNeedsDbPassword:
             password=None,
             options={"auth_type": "windows", "trusted_connection": True},
         )
-        assert not _needs_db_password(config)
+        assert not needs_db_password(config)
 
     def test_mssql_windows_auth_with_empty_password_no_prompt(self) -> None:
         """SQL Server with Windows auth and empty string password doesn't need prompt."""
@@ -117,11 +117,11 @@ class TestNeedsDbPassword:
             password="",  # Explicitly empty
             options={"auth_type": "windows", "trusted_connection": True},
         )
-        assert not _needs_db_password(config)
+        assert not needs_db_password(config)
 
 
 class TestNeedsSshPassword:
-    """Test _needs_ssh_password helper function."""
+    """Test needs_ssh_password helper function."""
 
     def test_ssh_disabled_does_not_need_password(self) -> None:
         """Config without SSH doesn't need SSH password."""
@@ -131,7 +131,7 @@ class TestNeedsSshPassword:
             server="localhost",
             ssh_enabled=False,
         )
-        assert not _needs_ssh_password(config)
+        assert not needs_ssh_password(config)
 
     def test_ssh_key_auth_does_not_need_password(self) -> None:
         """SSH with key auth doesn't need password."""
@@ -144,7 +144,7 @@ class TestNeedsSshPassword:
             ssh_key_path="~/.ssh/id_rsa",
             ssh_password="",
         )
-        assert not _needs_ssh_password(config)
+        assert not needs_ssh_password(config)
 
     def test_ssh_password_auth_with_none_password_needs_prompt(self) -> None:
         """SSH with password auth and None password (not set) needs prompt."""
@@ -158,7 +158,7 @@ class TestNeedsSshPassword:
             ssh_username="user",
             ssh_password=None,
         )
-        assert _needs_ssh_password(config)
+        assert needs_ssh_password(config)
 
     def test_ssh_password_auth_with_empty_password_no_prompt(self) -> None:
         """SSH with password auth and empty string password (explicitly empty) no prompt."""
@@ -172,7 +172,7 @@ class TestNeedsSshPassword:
             ssh_username="user",
             ssh_password="",  # Explicitly empty
         )
-        assert not _needs_ssh_password(config)
+        assert not needs_ssh_password(config)
 
     def test_ssh_password_auth_with_stored_password_does_not_need_prompt(self) -> None:
         """SSH with stored password doesn't need prompt."""
@@ -186,7 +186,7 @@ class TestNeedsSshPassword:
             ssh_username="user",
             ssh_password="stored_password",
         )
-        assert not _needs_ssh_password(config)
+        assert not needs_ssh_password(config)
 
 
 class TestCliPromptForPassword:

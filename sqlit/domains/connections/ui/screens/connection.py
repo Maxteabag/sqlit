@@ -12,6 +12,7 @@ from textual.events import ScreenResume, ScreenSuspend
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import (
+    Button,
     Input,
     OptionList,
     Select,
@@ -21,6 +22,7 @@ from textual.widgets import (
 )
 
 from sqlit.domains.connections.domain.config import (
+    DATABASE_TYPE_DISPLAY_ORDER,
     ConnectionConfig,
     DatabaseType,
     get_database_type_labels,
@@ -31,7 +33,7 @@ from sqlit.domains.connections.providers.exceptions import MissingDriverError
 from sqlit.domains.connections.providers.metadata import has_advanced_auth, is_file_based, supports_ssh
 from sqlit.domains.connections.ui.driver_status import build_driver_status_display
 from sqlit.domains.connections.ui.field_widgets import FieldWidgetBuilder
-from sqlit.domains.connections.ui.fields import FieldDefinition, FieldGroup, schema_to_field_definitions
+from sqlit.domains.connections.ui.fields import FieldDefinition, FieldGroup, FieldType, schema_to_field_definitions
 from sqlit.domains.connections.ui.restart_cache import clear_restart_cache, write_restart_cache
 from sqlit.domains.connections.ui.validation import ValidationState, validate_connection_form
 from sqlit.shared.ui.protocols import AppProtocol
@@ -224,6 +226,24 @@ class ConnectionScreen(ModalScreen):
     #test-status.success {
         color: $success;
     }
+
+    .file-field-row {
+        width: 100%;
+        height: 1;
+    }
+
+    .file-field-row Input {
+        width: 1fr;
+    }
+
+    .browse-button {
+        width: 5;
+        min-width: 5;
+        height: 1;
+        border: none;
+        margin-left: 1;
+        padding: 0;
+    }
     """
 
     def __init__(
@@ -284,7 +304,7 @@ class ConnectionScreen(ModalScreen):
                 pass
         if self.config:
             return self.config.get_db_type()
-        return next(iter(DatabaseType))
+        return DATABASE_TYPE_DISPLAY_ORDER[0]
 
     def _app(self) -> AppProtocol:
         return cast(AppProtocol, self.app)
@@ -343,6 +363,40 @@ class ConnectionScreen(ModalScreen):
             get_field_value=self._get_field_value,
             resolve_select_value=self._resolve_select_value,
             get_current_form_values=self._get_current_form_values,
+            on_browse_file=self._on_browse_file,
+        )
+
+    def _on_browse_file(self, field_name: str) -> None:
+        """Open file picker for a file field."""
+        from sqlit.shared.ui.screens.file_picker import FilePickerMode, FilePickerScreen
+
+        # Get current value from the field
+        current_value = ""
+        if field_name in self._field_widgets:
+            widget = self._field_widgets[field_name]
+            if isinstance(widget, Input):
+                current_value = widget.value
+
+        # Determine file extensions based on field
+        file_extensions: list[str] | None = None
+        if field_name == "file_path":
+            # SQLite/DuckDB database files
+            file_extensions = [".db", ".sqlite", ".sqlite3", ".duckdb"]
+
+        def handle_result(path: str | None) -> None:
+            if path and field_name in self._field_widgets:
+                widget = self._field_widgets[field_name]
+                if isinstance(widget, Input):
+                    widget.value = path
+
+        self.app.push_screen(
+            FilePickerScreen(
+                mode=FilePickerMode.OPEN,
+                title="Select File",
+                start_path=current_value if current_value else None,
+                file_extensions=file_extensions,
+            ),
+            handle_result,
         )
 
     def _get_initial_visibility_values(self) -> dict[str, Any]:
@@ -528,7 +582,7 @@ class ConnectionScreen(ModalScreen):
                         )
                         yield Static("", id="error-name", classes="error-text hidden")
 
-                    db_types = list(DatabaseType)
+                    db_types = DATABASE_TYPE_DISPLAY_ORDER
                     labels = get_database_type_labels()
                     dbtype_container = Container(id="container-dbtype", classes="field-container")
                     dbtype_container.border_title = "Database Type"
@@ -782,6 +836,12 @@ class ConnectionScreen(ModalScreen):
         if event.input.id == "conn-name":
             self._validate_name_unique()
 
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle browse button clicks for file fields."""
+        if event.button.id and event.button.id.startswith("browse-"):
+            field_name = event.button.id[7:]  # Remove "browse-" prefix
+            self._on_browse_file(field_name)
+
     def _update_field_visibility(self) -> None:
         values = self._get_current_form_values()
 
@@ -828,6 +888,14 @@ class ConnectionScreen(ModalScreen):
                     if "hidden" not in container.classes:
                         field_widget = self.query_one(f"#field-{field}")
                         fields.append(field_widget)
+                        # Add browse button for FILE fields
+                        field_def = self._field_definitions.get(field)
+                        if field_def and field_def.field_type == FieldType.FILE:
+                            try:
+                                browse_btn = self.query_one(f"#browse-{field}", Button)
+                                fields.append(browse_btn)
+                            except Exception:
+                                pass
                 except Exception:
                     pass
             return fields
@@ -849,6 +917,14 @@ class ConnectionScreen(ModalScreen):
                     container = self.query_one(f"#container-{name}", Container)
                     if "hidden" not in container.classes:
                         fields.append(widget_opt)
+                        # Add browse button for FILE fields
+                        field_def = self._field_definitions.get(name)
+                        if field_def and field_def.field_type == FieldType.FILE:
+                            try:
+                                browse_btn = self.query_one(f"#browse-{name}", Button)
+                                fields.append(browse_btn)
+                            except Exception:
+                                pass
                 except Exception:
                     pass
 

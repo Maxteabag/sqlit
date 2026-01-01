@@ -25,6 +25,7 @@ def make_context(**overrides: object) -> InputContext:
         "tree_node_kind": None,
         "tree_node_connection_name": None,
         "last_result_is_error": False,
+        "has_results": False,
     }
     data.update(overrides)
     return InputContext(**data)

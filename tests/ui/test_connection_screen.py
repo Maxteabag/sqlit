@@ -176,9 +176,10 @@ class TestTabNavigation:
             assert "conn-name" in field_ids
             assert "dbtype-select" in field_ids
             assert "field-file_path" in field_ids
+            assert "browse-file_path" in field_ids  # Browse button for file picker
 
-            # For SQLite, there should be exactly 3 focusable fields
-            assert len(focusable) == 3, f"Expected 3 focusable fields for SQLite, got {len(focusable)}: {field_ids}"
+            # For SQLite, there should be exactly 4 focusable fields (including browse button)
+            assert len(focusable) == 4, f"Expected 4 focusable fields for SQLite, got {len(focusable)}: {field_ids}"
 
     @pytest.mark.asyncio
     async def test_tab_key_cycles_through_sqlite_fields(self):
@@ -202,6 +203,10 @@ class TestTabNavigation:
             # Tab to file_path
             await pilot.press("tab")
             assert screen.focused.id == "field-file_path"
+
+            # Tab to browse button
+            await pilot.press("tab")
+            assert screen.focused.id == "browse-file_path"
 
             # Tab should cycle back to conn-name (not to tab bar)
             await pilot.press("tab")

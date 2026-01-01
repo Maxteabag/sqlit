@@ -12,18 +12,28 @@ class ResultsFocusedState(State):
     help_category = "Results"
 
     def _setup_actions(self) -> None:
-        self.allows("view_cell", key="v", label="View cell", help="Preview cell (tooltip)")
-        self.allows("view_cell_full", key="V", label="View full", help="View full cell value")
-        self.allows("edit_cell", key="u", label="Update cell", help="Update cell (generate UPDATE)")
-        self.allows("results_yank_leader_key", key="y", label="Copy", help="Copy menu (cell/row/all)")
-        self.allows("clear_results", key="x", label="Clear", help="Clear results")
-        self.allows("results_filter", key="slash", label="Filter", help="Filter rows")
-        self.allows("results_cursor_left")  # vim h
-        self.allows("results_cursor_down")  # vim j
-        self.allows("results_cursor_up")  # vim k
-        self.allows("results_cursor_right")  # vim l
+        def has_results(app: InputContext) -> bool:
+            return app.has_results
+
+        self.allows("view_cell", has_results, key="v", label="View cell", help="Preview cell (tooltip)")
+        self.allows("view_cell_full", has_results, key="V", label="View full", help="View full cell value")
+        self.allows("edit_cell", has_results, key="u", label="Update cell", help="Update cell (generate UPDATE)")
+        self.allows("results_yank_leader_key", has_results, key="y", label="Copy", help="Copy menu (cell/row/all)")
+        self.allows("clear_results", has_results, key="x", label="Clear", help="Clear results")
+        self.allows("results_filter", has_results, key="slash", label="Filter", help="Filter rows")
+        self.allows("results_cursor_left", has_results)  # vim h
+        self.allows("results_cursor_down", has_results)  # vim j
+        self.allows("results_cursor_up", has_results)  # vim k
+        self.allows("results_cursor_right", has_results)  # vim l
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
+        # No bindings when there are no results
+        if not app.has_results:
+            right: list[DisplayBinding] = []
+            if self.parent:
+                _, right = self.parent.get_display_bindings(app)
+            return [], right
+
         left: list[DisplayBinding] = []
         seen: set[str] = set()
 

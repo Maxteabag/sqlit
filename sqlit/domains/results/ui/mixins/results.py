@@ -310,30 +310,63 @@ class ResultsMixin:
         self._start_leader_pending("rye")
 
     def action_rye_csv(self: ResultsMixinHost) -> None:
-        """Export results as CSV to clipboard."""
+        """Export results as CSV to file."""
         self._clear_leader_pending()
-        if not self._last_result_columns and not self._last_result_rows:
-            self.notify("No results", severity="warning")
+        if not self._last_result_columns or not self._last_result_rows:
+            self.notify("No results to export", severity="warning")
             return
-        from sqlit.domains.results.formatters import format_csv
-
-        text = format_csv(self._last_result_columns, self._last_result_rows)
-        self._copy_text(text)
-        self._flash_table_yank(self.results_table, "all")
-        self.notify(f"Copied {len(self._last_result_rows)} rows as CSV")
+        self._show_export_dialog("csv")
 
     def action_rye_json(self: ResultsMixinHost) -> None:
-        """Export results as JSON to clipboard."""
+        """Export results as JSON to file."""
         self._clear_leader_pending()
-        if not self._last_result_columns and not self._last_result_rows:
-            self.notify("No results", severity="warning")
+        if not self._last_result_columns or not self._last_result_rows:
+            self.notify("No results to export", severity="warning")
             return
-        from sqlit.domains.results.formatters import format_json
+        self._show_export_dialog("json")
 
-        text = format_json(self._last_result_columns, self._last_result_rows)
-        self._copy_text(text)
-        self._flash_table_yank(self.results_table, "all")
-        self.notify(f"Copied {len(self._last_result_rows)} rows as JSON")
+    def _show_export_dialog(self: ResultsMixinHost, fmt: str) -> None:
+        """Show the file save dialog for export."""
+        from datetime import datetime
+
+        from sqlit.shared.ui.screens.file_picker import FilePickerMode, FilePickerScreen
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ext = "csv" if fmt == "csv" else "json"
+        default_filename = f"results_{timestamp}.{ext}"
+
+        def handle_result(filename: str | None) -> None:
+            if filename:
+                self._save_export_file(filename, fmt)
+
+        self.push_screen(
+            FilePickerScreen(
+                mode=FilePickerMode.SAVE,
+                title="Export Results",
+                default_filename=default_filename,
+            ),
+            handle_result,
+        )
+
+    def _save_export_file(self: ResultsMixinHost, filename: str, fmt: str) -> None:
+        """Save the export file to disk."""
+        from pathlib import Path
+
+        from sqlit.domains.results.formatters import format_csv, format_json
+
+        try:
+            if fmt == "csv":
+                content = format_csv(self._last_result_columns, self._last_result_rows)
+            else:
+                content = format_json(self._last_result_columns, self._last_result_rows)
+
+            path = Path(filename).expanduser()
+            path.write_text(content, encoding="utf-8")
+
+            row_count = len(self._last_result_rows)
+            self.notify(f"Saved {row_count} rows to {path.name}")
+        except Exception as e:
+            self.notify(f"Failed to save: {e}", severity="error")
 
     def action_results_cursor_left(self: ResultsMixinHost) -> None:
         """Move results cursor left (vim h)."""

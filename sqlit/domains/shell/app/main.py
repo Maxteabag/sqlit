@@ -190,6 +190,7 @@ class SSMSTUI(
 
         last_result_is_error = self._last_result_columns == ["Error"]
         current_connection_name = self.current_config.name if self.current_config else None
+        has_results = bool(self._last_result_columns) and bool(self._last_result_rows)
 
         return InputContext(
             focus=self._get_focus_pane(),
@@ -207,6 +208,7 @@ class SSMSTUI(
             tree_node_kind=tree_node_kind,
             tree_node_connection_name=tree_node_connection_name,
             last_result_is_error=last_result_is_error,
+            has_results=has_results,
         )
 
     def on_key(self, event: Key) -> None:

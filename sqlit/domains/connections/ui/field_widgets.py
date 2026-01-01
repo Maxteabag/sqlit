@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from textual.containers import Container, Horizontal
-from textual.widgets import Input, OptionList, Select, Static
+from textual.widgets import Button, Input, OptionList, Select, Static
 from textual.widgets.option_list import Option
 
 from sqlit.domains.connections.ui.fields import FieldDefinition, FieldGroup, FieldType
@@ -23,12 +23,14 @@ class FieldWidgetBuilder:
         get_field_value: Callable[[str], str],
         resolve_select_value: Callable[[FieldDefinition], str],
         get_current_form_values: Callable[[], dict[str, Any]],
+        on_browse_file: Callable[[str], None] | None = None,
     ) -> None:
         self._field_widgets = field_widgets
         self._field_definitions = field_definitions
         self._get_field_value = get_field_value
         self._resolve_select_value = resolve_select_value
         self._get_current_form_values = get_current_form_values
+        self._on_browse_file = on_browse_file
 
     def build_field_container(
         self,
@@ -67,6 +69,24 @@ class FieldWidgetBuilder:
             self._field_widgets[field_def.name] = option_list
             self._field_definitions[field_def.name] = field_def
             container.compose_add_child(option_list)
+            container.compose_add_child(Static("", id=f"error-{field_def.name}", classes="error-text hidden"))
+        elif field_def.field_type == FieldType.FILE:
+            value = self._get_field_value(field_def.name) or field_def.default
+            input_widget = Input(
+                value=value,
+                placeholder=field_def.placeholder,
+                id=field_id,
+                password=False,
+            )
+            self._field_widgets[field_def.name] = input_widget
+            self._field_definitions[field_def.name] = field_def
+
+            # Create horizontal container with input and browse button
+            file_row = Horizontal(classes="file-field-row")
+            file_row.compose_add_child(input_widget)
+            browse_btn = Button("...", id=f"browse-{field_def.name}", classes="browse-button")
+            file_row.compose_add_child(browse_btn)
+            container.compose_add_child(file_row)
             container.compose_add_child(Static("", id=f"error-{field_def.name}", classes="error-text hidden"))
         else:
             value = self._get_field_value(field_def.name) or field_def.default
