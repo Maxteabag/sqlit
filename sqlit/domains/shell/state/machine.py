@@ -161,19 +161,22 @@ class UIStateMachine:
             HelpEntry("<enter>", "Connect", "Connection Picker"),
             HelpEntry("<esc>", "Close", "Connection Picker"),
         ]
+        entries_by_category["Filtering"] = [
+            HelpEntry("~", "Prefix filter for fuzzy match", "Filtering"),
+        ]
 
         category_order = [
             "Explorer",
             "Query Editor (Normal)",
             "Query Editor (Insert)",
             "Results",
+            "Filtering",
             "Connection Picker",
             commands_category,
             delete_category,
             "General",
             "Navigation",
             "Query",
-            "Value View",
         ]
 
         output = []

@@ -10,9 +10,9 @@ KEY_DISPLAY_OVERRIDES: dict[str, str] = {
     "slash": "/",
     "space": "<space>",
     "escape": "esc",
-    "enter": "enter",
+    "enter": "<enter>",
     "delete": "delete",
-    "backspace": "backspace",
+    "backspace": "<backspace>",
     "tab": "tab",
 }
 
@@ -248,7 +248,7 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("y", "yank_leader_key", "query_normal"),
             ActionKeyDef("c", "change_leader_key", "query_normal"),
             ActionKeyDef("g", "g_leader_key", "query_normal"),
-            ActionKeyDef("H", "show_history", "query_normal"),
+            ActionKeyDef("backspace", "show_history", "query_normal"),
             ActionKeyDef("N", "new_query", "query_normal"),
             ActionKeyDef("d", "delete_leader_key", "query_normal"),
             # Vim cursor movement (normal mode)
