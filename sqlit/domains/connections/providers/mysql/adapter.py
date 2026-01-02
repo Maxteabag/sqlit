@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.util
 from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.mysql.base import MySQLBaseAdapter
+from sqlit.domains.connections.providers.exceptions import MissingDriverError
 from sqlit.domains.connections.providers.registry import get_default_port
 from sqlit.domains.connections.providers.tls import (
     TLS_MODE_DEFAULT,
@@ -17,6 +19,11 @@ from sqlit.domains.connections.providers.tls import (
 
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
+
+
+def _check_old_mysql_connector() -> bool:
+    """Check if the old mysql-connector-python package is installed."""
+    return importlib.util.find_spec("mysql.connector") is not None
 
 
 class MySQLAdapter(MySQLBaseAdapter):
@@ -40,19 +47,38 @@ class MySQLAdapter(MySQLBaseAdapter):
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to MySQL database."""
-        pymysql = self._import_driver_module(
-            "pymysql",
-            driver_name=self.name,
-            extra_name=self.install_extra,
-            package_name=self.install_package,
-        )
+        try:
+            pymysql = self._import_driver_module(
+                "pymysql",
+                driver_name=self.name,
+                extra_name=self.install_extra,
+                package_name=self.install_package,
+            )
+        except MissingDriverError:
+            if _check_old_mysql_connector():
+                raise MissingDriverError(
+                    self.name,
+                    self.install_extra,
+                    self.install_package,
+                    module_name="pymysql",
+                    import_error=(
+                        "MySQL driver has changed from mysql-connector-python to PyMySQL.\n"
+                        "Please uninstall the old package and install PyMySQL:\n"
+                        "  pip uninstall mysql-connector-python\n"
+                        "  pip install PyMySQL"
+                    ),
+                ) from None
+            raise
 
         endpoint = config.tcp_endpoint
         if endpoint is None:
             raise ValueError("MySQL connections require a TCP-style endpoint.")
         port = int(endpoint.port or get_default_port("mysql"))
+        host = endpoint.host
+        if host and host.lower() == "localhost":
+            host = "127.0.0.1"
         connect_args: dict[str, Any] = {
-            "host": endpoint.host,
+            "host": host,
             "port": port,
             "database": endpoint.database or None,
             "user": endpoint.username,
