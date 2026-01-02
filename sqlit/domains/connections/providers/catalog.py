@@ -24,16 +24,20 @@ def _discover_providers() -> None:
     if _DISCOVERED:
         return
 
+    from sqlit.shared.app.startup_profiler import span as startup_span
+
     if __package__ is None:
         return
-    package = import_module(__package__)
-    for module_info in pkgutil.iter_modules(package.__path__):
-        name = module_info.name
-        if not module_info.ispkg:
-            continue
-        if name in {"adapters", "__pycache__"}:
-            continue
-        import_module(f"{__package__}.{name}.provider")
+    with startup_span("provider_discovery"):
+        package = import_module(__package__)
+        for module_info in pkgutil.iter_modules(package.__path__):
+            name = module_info.name
+            if not module_info.ispkg:
+                continue
+            if name in {"adapters", "__pycache__"}:
+                continue
+            with startup_span(f"provider_import:{name}"):
+                import_module(f"{__package__}.{name}.provider")
 
     _DISCOVERED = True
 

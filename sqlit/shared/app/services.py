@@ -241,27 +241,50 @@ def build_app_services(
     from sqlit.domains.query.store.history import HistoryStore
     from sqlit.domains.query.store.starred import StarredStore
     from sqlit.domains.shell.store.settings import SettingsStore
+    from sqlit.shared.app.startup_profiler import configure as configure_startup_profiler
+    from sqlit.shared.app.startup_profiler import enable_import_timing
+    from sqlit.shared.app.startup_profiler import span as startup_span
 
-    settings_store = settings_store or SettingsStore(file_path=runtime.settings_path)
-    credentials_service = credentials_service or build_credentials_service(settings_store)
+    configure_startup_profiler(
+        log_path=runtime.startup_log_path,
+        start_mark=runtime.startup_mark,
+        init_mark=runtime.startup_mark,
+    )
+    enable_import_timing(
+        log_path=runtime.startup_import_log_path,
+        min_ms=runtime.startup_import_min_ms,
+    )
+
+    with startup_span("build_settings_store"):
+        settings_store = settings_store or SettingsStore(file_path=runtime.settings_path)
+    with startup_span("build_credentials_service"):
+        credentials_service = credentials_service or build_credentials_service(settings_store)
     if credentials_service is None:
         raise RuntimeError("Credentials service is not available.")
-    connection_store = connection_store or ConnectionStore(credentials_service=credentials_service)
-    history_store = history_store or HistoryStore()
-    starred_store = starred_store or StarredStore()
+    with startup_span("build_connection_store"):
+        connection_store = connection_store or ConnectionStore(credentials_service=credentials_service)
+    with startup_span("build_history_store"):
+        history_store = history_store or HistoryStore()
+    with startup_span("build_starred_store"):
+        starred_store = starred_store or StarredStore()
 
     if hasattr(connection_store, "set_credentials_service"):
         connection_store.set_credentials_service(credentials_service)
 
-    system_probe = system_probe or build_system_probe(runtime)
-    driver_resolver = driver_resolver or build_driver_resolver(runtime)
-    provider_factory = _wrap_provider_factory(provider_factory or get_provider, driver_resolver)
-    tunnel_factory = tunnel_factory or create_ssh_tunnel
-    sync_process_runner, async_process_runner = build_process_runners(
-        runtime,
-        sync_runner=sync_process_runner,
-        async_runner=async_process_runner,
-    )
+    with startup_span("build_system_probe"):
+        system_probe = system_probe or build_system_probe(runtime)
+    with startup_span("build_driver_resolver"):
+        driver_resolver = driver_resolver or build_driver_resolver(runtime)
+    with startup_span("build_provider_factory"):
+        provider_factory = _wrap_provider_factory(provider_factory or get_provider, driver_resolver)
+    with startup_span("build_tunnel_factory"):
+        tunnel_factory = tunnel_factory or create_ssh_tunnel
+    with startup_span("build_process_runners"):
+        sync_process_runner, async_process_runner = build_process_runners(
+            runtime,
+            sync_runner=sync_process_runner,
+            async_runner=async_process_runner,
+        )
 
     if session_factory is None:
         def _default_session_factory(config: Any) -> Any:
@@ -277,11 +300,19 @@ def build_app_services(
         if callable(setter):
             setter(system_probe)
 
-    cloud_state_provider = build_cloud_state_provider(runtime)
+    with startup_span("build_cloud_state_provider"):
+        cloud_state_provider = build_cloud_state_provider(runtime)
     if cloud_discovery is not None:
         setter = getattr(cloud_discovery, "set_state_provider", None)
         if callable(setter):
             setter(cloud_state_provider)
+
+    with startup_span("build_docker_detector"):
+        docker_detector = docker_detector or build_docker_detector(runtime)
+    with startup_span("build_cloud_discovery"):
+        cloud_discovery = cloud_discovery or CloudDiscovery(cloud_state_provider)
+    with startup_span("build_install_strategy"):
+        install_strategy = install_strategy or InstallStrategyProvider(system_probe)
 
     services = AppServices(
         runtime=runtime,
@@ -295,9 +326,9 @@ def build_app_services(
         driver_resolver=driver_resolver,
         tunnel_factory=tunnel_factory,
         session_factory=session_factory,
-        docker_detector=docker_detector or build_docker_detector(runtime),
-        cloud_discovery=cloud_discovery or CloudDiscovery(cloud_state_provider),
-        install_strategy=install_strategy or InstallStrategyProvider(system_probe),
+        docker_detector=docker_detector,
+        cloud_discovery=cloud_discovery,
+        install_strategy=install_strategy,
         sync_process_runner=sync_process_runner,
         async_process_runner=async_process_runner,
     )

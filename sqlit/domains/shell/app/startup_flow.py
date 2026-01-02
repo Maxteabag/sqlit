@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlit.domains.connections.domain.config import ConnectionConfig
 from sqlit.domains.explorer.ui.tree import builder as tree_builder
 from sqlit.domains.shell.app.idle_scheduler import init_idle_scheduler
+from sqlit.shared.app.startup_profiler import write_line
 from sqlit.shared.ui.protocols import AppProtocol
 
 
@@ -109,7 +110,7 @@ def log_startup_timing(app: AppProtocol) -> None:
     if since_start is not None:
         parts.append(f"start_to_mount_ms={since_start:.2f}")
     parts.append(f"init_to_mount_ms={init_to_mount:.2f}")
-    print(f"[sqlit] startup {' '.join(parts)}", file=sys.stderr)
+    _emit_startup_line(app, f"[sqlit] startup {' '.join(parts)}")
     _log_startup_steps(app)
 
     def after_refresh() -> None:
@@ -122,7 +123,8 @@ def log_startup_timing(app: AppProtocol) -> None:
         if start_to_refresh is not None:
             refresh_parts.append(f"start_to_first_refresh_ms={start_to_refresh:.2f}")
         refresh_parts.append(f"init_to_first_refresh_ms={init_to_refresh:.2f}")
-        print(f"[sqlit] startup {' '.join(refresh_parts)}", file=sys.stderr)
+        _emit_startup_line(app, f"[sqlit] startup {' '.join(refresh_parts)}")
+        _maybe_exit_after_refresh(app)
 
     app.call_after_refresh(after_refresh)
 
@@ -139,7 +141,22 @@ def _log_startup_step(app: AppProtocol, name: str, timestamp: float) -> None:
     if app._startup_mark is not None:
         parts.append(f"start_ms={(timestamp - app._startup_mark) * 1000:.2f}")
     parts.append(f"init_ms={(timestamp - app._startup_init_time) * 1000:.2f}")
-    print(f"[sqlit] startup {' '.join(parts)}", file=sys.stderr)
+    _emit_startup_line(app, f"[sqlit] startup {' '.join(parts)}")
+
+
+def _emit_startup_line(app: AppProtocol, line: str) -> None:
+    print(line, file=sys.stderr)
+    write_line(line)
+
+
+def _maybe_exit_after_refresh(app: AppProtocol) -> None:
+    runtime = getattr(getattr(app, "services", None), "runtime", None)
+    if not getattr(runtime, "startup_exit_after_refresh", False):
+        return
+    try:
+        app.exit()
+    except Exception:
+        pass
 
 
 def _get_restart_cache_path() -> Path:

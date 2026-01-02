@@ -35,6 +35,10 @@ class RuntimeConfig:
     debug_idle_scheduler: bool = False
     profile_startup: bool = False
     startup_mark: float | None = None
+    startup_log_path: Path | None = None
+    startup_exit_after_refresh: bool = False
+    startup_import_log_path: Path | None = None
+    startup_import_min_ms: float = 1.0
     mock: MockConfig = field(default_factory=MockConfig)
 
     @classmethod
@@ -64,6 +68,25 @@ class RuntimeConfig:
                 return 0.0
 
         settings_path = os.environ.get("SQLIT_SETTINGS_PATH", "").strip() or None
+        startup_log_path = os.environ.get("SQLIT_PROFILE_STARTUP_FILE", "").strip() or None
+        startup_exit = os.environ.get("SQLIT_PROFILE_STARTUP_EXIT") == "1"
+        import_log_path = os.environ.get("SQLIT_PROFILE_STARTUP_IMPORTS_FILE", "").strip() or None
+        import_enabled = os.environ.get("SQLIT_PROFILE_STARTUP_IMPORTS") == "1" or bool(import_log_path)
+        import_min_raw = os.environ.get("SQLIT_PROFILE_STARTUP_IMPORTS_MIN_MS", "").strip()
+        import_min_ms = _parse_float(import_min_raw) if import_min_raw else 1.0
+        profile_startup = (
+            os.environ.get("SQLIT_PROFILE_STARTUP") == "1"
+            or bool(startup_log_path)
+            or startup_exit
+            or import_enabled
+        )
+        default_startup_log = Path(".sqlit") / "startup.txt"
+        startup_log = Path(startup_log_path).expanduser() if startup_log_path else (default_startup_log if profile_startup else None)
+        startup_import_log = (
+            Path(import_log_path).expanduser()
+            if import_log_path
+            else (Path(".sqlit") / "startup-imports.txt" if import_enabled else None)
+        )
         max_rows = _parse_int(os.environ.get("SQLIT_MAX_ROWS"))
         missing_drivers = os.environ.get("SQLIT_MOCK_MISSING_DRIVERS", "")
         missing_driver_set = {item.strip() for item in missing_drivers.split(",") if item.strip()}
@@ -84,7 +107,11 @@ class RuntimeConfig:
             max_rows=max_rows,
             debug_mode=os.environ.get("SQLIT_DEBUG") == "1",
             debug_idle_scheduler=os.environ.get("SQLIT_DEBUG_IDLE_SCHEDULER") == "1",
-            profile_startup=os.environ.get("SQLIT_PROFILE_STARTUP") == "1",
+            profile_startup=profile_startup,
             startup_mark=_parse_startup_mark(os.environ.get("SQLIT_STARTUP_MARK")),
+            startup_log_path=startup_log,
+            startup_exit_after_refresh=startup_exit,
+            startup_import_log_path=startup_import_log,
+            startup_import_min_ms=import_min_ms,
             mock=mock_config,
         )
