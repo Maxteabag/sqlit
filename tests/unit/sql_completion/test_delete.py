@@ -2,7 +2,7 @@
 
 import pytest
 
-from sqlit.sql_completion import (
+from sqlit.domains.query.completion import (
     SuggestionType,
     extract_delete_table_refs,
     get_completions,
@@ -120,7 +120,6 @@ class TestDeleteStatements:
     def test_delete_using_suggests_tables(self, schema):
         """DELETE USING should suggest tables (PostgreSQL style)."""
         sql = "DELETE FROM users USING "
-        suggestions = get_context(sql, len(sql))
         # USING should trigger table suggestions (falls back to keyword detection)
         completions = get_completions(
             sql, len(sql), schema["tables"], schema["columns"], schema["procedures"]

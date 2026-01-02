@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from rich.markup import escape as escape_markup
 
-from sqlit.ui.mixins.tree import TreeMixin
-from sqlit.ui.tree_nodes import SchemaNode, TableNode, ViewNode
+from sqlit.domains.explorer.domain.tree_nodes import SchemaNode, TableNode, ViewNode
+from sqlit.domains.explorer.ui.mixins.tree import TreeMixin
 
 
 class MockSession:

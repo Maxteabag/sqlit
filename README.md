@@ -27,22 +27,22 @@
 ### Connect
 Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, Athena, BigQuery, RedShift and Apache Flight SQL.
 
-![Database Providers](demos/demo-providers.gif)
+![Database Providers](docs/demos/demo-providers.gif)
 
 ### Query
 Syntax highlighting. History. Vim-style keybindings.
 
-![Query History](demos/demo-history.gif)
+![Query History](docs/demos/demo-history.gif)
 
 ### Results
 Load millions of rows. Inspect data, filter by content, fuzzy search.
 
-![Filter results](demos/demo-filter/demo-filter.gif)
+![Filter results](docs/demos/demo-filter/demo-filter.gif)
 
 ### Docker Discovery
 Automatically finds running database containers. Press 'Enter' to connect, sqlit figures out the details for you.
 
-![Docker Discovery](demos/demo-docker-picker.gif)
+![Docker Discovery](docs/demos/demo-docker-picker.gif)
 
 ---
 

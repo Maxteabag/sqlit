@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from sqlit.stores.starred import StarredStore
+from sqlit.domains.query.store.starred import StarredStore
 
 
 @pytest.fixture

@@ -5,10 +5,7 @@ from __future__ import annotations
 import io
 import sys
 
-import pytest
-
-from sqlit.commands import _output_table
-
+from sqlit.domains.query.cli.commands import _output_table
 from tests.ui.mocks import generate_long_varchar_rows
 
 

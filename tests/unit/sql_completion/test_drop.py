@@ -2,7 +2,7 @@
 
 import pytest
 
-from sqlit.sql_completion import (
+from sqlit.domains.query.completion import (
     DROP_OBJECTS,
     get_completions,
 )

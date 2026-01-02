@@ -6,18 +6,27 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sqlit.db.providers import get_adapter_class, get_default_port
-from sqlit.mock_settings import set_mock_docker_containers
-from sqlit.services.docker_detector import (
+from sqlit.domains.connections.discovery.docker_detector import (
+    ContainerStatus,
     DetectedContainer,
     DockerStatus,
-    _get_container_credentials,
+    StaticDockerContainerScanner,
     _get_db_type_from_image,
     _get_host_port,
     container_to_connection_config,
     detect_database_containers,
     get_docker_status,
 )
+from sqlit.domains.connections.providers.catalog import get_provider
+from sqlit.domains.connections.providers.docker import DockerCredentials
+from sqlit.domains.connections.providers.registry import get_default_port
+
+
+def _get_container_credentials(db_type: str, env_vars: dict[str, str]) -> DockerCredentials:
+    provider = get_provider(db_type)
+    detector = provider.docker_detector
+    assert detector is not None
+    return detector.get_credentials(env_vars)
 
 
 class TestDockerStatus:
@@ -75,22 +84,22 @@ class TestCredentialExtraction:
             "POSTGRES_PASSWORD": "mypass",
             "POSTGRES_DB": "mydb",
         }
-        creds = _get_container_credentials(get_adapter_class("postgresql"), env_vars)
+        creds = _get_container_credentials("postgresql", env_vars)
         assert creds.user == "myuser"
         assert creds.password == "mypass"
         assert creds.database == "mydb"
 
     def test_postgresql_defaults(self):
         """Test PostgreSQL defaults when no env vars set."""
-        creds = _get_container_credentials(get_adapter_class("postgresql"), {})
+        creds = _get_container_credentials("postgresql", {})
         assert creds.user == "postgres"
         assert creds.password is None
-        assert creds.database == "postgres"
+        assert creds.database is None
 
     def test_mysql_root_password(self):
         """Test MySQL with root password."""
         env_vars = {"MYSQL_ROOT_PASSWORD": "rootpass"}
-        creds = _get_container_credentials(get_adapter_class("mysql"), env_vars)
+        creds = _get_container_credentials("mysql", env_vars)
         assert creds.user == "root"
         assert creds.password == "rootpass"
 
@@ -101,7 +110,7 @@ class TestCredentialExtraction:
             "MYSQL_PASSWORD": "userpass",
             "MYSQL_DATABASE": "mydb",
         }
-        creds = _get_container_credentials(get_adapter_class("mysql"), env_vars)
+        creds = _get_container_credentials("mysql", env_vars)
         assert creds.user == "myuser"
         assert creds.password == "userpass"
         assert creds.database == "mydb"
@@ -109,10 +118,10 @@ class TestCredentialExtraction:
     def test_mssql_credentials(self):
         """Test SQL Server credential extraction."""
         env_vars = {"SA_PASSWORD": "StrongP@ssw0rd"}
-        creds = _get_container_credentials(get_adapter_class("mssql"), env_vars)
+        creds = _get_container_credentials("mssql", env_vars)
         assert creds.user == "sa"
         assert creds.password == "StrongP@ssw0rd"
-        assert creds.database == "master"
+        assert creds.database is None
 
     def test_mariadb_fallback_to_mysql_vars(self):
         """Test MariaDB falls back to MYSQL_ vars."""
@@ -120,7 +129,7 @@ class TestCredentialExtraction:
             "MYSQL_USER": "myuser",
             "MYSQL_PASSWORD": "mypass",
         }
-        creds = _get_container_credentials(get_adapter_class("mariadb"), env_vars)
+        creds = _get_container_credentials("mariadb", env_vars)
         assert creds.user == "myuser"
         assert creds.password == "mypass"
 
@@ -251,16 +260,10 @@ class TestContainerToConnectionConfig:
 
 
 class TestDetectDatabaseContainers:
-    @pytest.fixture(autouse=True)
-    def _clear_mock_docker_containers(self):
-        set_mock_docker_containers(None)
-        yield
-        set_mock_docker_containers(None)
-
     def test_detect_containers_docker_not_installed(self):
         """Test detection when docker SDK is not installed."""
         with patch(
-            "sqlit.services.docker_detector.get_docker_status",
+            "sqlit.domains.connections.discovery.docker_detector.get_docker_status",
             return_value=DockerStatus.NOT_INSTALLED,
         ):
             status, containers = detect_database_containers()
@@ -270,7 +273,7 @@ class TestDetectDatabaseContainers:
     def test_detect_containers_docker_not_running(self):
         """Test detection when docker daemon is not running."""
         with patch(
-            "sqlit.services.docker_detector.get_docker_status",
+            "sqlit.domains.connections.discovery.docker_detector.get_docker_status",
             return_value=DockerStatus.NOT_RUNNING,
         ):
             status, containers = detect_database_containers()
@@ -305,7 +308,7 @@ class TestDetectDatabaseContainers:
 
         with (
             patch(
-                "sqlit.services.docker_detector.get_docker_status",
+                "sqlit.domains.connections.discovery.docker_detector.get_docker_status",
                 return_value=DockerStatus.AVAILABLE,
             ),
             patch("docker.from_env", return_value=mock_client),
@@ -349,7 +352,7 @@ class TestDetectDatabaseContainers:
 
         with (
             patch(
-                "sqlit.services.docker_detector.get_docker_status",
+                "sqlit.domains.connections.discovery.docker_detector.get_docker_status",
                 return_value=DockerStatus.AVAILABLE,
             ),
             patch("docker.from_env", return_value=mock_client),
@@ -382,7 +385,7 @@ class TestDetectDatabaseContainers:
 
         with (
             patch(
-                "sqlit.services.docker_detector.get_docker_status",
+                "sqlit.domains.connections.discovery.docker_detector.get_docker_status",
                 return_value=DockerStatus.AVAILABLE,
             ),
             patch("docker.from_env", return_value=mock_client),
@@ -415,7 +418,7 @@ class TestDetectDatabaseContainers:
 
         with (
             patch(
-                "sqlit.services.docker_detector.get_docker_status",
+                "sqlit.domains.connections.discovery.docker_detector.get_docker_status",
                 return_value=DockerStatus.AVAILABLE,
             ),
             patch("docker.from_env", return_value=mock_client),
@@ -438,3 +441,39 @@ class TestDefaultPorts:
         assert int(get_default_port("oracle")) == 1521
         assert int(get_default_port("turso")) == 8080
         assert int(get_default_port("firebird")) == 3050
+
+
+class TestStaticDockerContainerScanner:
+    def test_static_scanner_sorts_running_first(self):
+        """Test static scanners preserve running-first ordering."""
+        containers = [
+            DetectedContainer(
+                container_id="exited",
+                container_name="db-exited",
+                db_type="postgresql",
+                host="localhost",
+                port=None,
+                username=None,
+                password=None,
+                database=None,
+                status=ContainerStatus.EXITED,
+            ),
+            DetectedContainer(
+                container_id="running",
+                container_name="db-running",
+                db_type="mysql",
+                host="localhost",
+                port=3306,
+                username="root",
+                password="pass",
+                database="db",
+                status=ContainerStatus.RUNNING,
+            ),
+        ]
+        scanner = StaticDockerContainerScanner(containers)
+        status, detected = scanner()
+        assert status == DockerStatus.AVAILABLE
+        assert [item.status for item in detected] == [
+            ContainerStatus.RUNNING,
+            ContainerStatus.EXITED,
+        ]

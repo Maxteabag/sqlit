@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from .test_database_base import BaseDatabaseTests, DatabaseTestConfig
 
 

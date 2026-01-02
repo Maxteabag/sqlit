@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from sqlit.config import ConnectionConfig
+from tests.helpers import ConnectionConfig
 
 
 class TestOracleAdapterRole:
@@ -19,7 +17,7 @@ class TestOracleAdapterRole:
         mock_oracledb.AUTH_MODE_SYSOPER = 4
 
         with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
-            from sqlit.db.adapters.oracle import OracleAdapter
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
 
             adapter = OracleAdapter()
             config = ConnectionConfig(
@@ -50,7 +48,7 @@ class TestOracleAdapterRole:
         mock_oracledb.AUTH_MODE_SYSOPER = 4
 
         with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
-            from sqlit.db.adapters.oracle import OracleAdapter
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
 
             adapter = OracleAdapter()
             config = ConnectionConfig(
@@ -80,7 +78,7 @@ class TestOracleAdapterRole:
         mock_oracledb.AUTH_MODE_SYSOPER = 4
 
         with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
-            from sqlit.db.adapters.oracle import OracleAdapter
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
 
             adapter = OracleAdapter()
             config = ConnectionConfig(
@@ -108,7 +106,7 @@ class TestOracleAdapterRole:
         mock_oracledb.AUTH_MODE_SYSOPER = 4
 
         with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
-            from sqlit.db.adapters.oracle import OracleAdapter
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
 
             adapter = OracleAdapter()
             # Create config without oracle_role (uses default "normal")

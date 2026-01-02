@@ -8,11 +8,18 @@ from __future__ import annotations
 
 import pytest
 
-from sqlit.db.providers import get_adapter_class
-from sqlit.services.docker_detector import (
-    _get_container_credentials,
+from sqlit.domains.connections.discovery.docker_detector import (
     _get_db_type_from_image,
 )
+from sqlit.domains.connections.providers.catalog import get_provider
+from sqlit.domains.connections.providers.docker import DockerCredentials
+
+
+def _get_container_credentials(db_type: str, env_vars: dict[str, str]) -> DockerCredentials:
+    provider = get_provider(db_type)
+    detector = provider.docker_detector
+    assert detector is not None
+    return detector.get_credentials(env_vars)
 
 
 class TestImagePatternMatching:
@@ -94,37 +101,37 @@ class TestPostgreSQLCredentials:
             "POSTGRES_PASSWORD": "mypass",
             "POSTGRES_DB": "mydb",
         }
-        creds = _get_container_credentials(get_adapter_class("postgresql"), env)
+        creds = _get_container_credentials("postgresql", env)
         assert creds.user == "myuser"
         assert creds.password == "mypass"
         assert creds.database == "mydb"
 
     def test_defaults_when_empty(self):
         """Test default values when no env vars set."""
-        creds = _get_container_credentials(get_adapter_class("postgresql"), {})
+        creds = _get_container_credentials("postgresql", {})
         assert creds.user == "postgres"
         assert creds.password is None
-        assert creds.database == "postgres"
+        assert creds.database is None
 
     def test_password_only(self):
         """Test with only password set (common minimal config)."""
         env = {"POSTGRES_PASSWORD": "secret"}
-        creds = _get_container_credentials(get_adapter_class("postgresql"), env)
+        creds = _get_container_credentials("postgresql", env)
         assert creds.user == "postgres"
         assert creds.password == "secret"
-        assert creds.database == "postgres"
+        assert creds.database is None
 
     def test_user_without_password(self):
         """Test custom user without password (trust auth)."""
         env = {"POSTGRES_USER": "devuser"}
-        creds = _get_container_credentials(get_adapter_class("postgresql"), env)
+        creds = _get_container_credentials("postgresql", env)
         assert creds.user == "devuser"
         assert creds.password is None
 
     def test_empty_password_string(self):
         """Test explicitly empty password."""
         env = {"POSTGRES_PASSWORD": ""}
-        creds = _get_container_credentials(get_adapter_class("postgresql"), env)
+        creds = _get_container_credentials("postgresql", env)
         assert creds.password == ""
 
 
@@ -134,7 +141,7 @@ class TestMySQLCredentials:
     def test_root_password_only(self):
         """Test MySQL with only root password (most common dev setup)."""
         env = {"MYSQL_ROOT_PASSWORD": "rootpass"}
-        creds = _get_container_credentials(get_adapter_class("mysql"), env)
+        creds = _get_container_credentials("mysql", env)
         assert creds.user == "root"
         assert creds.password == "rootpass"
 
@@ -145,7 +152,7 @@ class TestMySQLCredentials:
             "MYSQL_PASSWORD": "apppass",
             "MYSQL_DATABASE": "appdb",
         }
-        creds = _get_container_credentials(get_adapter_class("mysql"), env)
+        creds = _get_container_credentials("mysql", env)
         assert creds.user == "appuser"
         assert creds.password == "apppass"
         assert creds.database == "appdb"
@@ -157,7 +164,7 @@ class TestMySQLCredentials:
             "MYSQL_USER": "appuser",
             "MYSQL_PASSWORD": "apppass",
         }
-        creds = _get_container_credentials(get_adapter_class("mysql"), env)
+        creds = _get_container_credentials("mysql", env)
         assert creds.user == "appuser"
         assert creds.password == "apppass"
 
@@ -168,7 +175,7 @@ class TestMySQLCredentials:
             "MYSQL_USER": "appuser",
             # No MYSQL_PASSWORD
         }
-        creds = _get_container_credentials(get_adapter_class("mysql"), env)
+        creds = _get_container_credentials("mysql", env)
         # User is set but no password, falls back to root password
         assert creds.user == "appuser"
         assert creds.password == "rootpass"
@@ -176,14 +183,14 @@ class TestMySQLCredentials:
     def test_allow_empty_password(self):
         """Test MYSQL_ALLOW_EMPTY_PASSWORD scenario."""
         env = {"MYSQL_ALLOW_EMPTY_PASSWORD": "yes"}
-        creds = _get_container_credentials(get_adapter_class("mysql"), env)
+        creds = _get_container_credentials("mysql", env)
         assert creds.user == "root"
         assert creds.password is None
 
     def test_random_root_password(self):
         """Test MYSQL_RANDOM_ROOT_PASSWORD (can't extract password)."""
         env = {"MYSQL_RANDOM_ROOT_PASSWORD": "yes"}
-        creds = _get_container_credentials(get_adapter_class("mysql"), env)
+        creds = _get_container_credentials("mysql", env)
         assert creds.password is None
 
 
@@ -197,7 +204,7 @@ class TestMariaDBCredentials:
             "MARIADB_PASSWORD": "mariapass",
             "MARIADB_DATABASE": "mariadb",
         }
-        creds = _get_container_credentials(get_adapter_class("mariadb"), env)
+        creds = _get_container_credentials("mariadb", env)
         assert creds.user == "mariauser"
         assert creds.password == "mariapass"
         assert creds.database == "mariadb"
@@ -209,7 +216,7 @@ class TestMariaDBCredentials:
             "MYSQL_PASSWORD": "mysqlpass",
             "MYSQL_DATABASE": "mysqldb",
         }
-        creds = _get_container_credentials(get_adapter_class("mariadb"), env)
+        creds = _get_container_credentials("mariadb", env)
         assert creds.user == "mysqluser"
         assert creds.password == "mysqlpass"
         assert creds.database == "mysqldb"
@@ -221,20 +228,20 @@ class TestMariaDBCredentials:
             "MYSQL_USER": "mysqluser",
             "MARIADB_PASSWORD": "mariapass",
         }
-        creds = _get_container_credentials(get_adapter_class("mariadb"), env)
+        creds = _get_container_credentials("mariadb", env)
         assert creds.user == "mariauser"
 
     def test_mariadb_root_password(self):
         """Test MariaDB root password variations."""
         env = {"MARIADB_ROOT_PASSWORD": "rootpass"}
-        creds = _get_container_credentials(get_adapter_class("mariadb"), env)
+        creds = _get_container_credentials("mariadb", env)
         assert creds.user == "root"
         assert creds.password == "rootpass"
 
     def test_mysql_root_password_fallback(self):
         """Test fallback to MYSQL_ROOT_PASSWORD."""
         env = {"MYSQL_ROOT_PASSWORD": "rootpass"}
-        creds = _get_container_credentials(get_adapter_class("mariadb"), env)
+        creds = _get_container_credentials("mariadb", env)
         assert creds.user == "root"
         assert creds.password == "rootpass"
 
@@ -250,7 +257,7 @@ class TestOracleCredentials:
             "ORACLE_PASSWORD": "systempass",
             "ORACLE_DATABASE": "APPDB",
         }
-        creds = _get_container_credentials(get_adapter_class("oracle"), env)
+        creds = _get_container_credentials("oracle", env)
         assert creds.user == "appuser"
         assert creds.password == "apppass"
         assert creds.database == "APPDB"
@@ -258,7 +265,7 @@ class TestOracleCredentials:
     def test_oracle_defaults(self):
         """Test Oracle defaults when no app user is set."""
         env = {"ORACLE_PASSWORD": "systempass"}
-        creds = _get_container_credentials(get_adapter_class("oracle"), env)
+        creds = _get_container_credentials("oracle", env)
         assert creds.user == "SYSTEM"
         assert creds.password == "systempass"
         assert creds.database == "FREEPDB1"
@@ -269,7 +276,7 @@ class TestOracleCredentials:
             "APP_USER": "appuser",
             "ORACLE_PASSWORD": "systempass",
         }
-        creds = _get_container_credentials(get_adapter_class("oracle"), env)
+        creds = _get_container_credentials("oracle", env)
         assert creds.user == "SYSTEM"
         assert creds.password == "systempass"
 
@@ -280,15 +287,15 @@ class TestSQLServerCredentials:
     def test_sa_password(self):
         """Test standard SA_PASSWORD."""
         env = {"SA_PASSWORD": "StrongP@ss123"}
-        creds = _get_container_credentials(get_adapter_class("mssql"), env)
+        creds = _get_container_credentials("mssql", env)
         assert creds.user == "sa"
         assert creds.password == "StrongP@ss123"
-        assert creds.database == "master"
+        assert creds.database is None
 
     def test_mssql_sa_password(self):
         """Test alternative MSSQL_SA_PASSWORD."""
         env = {"MSSQL_SA_PASSWORD": "StrongP@ss123"}
-        creds = _get_container_credentials(get_adapter_class("mssql"), env)
+        creds = _get_container_credentials("mssql", env)
         assert creds.user == "sa"
         assert creds.password == "StrongP@ss123"
 
@@ -298,13 +305,13 @@ class TestSQLServerCredentials:
             "SA_PASSWORD": "primary",
             "MSSQL_SA_PASSWORD": "secondary",
         }
-        creds = _get_container_credentials(get_adapter_class("mssql"), env)
+        creds = _get_container_credentials("mssql", env)
         assert creds.password == "primary"
 
     def test_accept_eula_only(self):
         """Test container with only ACCEPT_EULA (no password = can't connect)."""
         env = {"ACCEPT_EULA": "Y"}
-        creds = _get_container_credentials(get_adapter_class("mssql"), env)
+        creds = _get_container_credentials("mssql", env)
         assert creds.user == "sa"
         assert creds.password is None
 
@@ -319,14 +326,14 @@ class TestClickHouseCredentials:
             "CLICKHOUSE_PASSWORD": "chpass",
             "CLICKHOUSE_DB": "chdb",
         }
-        creds = _get_container_credentials(get_adapter_class("clickhouse"), env)
+        creds = _get_container_credentials("clickhouse", env)
         assert creds.user == "chuser"
         assert creds.password == "chpass"
         assert creds.database == "chdb"
 
     def test_defaults(self):
         """Test ClickHouse defaults (default user, no password)."""
-        creds = _get_container_credentials(get_adapter_class("clickhouse"), {})
+        creds = _get_container_credentials("clickhouse", {})
         assert creds.user == "default"
         assert creds.password is None
         assert creds.database is None
@@ -334,7 +341,7 @@ class TestClickHouseCredentials:
     def test_password_only(self):
         """Test with only password set."""
         env = {"CLICKHOUSE_PASSWORD": "secret"}
-        creds = _get_container_credentials(get_adapter_class("clickhouse"), env)
+        creds = _get_container_credentials("clickhouse", env)
         assert creds.user == "default"
         assert creds.password == "secret"
 
@@ -349,14 +356,14 @@ class TestCockroachDBCredentials:
             "COCKROACH_PASSWORD": "crdbpass",
             "COCKROACH_DATABASE": "crdb",
         }
-        creds = _get_container_credentials(get_adapter_class("cockroachdb"), env)
+        creds = _get_container_credentials("cockroachdb", env)
         assert creds.user == "crdbuser"
         assert creds.password == "crdbpass"
         assert creds.database == "crdb"
 
     def test_defaults_insecure_mode(self):
         """Test CockroachDB defaults (often runs insecure in dev)."""
-        creds = _get_container_credentials(get_adapter_class("cockroachdb"), {})
+        creds = _get_container_credentials("cockroachdb", {})
         assert creds.user == "root"
         assert creds.password is None
         assert creds.database is None
@@ -368,25 +375,25 @@ class TestEdgeCases:
     def test_env_vars_with_whitespace(self):
         """Test that whitespace in values is preserved."""
         env = {"POSTGRES_PASSWORD": "  pass with spaces  "}
-        creds = _get_container_credentials(get_adapter_class("postgresql"), env)
+        creds = _get_container_credentials("postgresql", env)
         assert creds.password == "  pass with spaces  "
 
     def test_env_vars_with_special_chars(self):
         """Test passwords with special characters."""
         env = {"POSTGRES_PASSWORD": "p@ss=word!#$%^&*()"}
-        creds = _get_container_credentials(get_adapter_class("postgresql"), env)
+        creds = _get_container_credentials("postgresql", env)
         assert creds.password == "p@ss=word!#$%^&*()"
 
     def test_unicode_password(self):
         """Test Unicode characters in password."""
         env = {"POSTGRES_PASSWORD": "密码123"}
-        creds = _get_container_credentials(get_adapter_class("postgresql"), env)
+        creds = _get_container_credentials("postgresql", env)
         assert creds.password == "密码123"
 
     def test_unknown_db_type(self):
         """Test graceful handling of unknown database type - raises ValueError."""
         with pytest.raises(ValueError, match="Unknown database type"):
-            get_adapter_class("unknowndb")
+            get_provider("unknowndb")
 
     def test_case_sensitivity(self):
         """Test that env var names are case-sensitive."""
@@ -394,5 +401,5 @@ class TestEdgeCases:
             "postgres_password": "lowercase",  # Wrong case
             "POSTGRES_PASSWORD": "correct",
         }
-        creds = _get_container_credentials(get_adapter_class("postgresql"), env)
+        creds = _get_container_credentials("postgresql", env)
         assert creds.password == "correct"

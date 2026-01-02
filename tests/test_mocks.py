@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from sqlit.config import ConnectionConfig
-from sqlit.db.adapters.base import ColumnInfo
-from sqlit.mocks import (
+from sqlit.domains.connections.app.mocks import (
     MockConnection,
     MockDatabaseAdapter,
     MockProfile,
     get_default_mock_adapter,
     get_mock_profile,
 )
+from sqlit.domains.connections.providers.adapters.base import ColumnInfo
+from tests.helpers import ConnectionConfig
 
 
 class TestMockDatabaseAdapter:
@@ -137,7 +137,7 @@ class TestAdapterInterfaceCompliance:
     def test_method_signatures_match_base(self):
         import inspect
 
-        from sqlit.db.adapters.base import DatabaseAdapter
+        from sqlit.domains.connections.providers.adapters.base import DatabaseAdapter
 
         for method_name in ["build_select_query", "execute_query"]:
             base_params = list(inspect.signature(getattr(DatabaseAdapter, method_name)).parameters.keys())

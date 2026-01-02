@@ -2,7 +2,7 @@
 
 import pytest
 
-from sqlit.sql_completion import (
+from sqlit.domains.query.completion import (
     SuggestionType,
     get_completions,
     get_context,
@@ -261,14 +261,22 @@ class TestSelectClauseSuggestions:
         )
         assert "TOP" in completions
 
-    def test_star_filtered_by_prefix(self, schema):
-        """Should filter * when typing."""
+    def test_select_star_suggests_from(self, schema):
+        """SELECT * should suggest FROM."""
         sql = "SELECT *"
         completions = get_completions(
             sql, len(sql), schema["tables"], schema["columns"]
         )
-        # When typing *, it should match
-        assert "*" in completions or len(completions) == 0  # Either matches or nothing
+        assert "FROM" in completions
+        assert "*" not in completions
+
+    def test_select_star_prefix_suggests_from(self, schema):
+        """SELECT * fr should keep FROM suggestion."""
+        sql = "SELECT * fr"
+        completions = get_completions(
+            sql, len(sql), schema["tables"], schema["columns"]
+        )
+        assert "FROM" in completions
 
     def test_distinct_filtered_by_prefix(self, schema):
         """Should filter DISTINCT when typing D."""

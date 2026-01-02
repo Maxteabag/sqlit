@@ -15,7 +15,20 @@ Thank you for considering a contribution to sqlit! This guide walks you through 
    pip install -e ".[dev]"
    ```
 
+   For the full integration suite (all database drivers):
+   ```bash
+   pip install -e ".[dev,all]"
+   ```
+
 ## Running Tests
+
+### CLI E2E Tests
+
+CLI end-to-end tests run the entrypoint in a subprocess:
+
+```bash
+pytest tests/cli/ -v
+```
 
 ### SQLite Tests (No Docker Required)
 
@@ -27,11 +40,15 @@ pytest tests/ -v -k sqlite
 
 ### Full Test Suite (Requires Docker)
 
-To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, and Flight SQL tests:
+To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB, FirebirdSQL, Oracle, ClickHouse, Turso (libsql), D1 (miniflare), SSH tunnel, DuckDB, CockroachDB, and Flight SQL tests:
 
 1. Start the test database containers:
    ```bash
-   docker compose -f docker-compose.test.yml up -d
+   docker compose -f infra/docker/docker-compose.test.yml up -d
+   ```
+   To include the enterprise test containers (Db2, Trino, Presto, Oracle 11g):
+   ```bash
+   docker compose -f infra/docker/docker-compose.test.yml --profile enterprise up -d
    ```
 
 2. Wait for the databases to be ready (about 30-45 seconds), then run tests:
@@ -39,10 +56,15 @@ To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB,
    pytest tests/ -v
    ```
 
+   To include Docker detection tests that spin up temporary containers:
+   ```bash
+   pytest tests/integration/docker_detect/ -v --run-docker-container
+   ```
+
 You can leave the containers running between test runs - the test fixtures handle database setup/teardown automatically. Stop them when you're done developing:
 
 ```bash
-docker compose -f docker-compose.test.yml down
+docker compose -f infra/docker/docker-compose.test.yml down
 ```
 
 ### Running Tests for Specific Databases
@@ -111,20 +133,63 @@ The database tests can be configured with these environment variables:
 | `AWS_PROFILE` | `default` | AWS CLI profile to use (must be configured in `~/.aws/credentials`) |
 | `AWS_REGION` | `us-east-1` | AWS Region |
 
+**IBM Db2:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB2_HOST` | `localhost` | Db2 hostname |
+| `DB2_PORT` | `50000` | Db2 port |
+| `DB2_USER` | `db2inst1` | Db2 username |
+| `DB2_PASSWORD` | `TestPassword123!` | Db2 password |
+| `DB2_DATABASE` | `testdb` | Db2 database name |
+
+**Trino:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRINO_HOST` | `localhost` | Trino hostname |
+| `TRINO_PORT` | `8082` | Trino port |
+| `TRINO_USER` | `testuser` | Trino username |
+| `TRINO_PASSWORD` | `` | Trino password |
+| `TRINO_CATALOG` | `memory` | Trino catalog |
+| `TRINO_SCHEMA` | `default` | Trino schema |
+| `TRINO_HTTP_SCHEME` | `http` | Trino HTTP scheme |
+
+**Presto:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PRESTO_HOST` | `localhost` | Presto hostname |
+| `PRESTO_PORT` | `8083` | Presto port |
+| `PRESTO_USER` | `testuser` | Presto username |
+| `PRESTO_PASSWORD` | `` | Presto password |
+| `PRESTO_CATALOG` | `memory` | Presto catalog |
+| `PRESTO_SCHEMA` | `default` | Presto schema |
+| `PRESTO_HTTP_SCHEME` | `http` | Presto HTTP scheme |
+
+**Oracle 11g (Legacy):**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ORACLE11G_RUN_TESTS` | `` | Enable Oracle 11g tests when set to `1` |
+| `ORACLE11G_HOST` | `localhost` | Oracle 11g hostname |
+| `ORACLE11G_PORT` | `1522` | Oracle 11g port |
+| `ORACLE11G_USER` | `system` | Oracle 11g username |
+| `ORACLE11G_PASSWORD` | `oracle` | Oracle 11g password |
+| `ORACLE11G_SERVICE` | `XE` | Oracle 11g service name |
+| `ORACLE11G_CLIENT_MODE` | `thick` | Oracle client mode |
+| `ORACLE11G_CLIENT_LIB_DIR` | `` | Oracle Instant Client library directory |
+
 **Flight SQL:**
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FLIGHT_HOST` | `localhost` | Flight SQL server hostname |
 | `FLIGHT_PORT` | `31337` | Flight SQL server port |
 | `FLIGHT_USER` | `` | Flight SQL username (optional) |
-| `FLIGHT_PASSWORD` | `test_password` | Flight SQL password |
+| `FLIGHT_PASSWORD` | `` | Flight SQL password (optional) |
 | `FLIGHT_DATABASE` | `` | Flight SQL database/catalog (optional) |
 
 ### CockroachDB Quickstart (Docker)
 
 1. Start the included CockroachDB container:
    ```bash
-   docker compose -f docker-compose.test.yml up -d cockroachdb
+   docker compose -f infra/docker/docker-compose.test.yml up -d cockroachdb
    ```
 2. Create a connection (default container runs insecure mode on port `26257` with `root` user):
    ```bash
@@ -148,7 +213,7 @@ The project uses GitHub Actions for continuous integration:
 - **Build**: Verifies the package builds on Python 3.10-3.13
 - **SQLite Tests**: Runs SQLite integration tests (no external dependencies)
 - **SQL Server Tests**: Runs SQL Server integration tests with Docker service
-- 
+-
 
 ### Vision
 

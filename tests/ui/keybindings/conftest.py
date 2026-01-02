@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from sqlit.keymap import (
+from sqlit.core.keymap import (
     ActionKeyDef,
     KeymapProvider,
     LeaderCommandDef,

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch, ANY
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from sqlit.config import ConnectionConfig
+from tests.helpers import ConnectionConfig
 
 
 class TestSnowflakeAdapter:
@@ -17,7 +15,7 @@ class TestSnowflakeAdapter:
         mock_snowflake = MagicMock()
 
         with patch.dict("sys.modules", {"snowflake.connector": mock_snowflake}):
-            from sqlit.db.adapters.snowflake import SnowflakeAdapter
+            from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
 
             adapter = SnowflakeAdapter()
             config = ConnectionConfig(
@@ -43,7 +41,7 @@ class TestSnowflakeAdapter:
         mock_snowflake = MagicMock()
 
         with patch.dict("sys.modules", {"snowflake.connector": mock_snowflake}):
-            from sqlit.db.adapters.snowflake import SnowflakeAdapter
+            from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
 
             adapter = SnowflakeAdapter()
             # Simulate extras passing via dynamic attribute or similar if possible.
@@ -96,7 +94,7 @@ class TestSnowflakeAdapter:
         ]
 
         with patch.dict("sys.modules", {"snowflake.connector": mock_snowflake}):
-            from sqlit.db.adapters.snowflake import SnowflakeAdapter
+            from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
             adapter = SnowflakeAdapter()
 
             dbs = adapter.get_databases(mock_conn)
@@ -131,7 +129,7 @@ class TestSnowflakeAdapter:
         ]
 
         with patch.dict("sys.modules", {"snowflake.connector": MagicMock()}):
-            from sqlit.db.adapters.snowflake import SnowflakeAdapter
+            from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
             adapter = SnowflakeAdapter()
 
             tables = adapter.get_tables(mock_conn, database="TEST_DB")
@@ -157,7 +155,7 @@ class TestSnowflakeAdapter:
         ]
 
         with patch.dict("sys.modules", {"snowflake.connector": MagicMock()}):
-            from sqlit.db.adapters.snowflake import SnowflakeAdapter
+            from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
             adapter = SnowflakeAdapter()
 
             cols = adapter.get_columns(mock_conn, "MY_TABLE", database="TEST_DB", schema="PUBLIC")
@@ -171,7 +169,7 @@ class TestSnowflakeAdapter:
 
     def test_quote_identifier(self):
         with patch.dict("sys.modules", {"snowflake.connector": MagicMock()}):
-            from sqlit.db.adapters.snowflake import SnowflakeAdapter
+            from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
             adapter = SnowflakeAdapter()
 
             assert adapter.quote_identifier("foo") == '"foo"'
@@ -179,7 +177,7 @@ class TestSnowflakeAdapter:
 
     def test_build_select_query(self):
         with patch.dict("sys.modules", {"snowflake.connector": MagicMock()}):
-            from sqlit.db.adapters.snowflake import SnowflakeAdapter
+            from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
             adapter = SnowflakeAdapter()
 
             query = adapter.build_select_query("MY_TABLE", 10, schema="MYSCHEMA")

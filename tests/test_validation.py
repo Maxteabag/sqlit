@@ -1,7 +1,7 @@
 """Unit tests for validation logic (no UI required)."""
 
-from sqlit.fields import FieldDefinition
-from sqlit.validation import ValidationState, validate_connection_form
+from sqlit.domains.connections.ui.fields import FieldDefinition
+from sqlit.domains.connections.ui.validation import ValidationState, validate_connection_form
 
 
 class TestValidationState:

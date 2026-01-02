@@ -2,7 +2,7 @@
 
 import pytest
 
-from sqlit.sql_completion import get_completions
+from sqlit.domains.query.completion import get_completions
 
 
 class TestCreateIndexStatements:

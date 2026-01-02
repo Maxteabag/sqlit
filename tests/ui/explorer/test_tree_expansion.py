@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from sqlit.ui.mixins.tree import TreeMixin
-from sqlit.ui.tree_nodes import FolderNode, LoadingNode, SchemaNode, TableNode
+from sqlit.domains.connections.providers.model import SchemaCapabilities
+from sqlit.domains.explorer.domain.tree_nodes import FolderNode, LoadingNode, SchemaNode, TableNode
+from sqlit.domains.explorer.ui.mixins.tree import TreeMixin
 
 
 class MockTreeNode:
@@ -76,6 +77,18 @@ class MockSession:
     def __init__(self, adapter):
         self.adapter = adapter
         self.connection = MagicMock()
+        self.provider = MagicMock(
+            capabilities=SchemaCapabilities(
+                supports_multiple_databases=False,
+                supports_cross_database_queries=adapter.supports_cross_database_queries,
+                supports_stored_procedures=False,
+                supports_indexes=False,
+                supports_triggers=False,
+                supports_sequences=False,
+                default_schema=adapter.default_schema,
+                system_databases=frozenset(),
+            )
+        )
 
 
 class MockNodeExpandedEvent:
@@ -97,7 +110,7 @@ class TestTreeExpansion:
         mixin._expanded_paths = set()
         mixin._active_database = "mydb"
         mixin.current_connection = MagicMock()
-        mixin.current_adapter = adapter
+        mixin.current_provider = mixin._session.provider
         mixin.current_config = MockConfig(database="mydb")
         mixin.object_tree = MockTree()
         mixin.call_later = lambda fn: None
@@ -204,7 +217,7 @@ class TestTreeExpansion:
         mixin._loading_nodes = set()
         mixin._expanded_paths = set()
         mixin.current_connection = None
-        mixin.current_adapter = None
+        mixin.current_provider = None
         mixin.object_tree = MockTree()
         mixin.call_later = lambda fn: None
 

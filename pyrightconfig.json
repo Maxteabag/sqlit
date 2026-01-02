@@ -4,6 +4,7 @@
   "pythonVersion": "3.10",
   "typeCheckingMode": "basic",
   "useLibraryCodeForTypes": true,
+  "reportUnusedVariable": "warning",
   "reportMissingImports": false,
   "reportMissingTypeStubs": false,
   "stubPath": ""

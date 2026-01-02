@@ -7,8 +7,7 @@ Run with: pytest tests/performance/ -v --benchmark-only
 from __future__ import annotations
 
 import time
-from typing import Any
-from unittest.mock import patch
+from contextlib import contextmanager
 
 import pytest
 
@@ -17,11 +16,9 @@ try:
 except ImportError:
     Faker = None  # type: ignore
 
-from sqlit.app import SSMSTUI
-from sqlit.config import ConnectionConfig
+from sqlit.domains.shell.app.main import SSMSTUI
 
-from ..ui.mocks import MockConnectionStore, MockSettingsStore, create_test_connection
-
+from ..ui.mocks import MockConnectionStore, MockSettingsStore, build_test_services, create_test_connection
 
 # Skip all tests if Faker not installed
 pytestmark = pytest.mark.skipif(Faker is None, reason="Faker not installed (pip install Faker)")
@@ -101,12 +98,15 @@ def mock_app_context():
     mock_connections = MockConnectionStore(connections)
     mock_settings = MockSettingsStore({"theme": "tokyo-night"})
 
-    return patch.multiple(
-        "sqlit.config",
-        load_connections=mock_connections.load_all,
-        load_settings=mock_settings.load_all,
-        save_settings=mock_settings.save_all,
-    )
+    @contextmanager
+    def _context():
+        services = build_test_services(
+            connection_store=mock_connections,
+            settings_store=mock_settings,
+        )
+        yield services
+
+    return _context()
 
 
 class TestDataTableRenderingPerformance:
@@ -118,8 +118,8 @@ class TestDataTableRenderingPerformance:
         """Measure time to render varying numbers of rows."""
         columns, rows = fake_data.generate_user_rows(row_count)
 
-        with mock_app_context:
-            app = SSMSTUI()
+        with mock_app_context as services:
+            app = SSMSTUI(services=services)
 
             async with app.run_test(size=(120, 50)) as pilot:
                 await pilot.pause()
@@ -160,8 +160,8 @@ class TestDataTableRenderingPerformance:
         # Generate transaction data which has more/wider columns
         columns, rows = fake_data.generate_transaction_rows(5000)
 
-        with mock_app_context:
-            app = SSMSTUI()
+        with mock_app_context as services:
+            app = SSMSTUI(services=services)
 
             async with app.run_test(size=(200, 50)) as pilot:
                 await pilot.pause()
@@ -190,8 +190,8 @@ class TestDataTableRenderingPerformance:
             for i in range(1000)
         ]
 
-        with mock_app_context:
-            app = SSMSTUI()
+        with mock_app_context as services:
+            app = SSMSTUI(services=services)
 
             async with app.run_test(size=(120, 50)) as pilot:
                 await pilot.pause()
@@ -217,8 +217,8 @@ class TestDataTableRenderingPerformance:
             for i in range(1000)
         ]
 
-        with mock_app_context:
-            app = SSMSTUI()
+        with mock_app_context as services:
+            app = SSMSTUI(services=services)
 
             async with app.run_test(size=(120, 50)) as pilot:
                 await pilot.pause()
@@ -243,8 +243,8 @@ class TestMemoryUsage:
         """Verify that _last_result_rows stores all fetched rows."""
         columns, rows = fake_data.generate_user_rows(10000)
 
-        with mock_app_context:
-            app = SSMSTUI()
+        with mock_app_context as services:
+            app = SSMSTUI(services=services)
 
             async with app.run_test(size=(120, 50)) as pilot:
                 await pilot.pause()
@@ -267,8 +267,8 @@ class TestMemoryUsage:
         """Test clearing and re-rendering doesn't leak memory."""
         columns, rows = fake_data.generate_user_rows(5000)
 
-        with mock_app_context:
-            app = SSMSTUI()
+        with mock_app_context as services:
+            app = SSMSTUI(services=services)
 
             async with app.run_test(size=(120, 50)) as pilot:
                 await pilot.pause()

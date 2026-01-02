@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from sqlit.services.docker_detector import (
+from sqlit.domains.connections.discovery.docker_detector import (
     DockerStatus,
     detect_database_containers,
     get_docker_status,
@@ -26,6 +26,12 @@ from sqlit.services.docker_detector import (
 
 if TYPE_CHECKING:
     pass
+
+_TCP_ONLY_HOSTS = {"mysql", "mariadb"}
+
+
+def _expected_host(db_type: str) -> str:
+    return "127.0.0.1" if db_type in _TCP_ONLY_HOSTS else "localhost"
 
 
 def is_docker_available() -> bool:
@@ -113,20 +119,19 @@ class TestContainerDetectionIntegration:
             print("\nNo database containers currently running")
 
         # Verify container structure if any found
+        from sqlit.domains.connections.providers.catalog import get_provider, get_supported_db_types
+
+        allowed_types = {
+            db_type
+            for db_type in get_supported_db_types()
+            if get_provider(db_type).docker_detector is not None
+        }
+
         for container in containers:
             assert container.container_id
             assert container.container_name
-            assert container.db_type in [
-                "postgresql",
-                "mysql",
-                "mariadb",
-                "mssql",
-                "clickhouse",
-                "cockroachdb",
-                "oracle",
-                "turso",
-            ]
-            assert container.host == "localhost"
+            assert container.db_type in allowed_types
+            assert container.host == _expected_host(container.db_type)
 
 
 class TestWithTemporaryContainer:
@@ -222,7 +227,7 @@ class TestWithTemporaryContainer:
 
     def test_container_to_connection_config(self, postgres_container):
         """Test converting detected container to ConnectionConfig."""
-        from sqlit.services.docker_detector import container_to_connection_config
+        from sqlit.domains.connections.discovery.docker_detector import container_to_connection_config
 
         time.sleep(1)
 

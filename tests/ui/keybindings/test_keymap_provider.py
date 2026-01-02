@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from sqlit.keymap import (
+from sqlit.core.keymap import (
     ActionKeyDef,
     LeaderCommandDef,
     get_keymap,
     reset_keymap,
     set_keymap,
 )
-from sqlit.state_machine import get_leader_commands
+from sqlit.core.leader_commands import get_leader_commands
 
 from .conftest import MockKeymapProvider
 
