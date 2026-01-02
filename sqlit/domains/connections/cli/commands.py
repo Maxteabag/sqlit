@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlit.domains.connections.app.credentials import (
     ALLOW_PLAINTEXT_CREDENTIALS_SETTING,
+    CredentialsPersistError,
     build_credentials_service,
     is_keyring_usable,
 )
@@ -79,6 +80,13 @@ def _clear_passwords_if_not_persisted(config: ConnectionConfig) -> None:
         endpoint.password = ""
     if config.tunnel:
         config.tunnel.password = ""
+
+
+def _save_connections(services: AppServices, connections: list[ConnectionConfig]) -> None:
+    try:
+        _save_connections(services, connections)
+    except CredentialsPersistError as exc:
+        print(f"Warning: {exc}", file=sys.stderr)
 
 
 def cmd_connection_list(args: Any, *, services: AppServices | None = None) -> int:
@@ -156,7 +164,7 @@ def cmd_connection_create(args: Any, *, services: AppServices | None = None) -> 
         if (has_db_password or has_ssh_password) and not is_keyring_usable():
             if not _maybe_prompt_plaintext_credentials(services):
                 _clear_passwords_if_not_persisted(config)
-        services.connection_store.save_all(connections)
+        _save_connections(services, connections)
         print(f"Connection '{url_name}' created successfully.")
         return 0
 
@@ -198,7 +206,7 @@ def cmd_connection_create(args: Any, *, services: AppServices | None = None) -> 
 
     connections.append(config)
     _ensure_password_storage(services, config)
-    services.connection_store.save_all(connections)
+    _save_connections(services, connections)
     print(f"Connection '{args.name}' created successfully.")
     return 0
 
@@ -256,7 +264,7 @@ def cmd_connection_edit(args: Any, *, services: AppServices | None = None) -> in
 
     _ensure_password_storage(services, conn)
 
-    services.connection_store.save_all(connections)
+    _save_connections(services, connections)
     print(f"Connection '{conn.name}' updated successfully.")
     return 0
 
@@ -272,7 +280,7 @@ def cmd_connection_delete(args: Any, *, services: AppServices | None = None) -> 
         return 1
 
     deleted = connections.pop(conn_idx)
-    services.connection_store.save_all(connections)
+    _save_connections(services, connections)
     print(f"Connection '{deleted.name}' deleted successfully.")
     return 0
 

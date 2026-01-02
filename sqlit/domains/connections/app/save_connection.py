@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from sqlit.domains.connections.app.credentials import CredentialsPersistError
 from sqlit.domains.connections.domain.config import ConnectionConfig
 
 
@@ -14,6 +15,7 @@ class SaveConnectionResult:
     saved: bool
     message: str
     warning: str | None = None
+    warning_severity: str = "warning"
 
 
 def is_config_saved(connections: list[ConnectionConfig], config: ConnectionConfig) -> bool:
@@ -51,6 +53,7 @@ def save_connection(
     connections.append(config)
 
     warning = None
+    warning_severity = "warning"
     if not getattr(connection_store, "is_persistent", True):
         warning = "Connections are not persisted in this session"
 
@@ -61,6 +64,20 @@ def save_connection(
             saved=True,
             message=f"Saved '{config.name}'",
             warning=warning,
+            warning_severity=warning_severity,
+        )
+    except CredentialsPersistError as exc:
+        if warning:
+            warning = f"{warning}\n{exc}"
+        else:
+            warning = str(exc)
+        warning_severity = "error"
+        return SaveConnectionResult(
+            config=config,
+            saved=True,
+            message=f"Saved '{config.name}'",
+            warning=warning,
+            warning_severity=warning_severity,
         )
     except Exception as exc:
         return SaveConnectionResult(
@@ -68,4 +85,5 @@ def save_connection(
             saved=False,
             message=f"Failed to save: {exc}",
             warning=warning,
+            warning_severity=warning_severity,
         )

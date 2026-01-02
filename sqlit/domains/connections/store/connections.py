@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sqlit.domains.connections.app.credentials import CredentialsPersistError, CredentialsStoreError
 from sqlit.shared.core.store import CONFIG_DIR, JSONFileStore
 
 if TYPE_CHECKING:
@@ -131,7 +132,7 @@ class ConnectionStore(JSONFileStore):
             if ssh_password is not None:
                 config.tunnel.password = ssh_password
 
-    def _save_credentials(self, config: ConnectionConfig) -> None:
+    def _save_credentials(self, config: ConnectionConfig) -> list[CredentialsStoreError]:
         """Save credentials from config to the credentials service.
 
         Args:
@@ -140,16 +141,32 @@ class ConnectionStore(JSONFileStore):
         Note: Empty string "" is a valid password (e.g., CockroachDB insecure mode).
               Only None means "delete/no password stored".
         """
+        errors: list[CredentialsStoreError] = []
+
         endpoint = config.tcp_endpoint
         if endpoint and endpoint.password is not None:
-            self.credentials_service.set_password(config.name, endpoint.password)
+            try:
+                self.credentials_service.set_password(config.name, endpoint.password)
+            except CredentialsStoreError as exc:
+                errors.append(exc)
         else:
-            self.credentials_service.delete_password(config.name)
+            try:
+                self.credentials_service.delete_password(config.name)
+            except CredentialsStoreError as exc:
+                errors.append(exc)
 
         if config.tunnel and config.tunnel.password is not None:
-            self.credentials_service.set_ssh_password(config.name, config.tunnel.password)
+            try:
+                self.credentials_service.set_ssh_password(config.name, config.tunnel.password)
+            except CredentialsStoreError as exc:
+                errors.append(exc)
         else:
-            self.credentials_service.delete_ssh_password(config.name)
+            try:
+                self.credentials_service.delete_ssh_password(config.name)
+            except CredentialsStoreError as exc:
+                errors.append(exc)
+
+        return errors
 
     def _config_to_dict_without_passwords(self, config: ConnectionConfig) -> dict:
         """Convert config to dict without password fields.
@@ -172,11 +189,14 @@ class ConnectionStore(JSONFileStore):
         Args:
             connections: List of ConnectionConfig objects to save.
         """
+        errors: list[CredentialsStoreError] = []
         for config in connections:
-            self._save_credentials(config)
+            errors.extend(self._save_credentials(config))
 
         payload = [self._config_to_dict_without_passwords(c) for c in connections]
         self._write_json(self._wrap_connections_payload(payload))
+        if errors:
+            raise CredentialsPersistError(errors)
 
     def get_by_name(self, name: str) -> ConnectionConfig | None:
         """Get a connection by name.

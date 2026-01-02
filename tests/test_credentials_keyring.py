@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from sqlit.domains.connections.app.credentials import (
+    CredentialsStoreError,
     KEYRING_SERVICE_NAME,
     KeyringCredentialsService,
 )
@@ -123,10 +124,13 @@ class TestKeyringCredentialsService:
         result = service.get_password("test_conn")
         assert result is None
 
-    def test_keyring_error_on_set_silently_fails(self) -> None:
-        """Test that keyring errors on set are silently caught."""
+    def test_keyring_error_on_set_raises(self) -> None:
+        """Test that keyring errors on set raise a storage error."""
         service, mock_keyring = self._create_service_with_mock_keyring()
         mock_keyring.set_password.side_effect = Exception("Keyring error")
 
-        # Should not raise
-        service.set_password("test_conn", "password")
+        try:
+            service.set_password("test_conn", "password")
+        except CredentialsStoreError:
+            return
+        raise AssertionError("Expected CredentialsStoreError")

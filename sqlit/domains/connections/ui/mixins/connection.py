@@ -326,6 +326,10 @@ class ConnectionMixin:
 
         if action == "save":
             def do_save(with_config: ConnectionConfig, orig_name: str | None = None) -> None:
+                from sqlit.domains.connections.app.credentials import CredentialsPersistError
+                from sqlit.shared.ui.screens.error import ErrorScreen
+
+                credentials_error: CredentialsPersistError | None = None
                 # When editing, remove by original name to properly update renamed connections
                 if orig_name:
                     self.connections = [c for c in self.connections if c.name != orig_name]
@@ -334,9 +338,14 @@ class ConnectionMixin:
                 self.connections.append(with_config)
                 if not self.services.connection_store.is_persistent:
                     self.notify("Connections are not persisted in this session")
-                self.services.connection_store.save_all(self.connections)
+                try:
+                    self.services.connection_store.save_all(self.connections)
+                except CredentialsPersistError as exc:
+                    credentials_error = exc
                 tree_builder.refresh_tree(self)
                 self.notify(f"Connection '{with_config.name}' saved")
+                if credentials_error:
+                    self.push_screen(ErrorScreen("Keyring Error", str(credentials_error)))
 
             endpoint = config.tcp_endpoint
             needs_password_persist = bool(
@@ -449,12 +458,21 @@ class ConnectionMixin:
         )
 
     def _do_delete_connection(self: ConnectionMixinHost, config: ConnectionConfig) -> None:
+        from sqlit.domains.connections.app.credentials import CredentialsPersistError
+        from sqlit.shared.ui.screens.error import ErrorScreen
+
+        credentials_error: CredentialsPersistError | None = None
         self.connections = [c for c in self.connections if c.name != config.name]
         if not self.services.connection_store.is_persistent:
             self.notify("Connections are not persisted in this session")
-        self.services.connection_store.save_all(self.connections)
+        try:
+            self.services.connection_store.save_all(self.connections)
+        except CredentialsPersistError as exc:
+            credentials_error = exc
         tree_builder.refresh_tree(self)
         self.notify(f"Connection '{config.name}' deleted")
+        if credentials_error:
+            self.push_screen(ErrorScreen("Keyring Error", str(credentials_error)))
 
     def action_connect_selected(self: ConnectionMixinHost) -> None:
         node = self.object_tree.cursor_node

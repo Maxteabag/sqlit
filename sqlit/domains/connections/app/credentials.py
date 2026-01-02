@@ -26,6 +26,47 @@ KEYRING_SERVICE_NAME = "sqlit"
 ALLOW_PLAINTEXT_CREDENTIALS_SETTING = "allow_plaintext_credentials"
 
 
+class CredentialsError(Exception):
+    """Base exception for credential storage errors."""
+
+
+class CredentialsStoreError(CredentialsError):
+    """Raised when credential storage fails."""
+
+    def __init__(self, *, connection_name: str, kind: str, action: str, reason: Exception) -> None:
+        super().__init__(str(reason))
+        self.connection_name = connection_name
+        self.kind = kind
+        self.action = action
+        self.reason = reason
+
+    def user_message(self) -> str:
+        kind_label = "database" if self.kind == "db" else "SSH"
+        action_label = "save" if self.action == "store" else "delete"
+        return (
+            f"Keyring error while trying to {action_label} {kind_label} password for "
+            f"'{self.connection_name}': {self.reason}"
+        )
+
+
+class CredentialsPersistError(CredentialsError):
+    """Raised when one or more credential writes fail."""
+
+    def __init__(self, errors: list[CredentialsStoreError]) -> None:
+        self.errors = errors
+        super().__init__(self._build_message())
+
+    def _build_message(self) -> str:
+        if not self.errors:
+            return "Keyring error while saving credentials."
+        if len(self.errors) == 1:
+            return self.errors[0].user_message()
+        lines = ["Keyring errors while saving credentials:"]
+        for error in self.errors:
+            lines.append(f"- {error.user_message()}")
+        return "\n".join(lines)
+
+
 def is_keyring_usable() -> bool:
     """Return True if a usable keyring backend appears to be available."""
     try:
@@ -192,6 +233,14 @@ class KeyringCredentialsService(CredentialsService):
                 time.sleep(delay_seconds)
         return None
 
+    def _raise_keyring_error(self, *, connection_name: str, kind: str, action: str, reason: Exception) -> None:
+        raise CredentialsStoreError(
+            connection_name=connection_name,
+            kind=kind,
+            action=action,
+            reason=reason,
+        ) from reason
+
     def get_password(self, connection_name: str) -> str | None:
         key = self._make_key(connection_name, "db")
         return self._get_with_retry(key)
@@ -204,16 +253,16 @@ class KeyringCredentialsService(CredentialsService):
             keyring = self._get_keyring()
             key = self._make_key(connection_name, "db")
             keyring.set_password(KEYRING_SERVICE_NAME, key, password)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._raise_keyring_error(connection_name=connection_name, kind="db", action="store", reason=exc)
 
     def delete_password(self, connection_name: str) -> None:
         try:
             keyring = self._get_keyring()
             key = self._make_key(connection_name, "db")
             keyring.delete_password(KEYRING_SERVICE_NAME, key)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._raise_keyring_error(connection_name=connection_name, kind="db", action="delete", reason=exc)
 
     def get_ssh_password(self, connection_name: str) -> str | None:
         key = self._make_key(connection_name, "ssh")
@@ -227,16 +276,16 @@ class KeyringCredentialsService(CredentialsService):
             keyring = self._get_keyring()
             key = self._make_key(connection_name, "ssh")
             keyring.set_password(KEYRING_SERVICE_NAME, key, password)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._raise_keyring_error(connection_name=connection_name, kind="ssh", action="store", reason=exc)
 
     def delete_ssh_password(self, connection_name: str) -> None:
         try:
             keyring = self._get_keyring()
             key = self._make_key(connection_name, "ssh")
             keyring.delete_password(KEYRING_SERVICE_NAME, key)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._raise_keyring_error(connection_name=connection_name, kind="ssh", action="delete", reason=exc)
 
 
 class PlaintextCredentialsService(CredentialsService):
@@ -345,9 +394,7 @@ def build_credentials_service(settings_store: Any | None = None) -> CredentialsS
     allow_plaintext = bool(settings.get(ALLOW_PLAINTEXT_CREDENTIALS_SETTING))
     if allow_plaintext:
         return PlaintextFileCredentialsService()
-    # Keep a best-effort keyring service to avoid dropping stored credentials
-    # when the keyring is temporarily unavailable.
-    return KeyringCredentialsService()
+    return PlaintextCredentialsService()
 
 
 def get_credentials_service() -> CredentialsService:

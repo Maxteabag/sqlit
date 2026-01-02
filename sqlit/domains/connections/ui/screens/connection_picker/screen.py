@@ -533,7 +533,12 @@ class ConnectionPickerScreen(ModalScreen):
     def _save_connection_and_refresh(self, config: ConnectionConfig, option_id: str) -> None:
         result = save_connection(self.connections, self._app().services.connection_store, config)
         if result.warning:
-            self.notify(result.warning)
+            if result.warning_severity == "error":
+                from sqlit.shared.ui.screens.error import ErrorScreen
+
+                self.push_screen(ErrorScreen("Keyring Error", result.warning))
+            else:
+                self.notify(result.warning, severity=result.warning_severity)
         if result.saved:
             self.notify(result.message)
         else:

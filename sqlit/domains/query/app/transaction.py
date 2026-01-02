@@ -109,8 +109,10 @@ class TransactionStateManager:
         Args:
             sql: The SQL that was executed.
         """
+        from .multi_statement import split_statements
+
         # Check each statement in multi-statement query
-        for statement in sql.split(";"):
+        for statement in split_statements(sql):
             statement = statement.strip()
             if not statement:
                 continue
@@ -176,25 +178,32 @@ class TransactionExecutor:
         Returns:
             QueryResult for SELECT queries, NonQueryResult for others.
         """
-        from .multi_statement import normalize_for_execution
+        from .multi_statement import normalize_for_execution, split_statements
 
         # Normalize SQL: convert blank-line-separated to semicolon-separated
         sql = normalize_for_execution(sql)
 
-        # Determine if this query starts a transaction
-        will_start_transaction = is_transaction_start(sql.strip())
+        statements = split_statements(sql)
+        contains_transaction_start = any(is_transaction_start(statement) for statement in statements)
+        in_transaction = bool(self._state and self._state.in_transaction)
 
         # Get or create connection
-        if self._transaction_connection is not None:
-            # Reuse existing transaction connection
-            conn = self._transaction_connection
-        elif will_start_transaction:
-            # Starting a new transaction - create persistent connection
-            self._transaction_connection = self.provider.connection_factory.connect(self.config)
-            try:
-                self.provider.post_connect(self._transaction_connection, self.config)
-            except Exception:
-                pass
+        conn = None
+        is_temp_connection = False
+        use_persistent = (
+            self._transaction_connection is not None
+            or contains_transaction_start
+            or in_transaction
+        )
+
+        if use_persistent:
+            # Reuse or create a persistent connection for transaction scope
+            if self._transaction_connection is None:
+                self._transaction_connection = self.provider.connection_factory.connect(self.config)
+                try:
+                    self.provider.post_connect(self._transaction_connection, self.config)
+                except Exception:
+                    pass
             conn = self._transaction_connection
         else:
             # Not in transaction - use temporary connection
@@ -203,6 +212,7 @@ class TransactionExecutor:
                 self.provider.post_connect(conn, self.config)
             except Exception:
                 pass
+            is_temp_connection = True
 
         try:
             # Execute query
@@ -213,24 +223,14 @@ class TransactionExecutor:
                 self._state.on_query_executed(sql)
 
             # If transaction ended, close the persistent connection
-            if is_transaction_end(sql.strip()) and self._transaction_connection is not None:
+            if self._transaction_connection is not None and self._state and not self._state.in_transaction:
                 self._close_transaction_connection()
 
             return result
 
-        except Exception:
-            # On error, if we're in a transaction, keep connection open for potential ROLLBACK
-            # If not in transaction, close the temp connection
-            if self._transaction_connection is None and conn is not None:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-            raise
-
         finally:
             # Close temp connection if we created one and aren't in a transaction
-            if self._transaction_connection is None and conn is not None:
+            if is_temp_connection and conn is not None:
                 try:
                     conn.close()
                 except Exception:
