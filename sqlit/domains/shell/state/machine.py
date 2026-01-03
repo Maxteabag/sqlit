@@ -126,14 +126,15 @@ class UIStateMachine:
         leader_key = resolve_display_key("leader_key") or "<space>"
 
         def section(title: str) -> str:
-            return f"[bold cyan]{title}[/]"
+            divider = "-" * 62
+            return f"[bold $primary]{title}[/]\n[dim]{divider}[/]"
 
         def subsection(title: str) -> str:
-            return f"  [dim]{title}[/]"
+            return f"  [bold $text-muted]{title}[/]"
 
         def binding(key: str, desc: str, indent: int = 4) -> str:
             pad = " " * indent
-            return f"{pad}[bold yellow]{key:<12}[/] {desc}"
+            return f"{pad}[bold $warning]{key:<14}[/] [dim]-[/] {desc}"
 
         lines: list[str] = []
 
@@ -295,20 +296,6 @@ class UIStateMachine:
         # ═══════════════════════════════════════════════════════════════════
         lines.append(section("COMMAND MODE"))
         lines.append(binding(":", "Enter command mode"))
-        lines.append(binding("<enter>", "Run command"))
-        lines.append(binding("<esc>", "Cancel command mode"))
-        lines.append(binding("<backspace>", "Exit when empty"))
-        lines.append("")
-        lines.append(subsection("Common Commands:"))
-        lines.append(binding(":help", "Show this help"))
-        lines.append(binding(":connect", "Open connection picker"))
-        lines.append(binding(":run", "Execute query"))
-        lines.append(binding(":process-worker", "Toggle process worker"))
-        lines.append(binding(":wd <ms|off>", "UI stall watchdog"))
-        lines.append(binding(":wd list", "Show UI stall warnings"))
-        lines.append(binding(":wd clear", "Clear UI stall log"))
-        lines.append(binding(":set process_worker_warm on|off", "Warm worker on idle"))
-        lines.append(binding(":set process_worker_lazy on|off", "Lazy worker start"))
-        lines.append(binding(":set process_worker_auto_shutdown <seconds>", "Auto-shutdown worker"))
+        lines.append(binding(":commands", "Open command menu"))
 
         return "\n".join(lines)

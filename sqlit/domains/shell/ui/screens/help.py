@@ -31,15 +31,22 @@ class HelpScreen(ModalScreen):
     }
 
     #help-dialog {
-        width: 72;
+        width: 82;
         max-width: 90%;
         max-height: 85%;
+        background: $surface;
+        border: round $primary;
+        padding: 1 2;
+        border-title-background: $surface;
+        border-subtitle-background: $surface;
+        border-title-color: $primary;
+        border-subtitle-color: $primary;
     }
 
     #help-scroll {
         height: auto;
         max-height: 100%;
-        background: $surface;
+        background: transparent;
         border: none;
         scrollbar-gutter: stable;
         padding: 0 1;
@@ -51,7 +58,7 @@ class HelpScreen(ModalScreen):
         self.help_text = help_text
 
     def compose(self) -> ComposeResult:
-        with Dialog(id="help-dialog", title="Keyboard Shortcuts", shortcuts=[("Close", "<esc>"), ("Scroll", "j/k")]):
+        with Dialog(id="help-dialog", title="Keyboard Shortcuts"):
             with VerticalScroll(id="help-scroll"):
                 yield Static(self.help_text, markup=True)
 

@@ -357,97 +357,13 @@ class SSMSTUI(
         cmd, *args = normalized.split()
         cmd = cmd.lower()
 
-        if cmd in {"q", "quit", "exit"}:
-            try:
-                handler = getattr(self, "action_quit", None)
-                if callable(handler):
-                    handler()
-                else:
-                    self.exit()
-            except Exception:
-                self.exit()
+        if cmd == "commands":
+            show_menu = getattr(self, "_show_leader_menu", None)
+            if callable(show_menu):
+                show_menu("leader")
             return
 
-        command_actions = {
-            "help": "show_help",
-            "h": "show_help",
-            "connect": "show_connection_picker",
-            "c": "show_connection_picker",
-            "disconnect": "disconnect",
-            "dc": "disconnect",
-            "theme": "change_theme",
-            "run": "execute_query",
-            "r": "execute_query",
-            "run!": "execute_query_insert",
-            "r!": "execute_query_insert",
-            "process-worker": "toggle_process_worker",
-            "process_worker": "toggle_process_worker",
-            "process-worker!": "toggle_process_worker",
-            "worker": "toggle_process_worker",
-        }
-
-        if cmd == "set" and args:
-            target = args[0].lower().replace("-", "_")
-            value = args[1].lower() if len(args) > 1 else ""
-            if target in {"process_worker"}:
-                if not value:
-                    self._execute_command_action("toggle_process_worker")
-                    return
-                enable_values = {"1", "true", "on", "yes", "enable", "enabled"}
-                disable_values = {"0", "false", "off", "no", "disable", "disabled"}
-                if value in enable_values:
-                    self._set_process_worker(True)
-                    return
-                if value in disable_values:
-                    self._set_process_worker(False)
-                    return
-                self.notify(f"Unknown value for process_worker: {value}", severity="warning")
-                return
-            if target in {"process_worker_warm", "process_worker_warm_on_idle", "process_worker_lazy"}:
-                if not value:
-                    current = bool(self.services.runtime.process_worker_warm_on_idle)
-                    desired = not current
-                else:
-                    enable_values = {"1", "true", "on", "yes", "enable", "enabled"}
-                    disable_values = {"0", "false", "off", "no", "disable", "disabled"}
-                    if value in enable_values:
-                        desired = True
-                    elif value in disable_values:
-                        desired = False
-                    else:
-                        self.notify(f"Unknown value for {target}: {value}", severity="warning")
-                        return
-                if target == "process_worker_lazy":
-                    desired = not desired
-                self._set_process_worker_warm_on_idle(desired)
-                return
-            if target in {"process_worker_auto_shutdown", "process_worker_auto_shutdown_s"}:
-                if not value:
-                    self.notify("Provide seconds or 'off' for process_worker_auto_shutdown", severity="warning")
-                    return
-                disable_values = {"0", "false", "off", "no", "disable", "disabled"}
-                if value in disable_values:
-                    self._set_process_worker_auto_shutdown(0.0)
-                    return
-                try:
-                    seconds = float(value)
-                except ValueError:
-                    self.notify(f"Invalid process_worker_auto_shutdown value: {value}", severity="warning")
-                    return
-                if seconds < 0:
-                    self.notify("process_worker_auto_shutdown must be >= 0", severity="warning")
-                    return
-                self._set_process_worker_auto_shutdown(seconds)
-                return
-
-        if dispatch_command(self, cmd, args):
-            return
-
-        action = command_actions.get(cmd)
-        if action is None:
-            self.notify(f"Unknown command: {normalized}", severity="warning")
-            return
-        self._execute_command_action(action)
+        self.notify("Unknown command. Try :commands", severity="warning")
 
     def _execute_command_action(self, action: str) -> None:
         ctx = self._get_input_context()
