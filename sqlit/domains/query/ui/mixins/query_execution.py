@@ -36,6 +36,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
     _schema_worker: Any | None = None
     _schema_indexing: bool = False
     _pending_telescope_query: tuple[str, str] | None = None
+    _telescope_auto_filter: bool = False
 
     def action_execute_query(self: QueryMixinHost) -> None:
         """Execute the current query."""
@@ -569,6 +570,14 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
     def action_telescope(self: QueryMixinHost) -> None:
         """Show query history across all connections."""
+        self._show_telescope(auto_open_filter=False)
+
+    def action_telescope_filter(self: QueryMixinHost) -> None:
+        """Show query history across all connections with filter active."""
+        self._show_telescope(auto_open_filter=True)
+
+    def _show_telescope(self: QueryMixinHost, *, auto_open_filter: bool) -> None:
+        """Open telescope with optional filter preset."""
         from ..screens import QueryHistoryScreen
 
         history_store = self._get_history_store()
@@ -586,6 +595,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             for name, config in connection_map.items()
         }
         starred_by_connection = self._load_starred_by_connection(connection_map)
+        self._telescope_auto_filter = auto_open_filter
 
         self.push_screen(
             QueryHistoryScreen(
@@ -595,6 +605,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                 multi_connection=True,
                 connection_labels=connection_labels,
                 starred_by_connection=starred_by_connection,
+                auto_open_filter=auto_open_filter,
             ),
             self._handle_telescope_result,
         )
@@ -614,7 +625,10 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             connection_name = data.get("connection_name", "")
             if timestamp and connection_name:
                 self._get_history_store().delete_entry(connection_name, timestamp)
-            self.action_telescope()
+            if self._telescope_auto_filter:
+                self.action_telescope_filter()
+            else:
+                self.action_telescope()
         elif action == "toggle_star":
             query = data.get("query", "")
             connection_name = data.get("connection_name", "")
@@ -624,7 +638,10 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                     self.notify("Query starred")
                 else:
                     self.notify("Query unstarred")
-            self.action_telescope()
+            if self._telescope_auto_filter:
+                self.action_telescope_filter()
+            else:
+                self.action_telescope()
 
     def _run_telescope_query(self: QueryMixinHost, connection_name: str, query: str) -> None:
         if not query or not connection_name:

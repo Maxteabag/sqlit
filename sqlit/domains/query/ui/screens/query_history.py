@@ -95,6 +95,7 @@ class QueryHistoryScreen(ModalScreen):
         multi_connection: bool = False,
         connection_labels: dict[str, str] | None = None,
         starred_by_connection: dict[str, set[str]] | None = None,
+        auto_open_filter: bool = False,
     ):
         super().__init__()
         self.history = history  # list of QueryHistoryEntry
@@ -103,6 +104,7 @@ class QueryHistoryScreen(ModalScreen):
         self._multi_connection = multi_connection
         self._connection_labels = connection_labels or {}
         self._starred_by_connection = starred_by_connection or {}
+        self._auto_open_filter = auto_open_filter
         self._merged_entries: list[QueryHistoryEntry] = []
         self._filter_active = False
         self._filter_text = ""
@@ -207,6 +209,8 @@ class QueryHistoryScreen(ModalScreen):
             filter_input.hide()
         except Exception:
             pass
+        if self._auto_open_filter:
+            self.action_open_filter()
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         if event.option_list.id == "history-list":
