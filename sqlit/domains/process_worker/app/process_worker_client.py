@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlit.domains.connections.domain.config import ConnectionConfig
 from sqlit.domains.query.app.query_service import NonQueryResult, QueryResult
+from sqlit.domains.connections.providers.adapters.base import ColumnInfo
 
 from .process_worker import run_process_worker
 
@@ -139,8 +140,128 @@ class ProcessWorkerClient:
             finally:
                 self._current_id = None
 
+    def list_columns(
+        self,
+        *,
+        config: ConnectionConfig,
+        database: str | None,
+        schema: str | None,
+        name: str,
+    ) -> ProcessSchemaOutcome:
+        with self._execute_lock:
+            if self._closed:
+                return ProcessSchemaOutcome(columns=None, error="Worker is closed.")
+
+            query_id = self._next_id
+            self._next_id += 1
+            self._current_id = query_id
+
+            payload = {
+                "type": "schema",
+                "op": "columns",
+                "id": query_id,
+                "config": config.to_dict(include_passwords=True),
+                "db_type": config.db_type,
+                "database": database,
+                "schema": schema,
+                "name": name,
+            }
+            self._send(payload)
+
+            try:
+                while True:
+                    try:
+                        message = self._conn.recv()
+                    except EOFError:
+                        return ProcessSchemaOutcome(columns=None, error="Worker connection closed.")
+                    if message.get("id") != query_id:
+                        continue
+                    msg_type = message.get("type")
+                    if msg_type == "schema" and message.get("op") == "columns":
+                        columns = message.get("columns")
+                        if isinstance(columns, list):
+                            return ProcessSchemaOutcome(columns=columns)
+                        return ProcessSchemaOutcome(columns=[])
+                    if msg_type == "cancelled":
+                        return ProcessSchemaOutcome(columns=None, cancelled=True)
+                    if msg_type == "error":
+                        return ProcessSchemaOutcome(
+                            columns=None,
+                            error=str(message.get("message", "Worker error.")),
+                        )
+            finally:
+                self._current_id = None
+
+    def list_folder_items(
+        self,
+        *,
+        config: ConnectionConfig,
+        database: str | None,
+        folder_type: str,
+    ) -> ProcessFolderOutcome:
+        with self._execute_lock:
+            if self._closed:
+                return ProcessFolderOutcome(items=None, error="Worker is closed.")
+
+            query_id = self._next_id
+            self._next_id += 1
+            self._current_id = query_id
+
+            payload = {
+                "type": "schema",
+                "op": "folder_items",
+                "id": query_id,
+                "config": config.to_dict(include_passwords=True),
+                "db_type": config.db_type,
+                "database": database,
+                "folder_type": folder_type,
+            }
+            self._send(payload)
+
+            try:
+                while True:
+                    try:
+                        message = self._conn.recv()
+                    except EOFError:
+                        return ProcessFolderOutcome(items=None, error="Worker connection closed.")
+                    if message.get("id") != query_id:
+                        continue
+                    msg_type = message.get("type")
+                    if msg_type == "schema" and message.get("op") == "folder_items":
+                        items = message.get("items")
+                        if isinstance(items, list):
+                            return ProcessFolderOutcome(items=items)
+                        return ProcessFolderOutcome(items=[])
+                    if msg_type == "cancelled":
+                        return ProcessFolderOutcome(items=None, cancelled=True)
+                    if msg_type == "error":
+                        return ProcessFolderOutcome(
+                            items=None,
+                            error=str(message.get("message", "Worker error.")),
+                        )
+            finally:
+                self._current_id = None
+
     def _send(self, payload: dict[str, Any]) -> None:
         with self._send_lock:
             if self._conn is None:
                 raise RuntimeError("Worker connection unavailable.")
             self._conn.send(payload)
+
+
+@dataclass
+class ProcessSchemaOutcome:
+    """Outcome for a process-executed schema request."""
+
+    columns: list[ColumnInfo] | None
+    cancelled: bool = False
+    error: str | None = None
+
+
+@dataclass
+class ProcessFolderOutcome:
+    """Outcome for a process-executed folder listing request."""
+
+    items: list[Any] | None
+    cancelled: bool = False
+    error: str | None = None

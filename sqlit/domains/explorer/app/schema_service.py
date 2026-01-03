@@ -87,7 +87,7 @@ class ExplorerSchemaService:
             database,
         )
 
-    def list_folder_items(self, folder_type: str, database: str | None) -> list[tuple[str, str, str]]:
+    def list_folder_items(self, folder_type: str, database: str | None) -> list[Any]:
         inspector = self.session.provider.schema_inspector
         caps = self.session.provider.capabilities
         db_arg = self._resolve_db_arg(database)
@@ -121,6 +121,15 @@ class ExplorerSchemaService:
                 ),
             )
             return [("view", schema, name) for schema, name in raw_data]
+        if folder_type == "databases":
+            raw_data = cached(
+                "databases",
+                lambda: self._run_with_retry(
+                    lambda: inspector.get_databases(self.session.connection),
+                    None,
+                ),
+            )
+            return list(raw_data)
         if folder_type == "indexes":
             if caps.supports_indexes and isinstance(inspector, IndexInspector):
                 return [

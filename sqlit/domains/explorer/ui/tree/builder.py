@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from rich.markup import escape as escape_markup
 
 from sqlit.domains.connections.providers.metadata import get_connection_display_info
-from sqlit.domains.explorer.domain.tree_nodes import ConnectionNode, DatabaseNode, FolderNode
+from sqlit.domains.explorer.domain.tree_nodes import ConnectionNode, FolderNode
 from sqlit.shared.ui.protocols import TreeMixinHost
 
 from . import expansion_state
@@ -71,6 +71,74 @@ def refresh_tree(host: TreeMixinHost) -> None:
         populate_connected_tree(host)
 
 
+def refresh_tree_chunked(
+    host: TreeMixinHost,
+    *,
+    batch_size: int = 25,
+    on_done: Callable[[], None] | None = None,
+) -> None:
+    """Refresh the explorer tree in small batches to reduce UI stalls."""
+    token = object()
+    setattr(host, "_tree_refresh_token", token)
+
+    host.object_tree.clear()
+    host.object_tree.root.expand()
+
+    connecting_config = getattr(host, "_connecting_config", None)
+    connecting_name = connecting_config.name if connecting_config else None
+    connecting_spinner = host._connect_spinner_frame() if connecting_config else None
+
+    direct_config = getattr(host, "_direct_connection_config", None)
+    direct_active = (
+        direct_config is not None
+        and host.current_config is not None
+        and direct_config.name == host.current_config.name
+    )
+    if direct_active and host.current_config is not None:
+        connections = [host.current_config]
+    else:
+        connections = list(host.connections)
+    if connecting_config and not any(c.name == connecting_config.name for c in connections):
+        connections = connections + [connecting_config]
+
+    batch_size = max(1, int(batch_size))
+    idx = 0
+
+    def add_batch() -> None:
+        nonlocal idx
+        if getattr(host, "_tree_refresh_token", None) is not token:
+            return
+        end = min(idx + batch_size, len(connections))
+        for conn in connections[idx:end]:
+            is_connected = host.current_config is not None and conn.name == host.current_config.name
+            is_connecting = connecting_name == conn.name and not is_connected
+            if is_connected:
+                label = host._format_connection_label(conn, "connected")
+            elif is_connecting:
+                label = host._format_connection_label(conn, "connecting", spinner=connecting_spinner)
+            else:
+                label = host._format_connection_label(conn, "idle")
+            node = host.object_tree.root.add(label)
+            node.data = ConnectionNode(config=conn)
+            node.allow_expand = is_connected
+        idx = end
+        if idx < len(connections):
+            host.set_timer(0, add_batch)
+            return
+
+        def finish() -> None:
+            if getattr(host, "_tree_refresh_token", None) is not token:
+                return
+            if host.current_connection and host.current_config:
+                populate_connected_tree(host)
+            if on_done:
+                on_done()
+
+        host.set_timer(0, finish)
+
+    add_batch()
+
+
 def populate_connected_tree(host: TreeMixinHost) -> None:
     """Populate tree with database objects when connected."""
     if not host.current_connection or not host.current_config or not host.current_provider:
@@ -118,23 +186,19 @@ def populate_connected_tree(host: TreeMixinHost) -> None:
             else:
                 dbs_node = active_node.add("Databases")
                 dbs_node.data = FolderNode(folder_type="databases")
+                dbs_node.allow_expand = True
 
                 if not schema_service:
-                    databases = []
+                    empty_child = dbs_node.add_leaf("[dim](Empty)[/]")
+                    empty_child.data = LoadingNode()
                 else:
-                    databases = schema_service.list_databases()
-                active_db = None
-                if hasattr(host, "_get_effective_database"):
-                    active_db = host._get_effective_database()
-                for db_name in databases:
-                    if active_db and db_name.lower() == active_db.lower():
-                        db_label = f"[#4ADE80]* {escape_markup(db_name)}[/]"
-                    else:
-                        db_label = escape_markup(db_name)
-                    db_node = dbs_node.add(db_label)
-                    db_node.data = DatabaseNode(name=db_name)
-                    db_node.allow_expand = True
-                    add_database_object_nodes(host, db_node, db_name)
+                    from . import loaders as tree_loaders
+
+                    loading_nodes = tree_loaders.ensure_loading_nodes(host)
+                    node_path = expansion_state.get_node_path(host, dbs_node)
+                    loading_nodes.add(node_path)
+                    tree_loaders.add_loading_placeholder(host, dbs_node)
+                    tree_loaders.load_folder_async(host, dbs_node, dbs_node.data)
 
                 active_node.expand()
                 dbs_node.expand()

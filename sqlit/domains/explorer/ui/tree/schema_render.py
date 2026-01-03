@@ -32,6 +32,7 @@ def add_schema_grouped_items(
     sorted_schemas = sorted(by_schema.keys(), key=schema_sort_key)
     has_multiple_schemas = len(sorted_schemas) > 1
     schema_nodes: dict[str, Any] = {}
+    items_to_add: list[tuple[Any, str, str, str]] = []
 
     for schema in sorted_schemas:
         schema_items = by_schema[schema]
@@ -53,9 +54,37 @@ def add_schema_grouped_items(
 
         for item in schema_items:
             item_type, schema_name, obj_name = item[0], item[1], item[2]
-            child = parent.add(escape_markup(obj_name))
+            items_to_add.append((parent, item_type, schema_name, obj_name))
+
+    if not items_to_add:
+        return
+
+    batch_size = 200
+    idx = 0
+    token = object()
+    tokens = getattr(host, "_schema_render_tokens", None)
+    if tokens is None:
+        tokens = {}
+        setattr(host, "_schema_render_tokens", tokens)
+    tokens[id(node)] = token
+
+    def render_batch() -> None:
+        nonlocal idx
+        if tokens.get(id(node)) is not token:
+            return
+        end = min(idx + batch_size, len(items_to_add))
+        for parent, item_type, schema_name, obj_name in items_to_add[idx:end]:
+            try:
+                child = parent.add(escape_markup(obj_name))
+            except Exception:
+                return
             if item_type == "table":
                 child.data = TableNode(database=db_name, schema=schema_name, name=obj_name)
             else:
                 child.data = ViewNode(database=db_name, schema=schema_name, name=obj_name)
             child.allow_expand = True
+        idx = end
+        if idx < len(items_to_add):
+            host.set_timer(0, render_batch)
+
+    render_batch()

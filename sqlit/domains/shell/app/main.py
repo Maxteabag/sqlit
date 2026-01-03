@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from datetime import datetime
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
@@ -31,6 +32,7 @@ from sqlit.domains.query.ui.mixins.autocomplete import AutocompleteMixin
 from sqlit.domains.query.ui.mixins.query import QueryMixin
 from sqlit.domains.results.ui.mixins.results import ResultsMixin
 from sqlit.domains.results.ui.mixins.results_filter import ResultsFilterMixin
+from sqlit.domains.shell.app.commands import dispatch_command
 from sqlit.domains.shell.app.idle_scheduler import IdleScheduler
 from sqlit.domains.shell.app.omarchy import DEFAULT_THEME
 from sqlit.domains.shell.app.startup_flow import run_on_mount
@@ -38,6 +40,7 @@ from sqlit.domains.shell.app.theme_manager import ThemeManager
 from sqlit.domains.shell.state import UIStateMachine
 from sqlit.domains.shell.ui.mixins.ui_navigation import UINavigationMixin
 from sqlit.shared.app import AppServices, RuntimeConfig, build_app_services
+from sqlit.shared.core.store import CONFIG_DIR
 from sqlit.shared.ui.protocols import AppProtocol, UINavigationMixinHost
 from sqlit.shared.ui.widgets import (
     AutocompleteDropdown,
@@ -142,6 +145,19 @@ class SSMSTUI(
         self._query_handle: Any | None = None
         self._command_mode: bool = False
         self._command_buffer: str = ""
+        self._ui_stall_watchdog_timer: Timer | None = None
+        self._ui_stall_watchdog_expected: float | None = None
+        self._ui_stall_watchdog_interval_s: float = 0.0
+        self._ui_stall_watchdog_threshold_s: float = 0.0
+        self._ui_stall_watchdog_events: list[tuple[str, float, str]] = []
+        self._ui_stall_watchdog_log_path: Path = CONFIG_DIR / "ui_stall_watchdog.txt"
+        self._last_key: str | None = None
+        self._last_key_char: str | None = None
+        self._last_key_at: float | None = None
+        self._last_action: str | None = None
+        self._last_action_at: float | None = None
+        self._last_command: str | None = None
+        self._last_command_at: float | None = None
         self._theme_manager = ThemeManager(self, settings_store=self.services.settings_store)
         self._spinner_index: int = 0
         self._spinner_timer: Timer | None = None
@@ -241,6 +257,9 @@ class SSMSTUI(
 
     def on_key(self, event: Key) -> None:
         """Route key presses through the core key router."""
+        self._last_key = event.key
+        self._last_key_char = event.character
+        self._last_key_at = time.perf_counter()
         ctx = self._get_input_context()
         if ctx.modal_open:
             return
@@ -266,6 +285,8 @@ class SSMSTUI(
         if action:
             handler = getattr(self, f"action_{action}", None)
             if handler:
+                self._last_action = action
+                self._last_action_at = time.perf_counter()
                 handler()
                 event.prevent_default()
                 event.stop()
@@ -327,6 +348,8 @@ class SSMSTUI(
             return
 
         normalized = command.strip()
+        self._last_command = normalized
+        self._last_command_at = time.perf_counter()
         cmd, *args = normalized.split()
         cmd = cmd.lower()
 
@@ -412,6 +435,9 @@ class SSMSTUI(
                     return
                 self._set_process_worker_auto_shutdown(seconds)
                 return
+
+        if dispatch_command(self, cmd, args):
+            return
 
         action = command_actions.get(cmd)
         if action is None:
@@ -656,6 +682,9 @@ class SSMSTUI(
         if idle_timer is not None:
             idle_timer.stop()
             self._idle_scheduler_bar_timer = None
+        if self._ui_stall_watchdog_timer is not None:
+            self._ui_stall_watchdog_timer.stop()
+            self._ui_stall_watchdog_timer = None
 
     def _startup_stamp(self, name: str) -> None:
         if not self._startup_profile:
@@ -676,6 +705,172 @@ class SSMSTUI(
         """React to query execution status changes."""
         self._update_footer_bindings()
         self._update_status_bar()
+
+    def _start_ui_stall_watchdog(self) -> None:
+        threshold_ms = float(getattr(self.services.runtime, "ui_stall_watchdog_ms", 0) or 0)
+        if threshold_ms <= 0:
+            return
+        interval = min(0.2, max(0.05, (threshold_ms / 1000.0) / 2.0))
+        self._ui_stall_watchdog_threshold_s = threshold_ms / 1000.0
+        self._ui_stall_watchdog_interval_s = interval
+        self._ui_stall_watchdog_expected = time.perf_counter() + interval
+        if self._ui_stall_watchdog_timer is not None:
+            self._ui_stall_watchdog_timer.stop()
+        self._ui_stall_watchdog_timer = self.set_interval(interval, self._check_ui_stall)
+
+    def _check_ui_stall(self) -> None:
+        if self._ui_stall_watchdog_expected is None:
+            self._ui_stall_watchdog_expected = time.perf_counter() + self._ui_stall_watchdog_interval_s
+            return
+        now = time.perf_counter()
+        expected = self._ui_stall_watchdog_expected
+        stall = now - expected
+        if stall > self._ui_stall_watchdog_threshold_s:
+            suffix = self._build_ui_stall_context()
+            try:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+            except Exception:
+                timestamp = ""
+            self._ui_stall_watchdog_events.append((timestamp, stall * 1000.0, suffix))
+            if len(self._ui_stall_watchdog_events) > 50:
+                self._ui_stall_watchdog_events = self._ui_stall_watchdog_events[-50:]
+            self._schedule_ui_stall_log_write(timestamp, stall * 1000.0, suffix)
+            try:
+                self.log.warning("UI stall %.1f ms%s", stall * 1000.0, suffix)
+            except Exception:
+                pass
+            self._ui_stall_watchdog_expected = now + self._ui_stall_watchdog_interval_s
+            return
+        if stall < -self._ui_stall_watchdog_interval_s:
+            self._ui_stall_watchdog_expected = now + self._ui_stall_watchdog_interval_s
+            return
+        self._ui_stall_watchdog_expected = expected + self._ui_stall_watchdog_interval_s
+
+    def _build_ui_stall_context(self) -> str:
+        parts: list[str] = []
+        now = time.perf_counter()
+        try:
+            focused = self.focused
+        except Exception:
+            focused = None
+        focus_id = getattr(focused, "id", None)
+        if focus_id:
+            parts.append(f"focus={focus_id}")
+        elif focused is not None:
+            parts.append(f"focus={focused.__class__.__name__}")
+
+        last_pane = getattr(self, "_last_active_pane", None)
+        if last_pane:
+            parts.append(f"pane={last_pane}")
+
+        if getattr(self, "query_executing", False):
+            parts.append("query=1")
+        if getattr(self, "_connecting_config", None):
+            parts.append("connect=1")
+        if getattr(self, "_schema_indexing", False):
+            parts.append("schema=1")
+        if getattr(self, "_command_mode", False):
+            parts.append("command=1")
+        if getattr(self, "_tree_filter_visible", False):
+            parts.append("tree_filter=1")
+        if getattr(self, "_results_filter_visible", False):
+            parts.append("results_filter=1")
+        if getattr(self, "in_transaction", False):
+            parts.append("tx=1")
+
+        last_key = getattr(self, "_last_key", None)
+        if last_key:
+            parts.append(f"key={last_key}")
+        last_char = getattr(self, "_last_key_char", None)
+        if last_char and last_char.strip():
+            parts.append(f"char={last_char}")
+        if getattr(self, "_last_action", None):
+            parts.append(f"action={self._last_action}")
+            last_action_at = getattr(self, "_last_action_at", None)
+            if last_action_at is not None:
+                age_ms = max(0.0, (now - last_action_at) * 1000.0)
+                parts.append(f"action_age={age_ms:.0f}ms")
+        if getattr(self, "_last_command", None):
+            parts.append(f"cmd=:{self._last_command}")
+            last_command_at = getattr(self, "_last_command_at", None)
+            if last_command_at is not None:
+                age_ms = max(0.0, (now - last_command_at) * 1000.0)
+                parts.append(f"cmd_age={age_ms:.0f}ms")
+
+        try:
+            if self.current_config:
+                parts.append(f"conn={self.current_config.name}")
+                parts.append(f"dbtype={self.current_config.db_type}")
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "_get_effective_database"):
+                db_name = self._get_effective_database()
+                if db_name:
+                    parts.append(f"db={db_name}")
+        except Exception:
+            pass
+        try:
+            node = self.object_tree.cursor_node
+        except Exception:
+            node = None
+        if node and getattr(node, "data", None):
+            try:
+                kind = self._get_node_kind(node)
+            except Exception:
+                kind = None
+            name = getattr(node.data, "name", None)
+            if name and kind:
+                parts.append(f"tree={kind}:{name}")
+            elif name:
+                parts.append(f"tree={name}")
+
+        try:
+            if hasattr(self, "_process_worker_client") and self._process_worker_client is not None:
+                parts.append("worker=1")
+            else:
+                parts.append("worker=0")
+        except Exception:
+            pass
+        try:
+            runtime = getattr(self.services, "runtime", None)
+            if runtime is not None:
+                worker_setting = "1" if getattr(runtime, "process_worker", False) else "0"
+                parts.append(f"worker_setting={worker_setting}")
+        except Exception:
+            pass
+
+        try:
+            if self.query_input is not None:
+                text_len = len(self.query_input.text)
+                parts.append(f"query_len={text_len}")
+        except Exception:
+            pass
+
+        if not parts:
+            return ""
+        return f" ({', '.join(parts)})"
+
+    def _schedule_ui_stall_log_write(self, timestamp: str, ms: float, suffix: str) -> None:
+        line = f"[{timestamp}] {ms:.1f} ms{suffix}"
+        path = self._ui_stall_watchdog_log_path
+
+        def work() -> None:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    os.chmod(path.parent, 0o700)
+                except OSError:
+                    pass
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(line + "\n")
+            except Exception:
+                pass
+
+        try:
+            self.run_worker(work, name="ui-stall-log", thread=True, exclusive=False)
+        except Exception:
+            pass
 
     def get_custom_theme_names(self) -> set[str]:
         return self._theme_manager.get_custom_theme_names()

@@ -40,10 +40,6 @@ class QueryMixin(
     _cancellable_query: Any | None = None
     _query_handle: Any | None = None
     _query_spinner: Spinner | None = None
-    _process_worker_client: Any | None = None
-    _process_worker_client_error: str | None = None
-    _process_worker_last_used: float | None = None
-    _process_worker_idle_timer: Any | None = None
     _query_cursor_cache: dict[str, tuple[int, int]] | None = None  # query text -> cursor (row, col)
     _results_table_counter: int = 0  # Counter for unique table IDs
     _results_render_worker: Worker[Any] | None = None

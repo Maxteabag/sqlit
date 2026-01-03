@@ -42,6 +42,7 @@ class RuntimeConfig:
     process_worker: bool = True
     process_worker_warm_on_idle: bool = True
     process_worker_auto_shutdown_s: float = 0.0
+    ui_stall_watchdog_ms: float = 0.0
     mock: MockConfig = field(default_factory=MockConfig)
 
     @classmethod
@@ -105,6 +106,8 @@ class RuntimeConfig:
         process_worker_warm_on_idle = _parse_bool(warm_env, True)
         shutdown_env = os.environ.get("SQLIT_PROCESS_WORKER_AUTO_SHUTDOWN_S")
         process_worker_auto_shutdown_s = _parse_float(shutdown_env)
+        stall_env = os.environ.get("SQLIT_UI_STALL_WATCHDOG_MS")
+        ui_stall_watchdog_ms = _parse_float(stall_env)
         missing_drivers = os.environ.get("SQLIT_MOCK_MISSING_DRIVERS", "")
         missing_driver_set = {item.strip() for item in missing_drivers.split(",") if item.strip()}
 
@@ -133,5 +136,6 @@ class RuntimeConfig:
             process_worker=process_worker,
             process_worker_warm_on_idle=process_worker_warm_on_idle,
             process_worker_auto_shutdown_s=process_worker_auto_shutdown_s,
+            ui_stall_watchdog_ms=ui_stall_watchdog_ms,
             mock=mock_config,
         )

@@ -49,6 +49,13 @@ def run_on_mount(app: AppProtocol) -> None:
             )
         except (TypeError, ValueError):
             app.services.runtime.process_worker_auto_shutdown_s = 0.0
+    if "ui_stall_watchdog_ms" in settings:
+        try:
+            app.services.runtime.ui_stall_watchdog_ms = float(
+                settings.get("ui_stall_watchdog_ms") or 0
+            )
+        except (TypeError, ValueError):
+            app.services.runtime.ui_stall_watchdog_ms = 0.0
     app._startup_stamp("settings_applied")
 
     apply_mock_settings(app, settings)
@@ -81,6 +88,11 @@ def run_on_mount(app: AppProtocol) -> None:
     ):
         try:
             app._schedule_process_worker_warm()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    if hasattr(app, "_start_ui_stall_watchdog"):
+        try:
+            app._start_ui_stall_watchdog()  # type: ignore[attr-defined]
         except Exception:
             pass
     startup_config = app._startup_connect_config

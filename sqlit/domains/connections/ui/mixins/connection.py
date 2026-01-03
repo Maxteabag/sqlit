@@ -94,7 +94,7 @@ class ConnectionMixin:
         if config is None:
             self._stop_connect_spinner()
             if refresh:
-                tree_builder.refresh_tree(self)
+                tree_builder.refresh_tree_chunked(self)
             try:
                 self._update_status_bar()
             except Exception:
@@ -103,7 +103,7 @@ class ConnectionMixin:
 
         self._start_connect_spinner()
         if refresh:
-            tree_builder.refresh_tree(self)
+            tree_builder.refresh_tree_chunked(self)
         tree_builder.update_connecting_indicator(self)
         try:
             self._update_status_bar()
@@ -171,14 +171,16 @@ class ConnectionMixin:
             self._active_database = None
             reconnected = False
 
-            tree_builder.refresh_tree(self)
-            self.call_after_refresh(self._select_connected_node)
+            def after_tree_refresh() -> None:
+                self.call_after_refresh(self._select_connected_node)
+                # Update database labels to show star on active database
+                self.call_after_refresh(lambda: tree_db_switching.update_database_labels(self))
+
+            tree_builder.refresh_tree_chunked(self, on_done=after_tree_refresh)
             if not reconnected:
                 self._load_schema_cache()
             self._update_status_bar()
             self._update_section_labels()
-            # Update database labels to show star on active database
-            self.call_after_refresh(lambda: tree_db_switching.update_database_labels(self))
             if self.current_provider:
                 for message in self.current_provider.post_connect_warnings(config):
                     self.notify(message, severity="warning")
@@ -217,9 +219,21 @@ class ConnectionMixin:
         Closes the session, clears connection state, and refreshes the tree.
         Called 'silent' because it doesn't notify the user, but it does update the UI.
         """
-        if hasattr(self, "_session") and self._session:
-            self._session.close()
-            self._session = None
+        session = getattr(self, "_session", None)
+        self._session = None
+        if session is not None:
+            def close_session() -> None:
+                try:
+                    session.close()
+                except Exception:
+                    pass
+            try:
+                self.run_worker(close_session, name="close-session", thread=True, exclusive=False)
+            except Exception:
+                try:
+                    session.close()
+                except Exception:
+                    pass
 
         self.current_connection = None
         self.current_config = None
@@ -230,7 +244,7 @@ class ConnectionMixin:
         self._clear_query_target_database()
         # Notify all mixins of disconnect via lifecycle hook
         self._on_disconnect()
-        tree_builder.refresh_tree(self)
+        tree_builder.refresh_tree_chunked(self)
         self._update_section_labels()
 
     def _select_connected_node(self: ConnectionMixinHost) -> None:

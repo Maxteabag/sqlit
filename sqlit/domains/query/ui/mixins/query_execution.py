@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.explorer.ui.tree import db_switching as tree_db_switching
-from sqlit.shared.ui.lifecycle import LifecycleHooksMixin
+from sqlit.domains.process_worker.ui.mixins.process_worker_lifecycle import (
+    ProcessWorkerLifecycleMixin,
+)
 from sqlit.shared.ui.protocols import QueryMixinHost
 from sqlit.shared.ui.spinner import Spinner
 
@@ -19,7 +21,7 @@ if TYPE_CHECKING:
     from sqlit.domains.query.app.transaction import TransactionExecutor
 
 
-class QueryExecutionMixin(LifecycleHooksMixin):
+class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
     """Mixin providing query execution actions."""
 
     _query_service: QueryService | None = None
@@ -127,120 +129,6 @@ class QueryExecutionMixin(LifecycleHooksMixin):
             self._query_service_db_type = provider.metadata.db_type
         return self._query_service
 
-    def _use_process_worker(self: QueryMixinHost, provider: Any) -> bool:
-        runtime = getattr(self.services, "runtime", None)
-        if not runtime or not getattr(runtime, "process_worker", False):
-            return False
-        return True
-
-    def _get_process_worker_client(self: QueryMixinHost) -> Any | None:
-        client = getattr(self, "_process_worker_client", None)
-        if client is not None:
-            self._touch_process_worker()
-            return client
-        try:
-            from sqlit.domains.query.app.process_worker_client import ProcessWorkerClient
-
-            client = ProcessWorkerClient()
-            self._process_worker_client = client
-            self._process_worker_client_error = None
-            self._touch_process_worker()
-            return client
-        except Exception as exc:
-            self._process_worker_client_error = str(exc)
-            try:
-                self.log.error(f"Failed to start process worker: {exc}")
-            except Exception:
-                pass
-            return None
-
-    def _close_process_worker_client(self: QueryMixinHost) -> None:
-        client = getattr(self, "_process_worker_client", None)
-        if client is None:
-            return
-        try:
-            client.close()
-        except Exception:
-            pass
-        self._process_worker_client = None
-        self._clear_process_worker_auto_shutdown()
-
-    def _touch_process_worker(self: QueryMixinHost) -> None:
-        import time
-
-        self._process_worker_last_used = time.monotonic()
-        self._arm_process_worker_auto_shutdown()
-
-    def _clear_process_worker_auto_shutdown(self: QueryMixinHost) -> None:
-        timer = getattr(self, "_process_worker_idle_timer", None)
-        if timer is not None:
-            try:
-                timer.stop()
-            except Exception:
-                pass
-        self._process_worker_idle_timer = None
-
-    def _arm_process_worker_auto_shutdown(self: QueryMixinHost) -> None:
-        import time
-
-        runtime = getattr(self.services, "runtime", None)
-        if runtime is None:
-            return
-        auto_seconds = float(getattr(runtime, "process_worker_auto_shutdown_s", 0) or 0)
-        if auto_seconds <= 0:
-            self._clear_process_worker_auto_shutdown()
-            return
-
-        self._clear_process_worker_auto_shutdown()
-        last_used = getattr(self, "_process_worker_last_used", None)
-        if last_used is None and getattr(self, "_process_worker_client", None) is not None:
-            last_used = time.monotonic()
-            self._process_worker_last_used = last_used
-
-        def _maybe_shutdown() -> None:
-            if last_used is None:
-                return
-            if getattr(self, "query_executing", False):
-                self._arm_process_worker_auto_shutdown()
-                return
-            if getattr(self, "_process_worker_last_used", None) != last_used:
-                return
-            self._close_process_worker_client()
-
-        self._process_worker_idle_timer = self.set_timer(auto_seconds, _maybe_shutdown)
-
-    def _schedule_process_worker_warm(self: QueryMixinHost) -> None:
-        runtime = getattr(self.services, "runtime", None)
-        if runtime is None or not getattr(runtime, "process_worker_warm_on_idle", False):
-            return
-        from sqlit.domains.shell.app.idle_scheduler import Priority, get_idle_scheduler
-
-        scheduler = get_idle_scheduler()
-        if scheduler is None:
-            return
-        scheduler.cancel_all(name="process-worker-warm")
-
-        def _warm() -> None:
-            if not getattr(self.services.runtime, "process_worker", False):
-                return
-            if not getattr(self.services.runtime, "process_worker_warm_on_idle", False):
-                return
-            self._get_process_worker_client()
-
-        scheduler.request_idle_callback(
-            _warm,
-            priority=Priority.LOW,
-            name="process-worker-warm",
-        )
-
-    def _cancel_process_worker_warm(self: QueryMixinHost) -> None:
-        from sqlit.domains.shell.app.idle_scheduler import get_idle_scheduler
-
-        scheduler = get_idle_scheduler()
-        if scheduler is None:
-            return
-        scheduler.cancel_all(name="process-worker-warm")
-
     def _get_transaction_executor(self: QueryMixinHost, config: Any, provider: Any) -> Any:
         """Get or create a TransactionExecutor for the current connection."""
         from sqlit.domains.query.app.transaction import TransactionExecutor
@@ -266,7 +154,6 @@ class QueryExecutionMixin(LifecycleHooksMixin):
         if callable(parent_disconnect):
             parent_disconnect()
         self._reset_transaction_executor()
-        self._close_process_worker_client()
 
     @property
     def in_transaction(self: QueryMixinHost) -> bool:
@@ -343,7 +230,7 @@ class QueryExecutionMixin(LifecycleHooksMixin):
                     use_process_worker = False
 
             if use_process_worker and not is_multi_statement:
-                client = self._get_process_worker_client()
+                client = await self._get_process_worker_client_async()
                 if client is None:
                     error = getattr(self, "_process_worker_client_error", None)
                     if error:
@@ -368,7 +255,10 @@ class QueryExecutionMixin(LifecycleHooksMixin):
                         self._display_query_error(outcome.error)
                         return
 
-                    service._save_to_history(config.name, query)
+                    try:
+                        await asyncio.to_thread(service._save_to_history, config.name, query)
+                    except Exception:
+                        pass
                     result = outcome.result
                     elapsed_ms = outcome.elapsed_ms
 
@@ -396,7 +286,10 @@ class QueryExecutionMixin(LifecycleHooksMixin):
                 )
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-                service._save_to_history(config.name, query)
+                try:
+                    await asyncio.to_thread(service._save_to_history, config.name, query)
+                except Exception:
+                    pass
                 self._display_multi_statement_results(multi_result, elapsed_ms)
             else:
                 # Single statement - existing behavior
@@ -407,7 +300,10 @@ class QueryExecutionMixin(LifecycleHooksMixin):
                 )
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-                service._save_to_history(config.name, query)
+                try:
+                    await asyncio.to_thread(service._save_to_history, config.name, query)
+                except Exception:
+                    pass
 
                 if isinstance(result, QueryResult):
                     await self._display_query_results(
@@ -468,7 +364,10 @@ class QueryExecutionMixin(LifecycleHooksMixin):
             )
             elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-            service._save_to_history(config.name, query)
+            try:
+                await asyncio.to_thread(service._save_to_history, config.name, query)
+            except Exception:
+                pass
 
             if isinstance(result, QueryResult):
                 await self._display_query_results(
