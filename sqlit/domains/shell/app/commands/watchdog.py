@@ -27,6 +27,26 @@ def _handle_watchdog_command(app: Any, cmd: str, args: list[str]) -> bool:
                 lines.append(f"{prefix} {ms:.1f} ms{suffix}")
             app.push_screen(MessageScreen("UI Stall Watchdog", "\n".join(lines)))
             return True
+        if value == "clear":
+            try:
+                app._ui_stall_watchdog_events = []
+            except Exception:
+                pass
+            path = getattr(app, "_ui_stall_watchdog_log_path", None)
+            if path:
+                try:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        path.parent.chmod(0o700)
+                    except OSError:
+                        pass
+                    with path.open("w", encoding="utf-8"):
+                        pass
+                except Exception:
+                    app.notify("Failed to clear UI stall log", severity="warning")
+                    return True
+            app.notify("UI stall watchdog log cleared")
+            return True
         if not value:
             current = float(getattr(app.services.runtime, "ui_stall_watchdog_ms", 0) or 0)
             if current > 0:

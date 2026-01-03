@@ -22,6 +22,8 @@ from sqlit.shared.ui.protocols import TreeMixinHost
 
 from . import expansion_state, schema_render
 
+MIN_TIMER_DELAY_S = 0.001
+
 
 def ensure_loading_nodes(host: TreeMixinHost) -> set[str]:
     loading_nodes = getattr(host, "_loading_nodes", None)
@@ -89,12 +91,14 @@ def load_columns_async(host: TreeMixinHost, node: Any, data: TableNode | ViewNod
                         obj_name,
                     )
 
-            host.call_later(
-                lambda: on_columns_loaded(host, node, db_name, schema_name, obj_name, columns)
+            host.set_timer(
+                MIN_TIMER_DELAY_S,
+                lambda: on_columns_loaded(host, node, db_name, schema_name, obj_name, columns),
             )
         except Exception as error:
-            host.call_later(
-                lambda: on_tree_load_error(host, node, f"Error loading columns: {error}")
+            host.set_timer(
+                MIN_TIMER_DELAY_S,
+                lambda: on_tree_load_error(host, node, f"Error loading columns: {error}"),
             )
 
     host.run_worker(work_async(), name=f"load-columns-{obj_name}", exclusive=False)
@@ -132,7 +136,7 @@ def on_columns_loaded(
             child.data = ColumnNode(database=db_name, schema=schema_name, table=obj_name, name=col.name)
         idx = end
         if idx < total:
-            host.set_timer(0, render_batch)
+            host.set_timer(MIN_TIMER_DELAY_S, render_batch)
 
     render_batch()
 
@@ -174,11 +178,15 @@ def load_folder_async(host: TreeMixinHost, node: Any, data: FolderNode) -> None:
                         db_name,
                     )
 
-            host.call_later(
-                lambda: on_folder_loaded(host, node, db_name, folder_type, items)
+            host.set_timer(
+                MIN_TIMER_DELAY_S,
+                lambda: on_folder_loaded(host, node, db_name, folder_type, items),
             )
         except Exception as error:
-            host.call_later(lambda: on_tree_load_error(host, node, f"Error loading: {error}"))
+            host.set_timer(
+                MIN_TIMER_DELAY_S,
+                lambda: on_tree_load_error(host, node, f"Error loading: {error}"),
+            )
 
     host.run_worker(work_async(), name=f"load-folder-{folder_type}", exclusive=False)
 

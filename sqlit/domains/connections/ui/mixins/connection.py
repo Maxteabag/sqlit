@@ -90,11 +90,12 @@ class ConnectionMixin:
 
     def _set_connecting_state(self: ConnectionMixinHost, config: ConnectionConfig | None, refresh: bool = True) -> None:
         """Track which connection is currently being attempted."""
+        previous_config = getattr(self, "_connecting_config", None)
         self._connecting_config = config
         if config is None:
             self._stop_connect_spinner()
-            if refresh:
-                tree_builder.refresh_tree_chunked(self)
+            if previous_config is not None:
+                tree_builder.clear_connecting_indicator(self, previous_config)
             try:
                 self._update_status_bar()
             except Exception:
@@ -103,7 +104,7 @@ class ConnectionMixin:
 
         self._start_connect_spinner()
         if refresh:
-            tree_builder.refresh_tree_chunked(self)
+            tree_builder.ensure_connecting_indicator(self, config)
         tree_builder.update_connecting_indicator(self)
         try:
             self._update_status_bar()
@@ -159,13 +160,13 @@ class ConnectionMixin:
                 session.close()
                 return
 
-            self._set_connecting_state(None, refresh=False)
             self._connection_failed = False
             self._session = session
             self.current_connection = session.connection
             self.current_config = config
             self.current_provider = session.provider
             self.current_ssh_tunnel = session.tunnel
+            self._set_connecting_state(None, refresh=False)
             is_saved = any(c.name == config.name for c in self.connections)
             self._direct_connection_config = None if is_saved else config
             self._active_database = None
@@ -176,9 +177,33 @@ class ConnectionMixin:
                 # Update database labels to show star on active database
                 self.call_after_refresh(lambda: tree_db_switching.update_database_labels(self))
 
-            tree_builder.refresh_tree_chunked(self, on_done=after_tree_refresh)
+            tree_builder.schedule_populate_connected_tree(self, on_done=after_tree_refresh)
             if not reconnected:
-                self._load_schema_cache()
+                def load_schema_cache() -> None:
+                    if attempt_id != self._connection_attempt_id:
+                        return
+                    if not self.current_connection or not self.current_config:
+                        return
+                    self._load_schema_cache()
+
+                try:
+                    from sqlit.domains.shell.app.idle_scheduler import (
+                        Priority,
+                        get_idle_scheduler,
+                    )
+                except Exception:
+                    scheduler = None
+                else:
+                    scheduler = get_idle_scheduler()
+                if scheduler:
+                    scheduler.cancel_all(name="schema-cache-load")
+                    scheduler.request_idle_callback(
+                        load_schema_cache,
+                        priority=Priority.NORMAL,
+                        name="schema-cache-load",
+                    )
+                else:
+                    self.set_timer(0.25, load_schema_cache)
             self._update_status_bar()
             self._update_section_labels()
             if self.current_provider:

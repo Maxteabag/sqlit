@@ -10,6 +10,8 @@ from rich.markup import escape as escape_markup
 from sqlit.domains.explorer.domain.tree_nodes import SchemaNode, TableNode, ViewNode
 from sqlit.shared.ui.protocols import TreeMixinHost
 
+MIN_TIMER_DELAY_S = 0.001
+
 
 def add_schema_grouped_items(
     host: TreeMixinHost,
@@ -85,6 +87,6 @@ def add_schema_grouped_items(
             child.allow_expand = True
         idx = end
         if idx < len(items_to_add):
-            host.set_timer(0, render_batch)
+            host.set_timer(MIN_TIMER_DELAY_S, render_batch)
 
     render_batch()

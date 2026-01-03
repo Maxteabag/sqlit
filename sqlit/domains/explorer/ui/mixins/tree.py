@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
     from sqlit.domains.connections.providers.model import DatabaseProvider
 
+MIN_TIMER_DELAY_S = 0.001
+
 
 class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
     """Mixin providing tree/explorer functionality."""
@@ -333,14 +335,15 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             except Exception:
                 columns = []
 
-            self.call_later(
+            self.set_timer(
+                MIN_TIMER_DELAY_S,
                 lambda: self._apply_last_query_table_columns(
                     token,
                     database,
                     schema,
                     name,
                     columns,
-                )
+                ),
             )
 
         self.run_worker(work_async(), name=f"prime-last-query-columns-{name}", exclusive=False)

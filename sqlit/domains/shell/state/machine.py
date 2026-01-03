@@ -305,6 +305,7 @@ class UIStateMachine:
         lines.append(binding(":process-worker", "Toggle process worker"))
         lines.append(binding(":wd <ms|off>", "UI stall watchdog"))
         lines.append(binding(":wd list", "Show UI stall warnings"))
+        lines.append(binding(":wd clear", "Clear UI stall log"))
         lines.append(binding(":set process_worker_warm on|off", "Warm worker on idle"))
         lines.append(binding(":set process_worker_lazy on|off", "Lazy worker start"))
         lines.append(binding(":set process_worker_auto_shutdown <seconds>", "Auto-shutdown worker"))

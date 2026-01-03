@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Any
+
+from rich.align import Align
+from rich.errors import MarkupError
+from rich.markup import escape
+from rich.protocol import is_renderable
+from rich.text import Text
+from textual.coordinate import Coordinate
 
 from textual.containers import Container
 from textual.events import Key
@@ -48,6 +57,58 @@ class SqlitDataTable(FastDataTable):
             y += 1
 
         return self._render_line(y, scroll_x, scroll_x + width, self.rich_style)
+
+    def _get_cell_renderable(self, row_index: int, column_index: int) -> Any:
+        """Format cells with plain text for NULL/bool/date values."""
+        if row_index == -1:
+            return self.ordered_columns[column_index].label
+
+        datum = self.get_cell_at(Coordinate(row=row_index, column=column_index))
+        column = self.ordered_columns[column_index]
+        return self._format_cell(datum, column)
+
+    def _format_cell(self, obj: object, col: Any | None) -> Any:
+        if obj is None:
+            return self._format_null()
+
+        if isinstance(obj, str):
+            if self.render_markup:
+                try:
+                    return Text.from_markup(obj)
+                except MarkupError:
+                    return escape(obj)
+            return escape(obj)
+
+        if isinstance(obj, bool):
+            return "True" if obj else "False"
+
+        if isinstance(obj, (float, Decimal)):
+            return Align(f"{obj:n}", align="right")
+
+        if isinstance(obj, int):
+            if col is not None and getattr(col, "is_id", False):
+                return Align(str(obj), align="right")
+            return Align(f"{obj:n}", align="right")
+
+        if isinstance(obj, (datetime, time)):
+            return obj.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+        if isinstance(obj, date):
+            return obj.isoformat()
+
+        if isinstance(obj, timedelta):
+            return str(obj)
+
+        if not is_renderable(obj):
+            return str(obj)
+
+        return obj
+
+    def _format_null(self) -> Text:
+        null_rep = getattr(self, "null_rep", None)
+        if isinstance(null_rep, Text):
+            return null_rep
+        return Text(str(null_rep) if null_rep is not None else "NULL")
 
 
 class ResultsTableContainer(Container):
