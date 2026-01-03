@@ -206,6 +206,9 @@ class ConnectionMixin:
                     self.set_timer(0.25, load_schema_cache)
             self._update_status_bar()
             self._update_section_labels()
+            connect_hook = getattr(self, "_on_connect", None)
+            if callable(connect_hook):
+                connect_hook()
             if self.current_provider:
                 for message in self.current_provider.post_connect_warnings(config):
                     self.notify(message, severity="warning")
@@ -222,6 +225,10 @@ class ConnectionMixin:
 
             self._connection_failed = True
             self._update_status_bar()
+
+            connect_failed = getattr(self, "_on_connect_failed", None)
+            if callable(connect_failed):
+                connect_failed(config)
 
             if handle_connection_error(self, error, config):
                 return

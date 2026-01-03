@@ -112,5 +112,8 @@ class UILeaderMixin:
     def action_leader_show_help(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("show_help")
 
+    def action_leader_telescope(self: UINavigationMixinHost) -> None:
+        self._execute_leader_command("telescope")
+
     def action_leader_quit(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("quit")

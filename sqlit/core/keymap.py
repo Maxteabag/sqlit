@@ -130,6 +130,7 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("z", "cancel_operation", "Cancel", "Actions", guard="query_executing"),
             LeaderCommandDef("t", "change_theme", "Change Theme", "Actions"),
             LeaderCommandDef("h", "show_help", "Help", "Actions"),
+            LeaderCommandDef("space", "telescope", "Telescope", "Actions"),
             LeaderCommandDef("q", "quit", "Quit", "Actions"),
             # Delete menu (vim-style)
             LeaderCommandDef("d", "line", "Delete line", "Delete", menu="delete"),

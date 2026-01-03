@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from textual.app import ComposeResult
+from rich.markup import escape
 from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
@@ -85,11 +86,23 @@ class QueryHistoryScreen(ModalScreen):
     }
     """
 
-    def __init__(self, history: list, connection_name: str, starred: set[str] | None = None):
+    def __init__(
+        self,
+        history: list,
+        connection_name: str,
+        starred: set[str] | None = None,
+        *,
+        multi_connection: bool = False,
+        connection_labels: dict[str, str] | None = None,
+        starred_by_connection: dict[str, set[str]] | None = None,
+    ):
         super().__init__()
         self.history = history  # list of QueryHistoryEntry
         self.connection_name = connection_name
         self.starred = starred or set()  # set of starred query strings
+        self._multi_connection = multi_connection
+        self._connection_labels = connection_labels or {}
+        self._starred_by_connection = starred_by_connection or {}
         self._merged_entries: list[QueryHistoryEntry] = []
         self._filter_active = False
         self._filter_text = ""
@@ -99,28 +112,49 @@ class QueryHistoryScreen(ModalScreen):
 
     def _merge_entries(self) -> list[QueryHistoryEntry]:
         """Merge history entries with starred-only queries."""
-        # Mark history entries that are starred
-        history_queries: set[str] = set()
         result: list[QueryHistoryEntry] = []
 
-        for entry in self.history:
-            entry.is_starred = entry.query.strip() in self.starred
-            entry.is_starred_only = False
-            history_queries.add(entry.query.strip())
-            result.append(entry)
-
-        # Add starred-only entries (queries that were starred but not in history)
-        for starred_query in self.starred:
-            if starred_query not in history_queries:
-                # Create synthetic entry for starred-only query
-                entry = QueryHistoryEntry(
-                    query=starred_query,
-                    timestamp="",  # No timestamp
-                    connection_name=self.connection_name,
-                    is_starred=True,
-                    is_starred_only=True,
-                )
+        if self._multi_connection:
+            history_queries_by_connection: dict[str, set[str]] = {}
+            for entry in self.history:
+                starred_queries = self._starred_by_connection.get(entry.connection_name, set())
+                entry.is_starred = entry.query.strip() in starred_queries
+                entry.is_starred_only = False
+                history_queries_by_connection.setdefault(entry.connection_name, set()).add(entry.query.strip())
                 result.append(entry)
+
+            for connection_name, starred_queries in self._starred_by_connection.items():
+                history_queries = history_queries_by_connection.get(connection_name, set())
+                for starred_query in starred_queries:
+                    if starred_query not in history_queries:
+                        entry = QueryHistoryEntry(
+                            query=starred_query,
+                            timestamp="",  # No timestamp
+                            connection_name=connection_name,
+                            is_starred=True,
+                            is_starred_only=True,
+                        )
+                        result.append(entry)
+        else:
+            # Mark history entries that are starred
+            history_queries: set[str] = set()
+            for entry in self.history:
+                entry.is_starred = entry.query.strip() in self.starred
+                entry.is_starred_only = False
+                history_queries.add(entry.query.strip())
+                result.append(entry)
+
+            # Add starred-only entries (queries that were starred but not in history)
+            for starred_query in self.starred:
+                if starred_query not in history_queries:
+                    entry = QueryHistoryEntry(
+                        query=starred_query,
+                        timestamp="",  # No timestamp
+                        connection_name=self.connection_name,
+                        is_starred=True,
+                        is_starred_only=True,
+                    )
+                    result.append(entry)
 
         # Sort: starred-only first, then starred-in-history, then regular history
         # All sorted by timestamp descending within their groups
@@ -135,7 +169,12 @@ class QueryHistoryScreen(ModalScreen):
         return starred_only + starred_in_history + not_starred
 
     def compose(self) -> ComposeResult:
-        title = f"Query History - {self.connection_name}"
+        if self._multi_connection:
+            title = "Telescope - All Servers"
+            empty_message = "No query history across servers"
+        else:
+            title = f"Query History - {self.connection_name}"
+            empty_message = "No query history for this connection"
         shortcuts = [("Select", "<enter>"), ("Star", "*"), ("Delete", "D")]
 
         self._merged_entries = self._merge_entries()
@@ -150,7 +189,7 @@ class QueryHistoryScreen(ModalScreen):
 
                     yield OptionList(*options, id="history-list")
                 else:
-                    yield Static("No query history for this connection", id="history-empty")
+                    yield Static(empty_message, id="history-empty")
 
             with VerticalScroll(id="history-preview-container"):
                 yield Static("", id="history-preview")
@@ -179,7 +218,7 @@ class QueryHistoryScreen(ModalScreen):
         entries = self._get_display_entries()
         if idx < len(entries):
             preview = self.query_one("#history-preview", Static)
-            preview.update(entries[idx].query)
+            preview.update(escape(entries[idx].query))
 
     def action_select(self) -> None:
         entries = self._get_display_entries()
@@ -191,7 +230,7 @@ class QueryHistoryScreen(ModalScreen):
             option_list = self.query_one("#history-list", OptionList)
             idx = option_list.highlighted
             if idx is not None and idx < len(entries):
-                self.dismiss(("select", entries[idx].query))
+                self.dismiss(self._build_action_result("select", entries[idx]))
             else:
                 self.dismiss(None)
         except Exception:
@@ -202,7 +241,7 @@ class QueryHistoryScreen(ModalScreen):
             idx = event.option_list.highlighted
             entries = self._get_display_entries()
             if idx is not None and idx < len(entries):
-                self.dismiss(("select", entries[idx].query))
+                self.dismiss(self._build_action_result("select", entries[idx]))
 
     def action_delete(self) -> None:
         """Delete the selected history entry."""
@@ -218,7 +257,7 @@ class QueryHistoryScreen(ModalScreen):
                 # For starred-only entries, there's nothing to delete from history
                 if entry.is_starred_only:
                     return
-                self.dismiss(("delete", entry.timestamp))
+                self.dismiss(self._build_action_result("delete", entry))
         except Exception:
             pass
 
@@ -233,7 +272,7 @@ class QueryHistoryScreen(ModalScreen):
             idx = option_list.highlighted
             if idx is not None and idx < len(entries):
                 entry = entries[idx]
-                self.dismiss(("toggle_star", entry.query))
+                self.dismiss(self._build_action_result("toggle_star", entry))
         except Exception:
             pass
 
@@ -395,17 +434,48 @@ class QueryHistoryScreen(ModalScreen):
             return "Unknown"
 
     def _entry_option_id(self, entry: QueryHistoryEntry) -> str:
-        return f"starred:{hash(entry.query)}" if entry.is_starred_only else entry.timestamp
+        if entry.is_starred_only or not entry.timestamp:
+            suffix = f"starred:{hash(entry.query)}"
+        else:
+            suffix = entry.timestamp
+        if self._multi_connection:
+            return f"{entry.connection_name}:{suffix}"
+        return suffix
+
+    def _entry_connection_label(self, entry: QueryHistoryEntry) -> str:
+        label = self._connection_labels.get(entry.connection_name, entry.connection_name)
+        return label or entry.connection_name
+
+    def _truncate_label(self, value: str, max_len: int) -> str:
+        if len(value) > max_len:
+            return value[: max_len - 3] + "..."
+        return value
+
+    def _build_action_result(self, action: str, entry: QueryHistoryEntry) -> tuple[str, Any]:
+        if self._multi_connection:
+            if action == "delete":
+                payload = {"timestamp": entry.timestamp, "connection_name": entry.connection_name}
+            else:
+                payload = {"query": entry.query, "connection_name": entry.connection_name}
+            return action, payload
+        if action == "delete":
+            return action, entry.timestamp
+        return action, entry.query
 
     def _build_option(self, entry: QueryHistoryEntry) -> Option:
-        time_str = self._entry_time_label(entry)
         star = "[yellow]*[/] " if entry.is_starred else "  "
         # Collapse all whitespace to single spaces and strip
         query_single_line = re.sub(r"\s+", " ", entry.query).strip()
-        max_len = 55
+        max_len = 40 if self._multi_connection else 55
         if len(query_single_line) > max_len:
             query_preview = query_single_line[:max_len] + "..."
         else:
             query_preview = query_single_line
+        query_preview = escape(query_preview)
+        if self._multi_connection:
+            conn_label = self._truncate_label(self._entry_connection_label(entry), 24)
+            conn_label = escape(conn_label)
         option_id = self._entry_option_id(entry)
-        return Option(f"{star}[dim]{time_str}[/]  {query_preview}", id=option_id)
+        if self._multi_connection:
+            return Option(f"{star}[dim]{conn_label}[/]/{query_preview}", id=option_id)
+        return Option(f"{star}{query_preview}", id=option_id)

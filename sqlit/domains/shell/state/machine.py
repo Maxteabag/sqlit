@@ -11,6 +11,7 @@ adding or overriding specific behaviors.
 from __future__ import annotations
 
 from sqlit.core.input_context import InputContext
+from sqlit.core.keymap import format_key
 from sqlit.core.leader_commands import get_leader_commands
 from sqlit.core.state_base import (
     ActionResult,
@@ -261,7 +262,7 @@ class UIStateMachine:
             if cat in by_cat:
                 lines.append(subsection(f"{cat}:"))
                 for key, label in by_cat[cat]:
-                    lines.append(binding(f"{leader_key}{key}", label))
+                    lines.append(binding(f"{leader_key}{format_key(key)}", label))
         lines.append("")
 
         # ═══════════════════════════════════════════════════════════════════

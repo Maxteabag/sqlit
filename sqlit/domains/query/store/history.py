@@ -74,6 +74,20 @@ class HistoryStore(JSONFileStore):
         except (KeyError, TypeError):
             return []
 
+    def load_all(self) -> list[QueryHistoryEntry]:
+        """Load query history for all connections.
+
+        Returns:
+            List of QueryHistoryEntry objects, sorted by most recent first.
+        """
+        all_entries = self._load_all_entries()
+        try:
+            entries = [QueryHistoryEntry.from_dict(entry) for entry in all_entries]
+            entries.sort(key=lambda e: e.timestamp, reverse=True)
+            return entries
+        except (KeyError, TypeError):
+            return []
+
     def save_query(self, connection_name: str, query: str) -> None:
         """Save a query to history.
 

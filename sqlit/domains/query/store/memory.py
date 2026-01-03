@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from sqlit.domains.query.store.history import QueryHistoryEntry
+
 
 @dataclass
 class InMemoryQueryHistoryEntry:
@@ -26,11 +28,15 @@ class InMemoryHistoryStore:
     def __init__(self) -> None:
         self._entries: list[dict[str, Any]] = []
 
-    def load_for_connection(self, connection_name: str) -> list[dict[str, Any]]:
+    def load_for_connection(self, connection_name: str) -> list[QueryHistoryEntry]:
         return [
-            entry for entry in self._entries
+            QueryHistoryEntry.from_dict(entry)
+            for entry in self._entries
             if entry.get("connection_name") == connection_name
         ]
+
+    def load_all(self) -> list[QueryHistoryEntry]:
+        return [QueryHistoryEntry.from_dict(entry) for entry in self._entries]
 
     def save_query(self, connection_name: str, query: str) -> None:
         self._entries.append({
@@ -59,6 +65,9 @@ class InMemoryStarredStore:
 
     def load_for_connection(self, connection_name: str) -> set[str]:
         return set(self._starred.get(connection_name, set()))
+
+    def load_all(self) -> dict[str, set[str]]:
+        return {name: set(queries) for name, queries in self._starred.items()}
 
     def is_starred(self, connection_name: str, query: str) -> bool:
         return query.strip() in self._starred.get(connection_name, set())

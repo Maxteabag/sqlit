@@ -32,6 +32,16 @@ class StarredStore(JSONFileStore):
         data = self._read_json()
         return data if isinstance(data, dict) else {}
 
+    def load_all(self) -> dict[str, set[str]]:
+        """Load starred queries for all connections."""
+        all_starred = self._load_all()
+        result: dict[str, set[str]] = {}
+        for connection_name, queries in all_starred.items():
+            if not isinstance(queries, list):
+                continue
+            result[connection_name] = {q.strip() for q in queries}
+        return result
+
     def load_for_connection(self, connection_name: str) -> set[str]:
         """Load starred queries for a specific connection.
 

@@ -35,6 +35,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
     _query_target_database: str | None = None
     _schema_worker: Any | None = None
     _schema_indexing: bool = False
+    _pending_telescope_query: tuple[str, str] | None = None
 
     def action_execute_query(self: QueryMixinHost) -> None:
         """Execute the current query."""
@@ -154,6 +155,31 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         if callable(parent_disconnect):
             parent_disconnect()
         self._reset_transaction_executor()
+
+    def _on_connect(self: QueryMixinHost) -> None:
+        """Handle connect lifecycle event."""
+        parent_connect = getattr(super(), "_on_connect", None)
+        if callable(parent_connect):
+            parent_connect()
+
+        pending = getattr(self, "_pending_telescope_query", None)
+        if not pending:
+            return
+
+        connection_name, query = pending
+        self._pending_telescope_query = None
+        if not self.current_config or self.current_config.name != connection_name:
+            return
+
+        self._apply_history_query(query)
+        self.action_execute_query()
+
+    def _on_connect_failed(self: QueryMixinHost, config: Any) -> None:
+        pending = getattr(self, "_pending_telescope_query", None)
+        if not pending:
+            return
+        if getattr(config, "name", None) == pending[0]:
+            self._pending_telescope_query = None
 
     @property
     def in_transaction(self: QueryMixinHost) -> bool:
@@ -467,6 +493,33 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         self.query_input.text = ""
         self._replace_results_table([], [])
 
+    def _apply_history_query(self: QueryMixinHost, query: str) -> None:
+        """Load a query into the editor and restore cursor position if possible."""
+        # Initialize cursor cache if needed
+        if self._query_cursor_cache is None:
+            self._query_cursor_cache = {}
+        cursor_cache = self._query_cursor_cache
+
+        # Save current query's cursor position before switching
+        current_query = self.query_input.text
+        if current_query:
+            cursor_cache[current_query] = self.query_input.cursor_location
+
+        # Set new query text
+        self.query_input.text = query
+
+        # Restore cursor position if we have it cached, otherwise go to end
+        if query in cursor_cache:
+            self.query_input.cursor_location = cursor_cache[query]
+        else:
+            lines = query.split("\n")
+            last_line = len(lines) - 1
+            last_col = len(lines[-1]) if lines else 0
+            self.query_input.cursor_location = (last_line, last_col)
+
+        # Focus query input - this triggers on_descendant_focus which updates footer bindings
+        self.query_input.focus()
+
     def action_show_history(self: QueryMixinHost) -> None:
         """Show query history for the current connection."""
         if not self.current_config:
@@ -491,37 +544,143 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
         action, data = result
         if action == "select":
-            # Initialize cursor cache if needed
-            if self._query_cursor_cache is None:
-                self._query_cursor_cache = {}
-            cursor_cache = self._query_cursor_cache
-
-            # Save current query's cursor position before switching
-            current_query = self.query_input.text
-            if current_query:
-                cursor_cache[current_query] = self.query_input.cursor_location
-
-            # Set new query text
-            self.query_input.text = data
-
-            # Restore cursor position if we have it cached, otherwise go to end
-            if data in cursor_cache:
-                self.query_input.cursor_location = cursor_cache[data]
-            else:
-                # Move cursor to end of query
-                lines = data.split("\n")
-                last_line = len(lines) - 1
-                last_col = len(lines[-1]) if lines else 0
-                self.query_input.cursor_location = (last_line, last_col)
-
-            # Focus query input - this triggers on_descendant_focus which updates footer bindings
-            self.query_input.focus()
+            self._apply_history_query(data)
         elif action == "delete":
             self._delete_history_entry(data)
             self.action_show_history()
         elif action == "toggle_star":
             self._toggle_star(data)
             self.action_show_history()
+
+    def action_telescope(self: QueryMixinHost) -> None:
+        """Show query history across all connections."""
+        from ..screens import QueryHistoryScreen
+
+        history_store = self._get_history_store()
+        if hasattr(history_store, "load_all"):
+            history = history_store.load_all()
+        else:
+            history = []
+            for config in self._get_telescope_connection_map().values():
+                history.extend(history_store.load_for_connection(config.name))
+            history.sort(key=lambda entry: entry.timestamp, reverse=True)
+
+        connection_map = self._get_telescope_connection_map()
+        connection_labels = {
+            name: self._format_telescope_connection_label(config)
+            for name, config in connection_map.items()
+        }
+        starred_by_connection = self._load_starred_by_connection(connection_map)
+
+        self.push_screen(
+            QueryHistoryScreen(
+                history,
+                "All Servers",
+                None,
+                multi_connection=True,
+                connection_labels=connection_labels,
+                starred_by_connection=starred_by_connection,
+            ),
+            self._handle_telescope_result,
+        )
+
+    def _handle_telescope_result(self: QueryMixinHost, result: Any) -> None:
+        """Handle the result from the telescope screen."""
+        if result is None:
+            return
+
+        action, data = result
+        if action == "select":
+            query = data.get("query", "")
+            connection_name = data.get("connection_name", "")
+            self._run_telescope_query(connection_name, query)
+        elif action == "delete":
+            timestamp = data.get("timestamp", "")
+            connection_name = data.get("connection_name", "")
+            if timestamp and connection_name:
+                self._get_history_store().delete_entry(connection_name, timestamp)
+            self.action_telescope()
+        elif action == "toggle_star":
+            query = data.get("query", "")
+            connection_name = data.get("connection_name", "")
+            if query and connection_name:
+                is_now_starred = self.services.starred_store.toggle_star(connection_name, query)
+                if is_now_starred:
+                    self.notify("Query starred")
+                else:
+                    self.notify("Query unstarred")
+            self.action_telescope()
+
+    def _run_telescope_query(self: QueryMixinHost, connection_name: str, query: str) -> None:
+        if not query or not connection_name:
+            return
+
+        config = self._get_telescope_connection_map().get(connection_name)
+        if config is None:
+            self.notify(f"Connection '{connection_name}' not found", severity="warning")
+            return
+
+        self._apply_history_query(query)
+
+        if self.current_connection and self.current_config and self.current_config.name == connection_name:
+            self._pending_telescope_query = None
+            self.action_execute_query()
+            return
+
+        self._pending_telescope_query = (connection_name, query)
+        self._connect_like_explorer(connection_name, config)
+
+    def _get_telescope_connection_map(self: QueryMixinHost) -> dict[str, Any]:
+        connection_map = {config.name: config for config in getattr(self, "connections", [])}
+        for config in (
+            getattr(self, "_direct_connection_config", None),
+            getattr(self, "current_config", None),
+        ):
+            if config and config.name not in connection_map:
+                connection_map[config.name] = config
+        return connection_map
+
+    def _connect_like_explorer(self: QueryMixinHost, connection_name: str, config: Any) -> None:
+        node = None
+        object_tree = getattr(self, "object_tree", None)
+        if object_tree is not None:
+            try:
+                for candidate in object_tree.root.children:
+                    if getattr(self, "_get_node_kind", None) and self._get_node_kind(candidate) != "connection":
+                        continue
+                    data = getattr(candidate, "data", None)
+                    node_config = getattr(data, "config", None)
+                    if node_config and node_config.name == connection_name:
+                        node = candidate
+                        break
+            except Exception:
+                node = None
+
+        if node is not None and hasattr(self, "_activate_tree_node"):
+            self._activate_tree_node(node)
+            return
+
+        self.connect_to_server(config)
+
+    def _format_telescope_connection_label(self: QueryMixinHost, config: Any) -> str:
+        endpoint = getattr(config, "tcp_endpoint", None)
+        if endpoint is None:
+            file_endpoint = getattr(config, "file_endpoint", None)
+            if file_endpoint and getattr(file_endpoint, "path", ""):
+                return file_endpoint.path
+            return getattr(config, "name", "")
+        database = getattr(config, "database", "")
+        return database or getattr(config, "name", "")
+
+    def _load_starred_by_connection(self: QueryMixinHost, connection_map: dict[str, Any]) -> dict[str, set[str]]:
+        starred_store = self.services.starred_store
+        loader = getattr(starred_store, "load_all", None)
+        if callable(loader):
+            return loader()
+        return {
+            name: starred_store.load_for_connection(name)
+            for name in connection_map.keys()
+        }
 
     def _delete_history_entry(self: QueryMixinHost, timestamp: str) -> None:
         """Delete a specific history entry by timestamp."""

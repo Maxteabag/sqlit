@@ -9,6 +9,7 @@ from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from sqlit.core.keymap import format_key
 from sqlit.core.leader_commands import get_leader_commands
 from sqlit.shared.ui.widgets import Dialog
 
@@ -21,7 +22,6 @@ class LeaderMenuScreen(ModalScreen):
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close", show=False),
-        Binding("space", "dismiss", "Close", show=False),
     ]
 
     CSS = """
@@ -48,6 +48,7 @@ class LeaderMenuScreen(ModalScreen):
         self._menu = menu
         leader_commands = get_leader_commands(menu)
         self._cmd_actions = {cmd.binding_action: cmd for cmd in leader_commands}
+        self._cmd_by_key = {cmd.key: cmd for cmd in leader_commands}
 
         for cmd in leader_commands:
             self._bindings.bind(cmd.key, f"cmd_{cmd.binding_action}", cmd.label, show=False)
@@ -69,7 +70,7 @@ class LeaderMenuScreen(ModalScreen):
             lines.append(f"[bold $text-muted]{category}[/]")
             for cmd in commands:
                 if cmd.is_allowed(ctx):
-                    lines.append(f"  [bold $warning]{cmd.key}[/] {cmd.label}")
+                    lines.append(f"  [bold $warning]{format_key(cmd.key)}[/] {cmd.label}")
             lines.append("")
 
         # Remove trailing empty line
@@ -86,6 +87,17 @@ class LeaderMenuScreen(ModalScreen):
     def on_key(self, event: Any) -> None:
         """Handle key events - explicit ESC handling."""
         if event.key == "escape":
+            self.dismiss(None)
+            event.stop()
+            return
+        if event.key == "space":
+            cmd = self._cmd_by_key.get("space")
+            if cmd:
+                app = cast("SSMSTUI", self.app)
+                if cmd.is_allowed(app._get_input_context()):
+                    self._run_and_dismiss(cmd.binding_action)
+                    event.stop()
+                    return
             self.dismiss(None)
             event.stop()
 

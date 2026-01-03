@@ -60,6 +60,14 @@ class HistoryStoreProtocol(Protocol):
         """
         ...
 
+    def load_all(self) -> list:
+        """Load query history for all connections.
+
+        Returns:
+            List of query history entries.
+        """
+        ...
+
 
 @runtime_checkable
 class TunnelFactoryProtocol(Protocol):
