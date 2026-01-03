@@ -15,6 +15,8 @@ class MainScreenState(State):
         self.allows("focus_explorer", help="Focus Explorer")
         self.allows("focus_query", help="Focus Query")
         self.allows("focus_results", help="Focus Results")
+        self.allows("show_connection_picker")
+        self.allows("disconnect", guard=lambda app: app.has_connection)
         self.allows("toggle_fullscreen", help="Toggle fullscreen")
         self.allows("show_help")
         self.allows("change_theme")
