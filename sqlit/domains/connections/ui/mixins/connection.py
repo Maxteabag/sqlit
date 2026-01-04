@@ -234,24 +234,27 @@ class ConnectionMixin:
                         return
                     self._load_schema_cache()
 
-                try:
-                    from sqlit.domains.shell.app.idle_scheduler import (
-                        Priority,
-                        get_idle_scheduler,
-                    )
-                except Exception:
-                    scheduler = None
+                if getattr(self, "_pending_telescope_query", None) or getattr(self, "_defer_schema_load", False):
+                    setattr(self, "_defer_schema_load", True)
                 else:
-                    scheduler = get_idle_scheduler()
-                if scheduler:
-                    scheduler.cancel_all(name="schema-cache-load")
-                    scheduler.request_idle_callback(
-                        load_schema_cache,
-                        priority=Priority.NORMAL,
-                        name="schema-cache-load",
-                    )
-                else:
-                    self.set_timer(0.25, load_schema_cache)
+                    try:
+                        from sqlit.domains.shell.app.idle_scheduler import (
+                            Priority,
+                            get_idle_scheduler,
+                        )
+                    except Exception:
+                        scheduler = None
+                    else:
+                        scheduler = get_idle_scheduler()
+                    if scheduler:
+                        scheduler.cancel_all(name="schema-cache-load")
+                        scheduler.request_idle_callback(
+                            load_schema_cache,
+                            priority=Priority.NORMAL,
+                            name="schema-cache-load",
+                        )
+                    else:
+                        self.set_timer(0.25, load_schema_cache)
             connect_hook = getattr(self, "_on_connect", None)
             if callable(connect_hook):
                 connect_hook()

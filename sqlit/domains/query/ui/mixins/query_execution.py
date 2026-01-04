@@ -110,6 +110,14 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         if self._query_spinner is not None:
             self._query_spinner.stop()
             self._query_spinner = None
+        if getattr(self, "_defer_schema_load", False):
+            setattr(self, "_defer_schema_load", False)
+            loader = getattr(self, "_load_schema_cache", None)
+            if callable(loader):
+                try:
+                    loader()
+                except Exception:
+                    pass
 
     def _get_history_store(self: QueryMixinHost) -> Any:
         store = getattr(self, "_history_store", None)
@@ -663,6 +671,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             self.action_execute_query()
             return
 
+        setattr(self, "_defer_schema_load", True)
         self._pending_telescope_query = (connection_name, query)
         self._connect_like_explorer(connection_name, config)
 

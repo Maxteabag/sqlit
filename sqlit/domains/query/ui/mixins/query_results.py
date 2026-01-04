@@ -11,6 +11,7 @@ from sqlit.shared.ui.widgets import SqlitDataTable
 from .query_constants import MAX_COLUMN_CONTENT_WIDTH, MAX_RENDER_ROWS
 
 RESULTS_RENDER_CHUNK_SIZE = 200
+RESULTS_RENDER_INITIAL_ROWS = 20
 
 
 class QueryResultsMixin:
@@ -100,14 +101,17 @@ class QueryResultsMixin:
         table: SqlitDataTable,
         rows: list[tuple],
         *,
+        start_index: int,
         row_limit: int,
         render_token: int,
     ) -> None:
         if not rows or row_limit <= 0:
             return
 
-        index = 0
+        index = max(0, start_index)
         total = min(len(rows), row_limit)
+        if index >= total:
+            return
 
         def add_batch() -> None:
             nonlocal index
@@ -152,13 +156,16 @@ class QueryResultsMixin:
         row_limit: int,
         render_token: int,
     ) -> None:
-        table = self._build_results_table(columns, [], escape=escape)
+        initial_count = min(RESULTS_RENDER_INITIAL_ROWS, row_limit)
+        initial_rows = rows[:initial_count] if initial_count > 0 else []
+        table = self._build_results_table(columns, initial_rows, escape=escape)
         if render_token != getattr(self, "_results_render_token", 0):
             return
         self._replace_results_table_with_table(table)
         self._schedule_results_render(
             table,
             rows,
+            start_index=initial_count,
             row_limit=row_limit,
             render_token=render_token,
         )

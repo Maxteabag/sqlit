@@ -8,9 +8,6 @@ from sqlit.shared.ui.lifecycle import LifecycleHooksMixin
 from sqlit.shared.ui.protocols import QueryMixinHost
 
 
-PROCESS_WORKER_PREFERRED_DB_TYPES = frozenset({"mssql"})
-
-
 class ProcessWorkerLifecycleMixin(LifecycleHooksMixin):
     """Shared process worker lifecycle helpers."""
 
@@ -21,14 +18,9 @@ class ProcessWorkerLifecycleMixin(LifecycleHooksMixin):
 
     def _use_process_worker(self: QueryMixinHost, provider: Any) -> bool:
         runtime = getattr(self.services, "runtime", None)
-        if runtime and getattr(runtime, "process_worker", False):
-            return True
-        if provider and getattr(provider, "metadata", None):
-            if provider.metadata.db_type in PROCESS_WORKER_PREFERRED_DB_TYPES:
-                if runtime:
-                    runtime.process_worker = True
-                return True
-        return False
+        if not runtime or not getattr(runtime, "process_worker", False):
+            return False
+        return True
 
     def _get_process_worker_client(self: QueryMixinHost) -> Any | None:
         client = getattr(self, "_process_worker_client", None)
