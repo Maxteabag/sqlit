@@ -101,6 +101,9 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]  # pycodestyle, pyflakes, isort, pyupgrade
 
+[tool.bandit]
+exclude_dirs = ["tests"]
+
 [project.scripts]
 sqlit = "sqlit.cli:main"
 
