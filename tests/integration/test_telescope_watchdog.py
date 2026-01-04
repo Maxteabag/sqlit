@@ -168,39 +168,16 @@ async def _wait_for_connection_node(app: SSMSTUI, pilot, *, timeout_s: float) ->
     return None
 
 
-async def _wait_for_query_trigger(app: SSMSTUI, pilot, *, timeout_s: float) -> bool:
-    start = time.monotonic()
-    while time.monotonic() - start < timeout_s:
-        if getattr(app, "_query_worker", None) is not None:
-            try:
-                query_text = app.query_input.text
-            except Exception:
-                query_text = ""
-            if TARGET_QUERY in query_text.lower():
-                return True
-        await pilot.pause(0.1)
-    return False
-
-
-async def _wait_for_results_table(app: SSMSTUI, pilot, *, timeout_s: float) -> bool:
+async def _wait_for_query_text(app: SSMSTUI, pilot, *, timeout_s: float) -> bool:
     start = time.monotonic()
     while time.monotonic() - start < timeout_s:
         try:
-            table = app.results_table
+            query_text = app.query_input.text
         except Exception:
-            table = None
-        if table is not None:
-            try:
-                row_count = table.row_count
-            except Exception:
-                row_count = 0
-            try:
-                stacked = app.results_area.has_class("stacked-mode")
-            except Exception:
-                stacked = False
-            if row_count > 0 and not stacked:
-                return True
-        await pilot.pause(0.2)
+            query_text = ""
+        if TARGET_QUERY in query_text.lower():
+            return True
+        await pilot.pause(0.1)
     return False
 
 
@@ -251,7 +228,7 @@ async def test_explorer_connect_no_stall() -> None:
 @pytest.mark.mssql
 @pytest.mark.asyncio
 async def test_telescope_query_no_stall() -> None:
-    """Telescope history query should not stall the UI."""
+    """Telescope history selection should not stall the UI."""
     runtime = RuntimeConfig.from_env()
     runtime.process_worker = True
     runtime.process_worker_warm_on_idle = False
@@ -300,11 +277,8 @@ async def test_telescope_query_no_stall() -> None:
         await pilot.press("enter")
         await pilot.pause(0.2)
 
-        if not await _wait_for_query_trigger(app, pilot, timeout_s=TIMEOUT_S):
-            pytest.fail("Telescope query did not trigger in time")
-
-        if not await _wait_for_results_table(app, pilot, timeout_s=TIMEOUT_S):
-            pytest.fail("Results table not populated")
+        if not await _wait_for_query_text(app, pilot, timeout_s=TIMEOUT_S):
+            pytest.fail("Telescope query not populated in time")
 
         await pilot.pause(STALL_WINDOW_S)
         app.exit()

@@ -203,7 +203,6 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             return
         self._pending_telescope_query = None
         self._apply_history_query(query)
-        self.action_execute_query()
 
     @property
     def in_transaction(self: QueryMixinHost) -> bool:
@@ -668,11 +667,9 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             and self.current_config.name == connection_name
         ):
             self._pending_telescope_query = None
-            self.action_execute_query()
             return
 
-        setattr(self, "_defer_schema_load", True)
-        self._pending_telescope_query = (connection_name, query)
+        self._pending_telescope_query = None
         self._connect_like_explorer(connection_name, config)
 
     def _get_telescope_connection_map(self: QueryMixinHost) -> dict[str, Any]:
