@@ -45,6 +45,23 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         if callable(emit):
             emit(name, **data)
 
+    def _schedule_timer(self: TreeMixinHost, delay_s: float, callback: Any) -> Any | None:
+        set_timer = getattr(self, "set_timer", None)
+        if callable(set_timer):
+            return set_timer(delay_s, callback)
+        call_later = getattr(self, "call_later", None)
+        if callable(call_later):
+            try:
+                call_later(callback)
+                return None
+            except Exception:
+                pass
+        try:
+            callback()
+        except Exception:
+            pass
+        return None
+
     def on_tree_node_collapsed(self: TreeMixinHost, event: Tree.NodeCollapsed) -> None:
         """Save state when a node is collapsed."""
         tree_expansion_state.update_expanded_state(self, event.node, expanded=False)
@@ -223,7 +240,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
                     name="schema-load",
                 )
             else:
-                self.set_timer(MIN_TIMER_DELAY_S, run_loader)
+                self._schedule_timer(MIN_TIMER_DELAY_S, run_loader)
         self.notify("Refreshed")
 
     def refresh_tree(self: TreeMixinHost) -> None:
@@ -367,7 +384,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             except Exception:
                 columns = []
 
-            self.set_timer(
+            self._schedule_timer(
                 MIN_TIMER_DELAY_S,
                 lambda: self._apply_last_query_table_columns(
                     token,
@@ -408,7 +425,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
                 timer.stop()
             except Exception:
                 pass
-        self._expanded_state_save_timer = self.set_timer(
+        self._expanded_state_save_timer = self._schedule_timer(
             0.2,
             lambda: tree_expansion_state.persist_expanded_state(self),
         )
@@ -500,7 +517,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
                     name="schema-load",
                 )
             else:
-                self.set_timer(MIN_TIMER_DELAY_S, run_loader)
+                self._schedule_timer(MIN_TIMER_DELAY_S, run_loader)
         if callable(on_ready):
             on_ready()
 
