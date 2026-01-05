@@ -70,13 +70,13 @@ docker compose -f infra/docker/docker-compose.test.yml down
 ### Running Tests for Specific Databases
 
 ```bash
-pytest tests/ -v -k sqlite      # SQLite only
-pytest tests/ -v -k mssql       # SQL Server only
-pytest tests/ -v -k PostgreSQL  # PostgreSQL only
-pytest tests/ -v -k MySQL       # MySQL only
-pytest tests/ -v -k cockroach   # CockroachDB only
-pytest tests/ -v -k firebird    # FirebirdSQL only
-pytest tests/ -v -k flight      # Flight SQL only
+pytest tests/ -v -k sqlite
+pytest tests/ -v -k mssql
+pytest tests/ -v -k PostgreSQL
+pytest tests/ -v -k MySQL
+pytest tests/ -v -k cockroach
+pytest tests/ -v -k firebird
+pytest tests/ -v -k flight
 ```
 
 ### Environment Variables
@@ -185,36 +185,6 @@ The database tests can be configured with these environment variables:
 | `FLIGHT_PASSWORD` | `` | Flight SQL password (optional) |
 | `FLIGHT_DATABASE` | `` | Flight SQL database/catalog (optional) |
 
-### CockroachDB Quickstart (Docker)
-
-1. Start the included CockroachDB container:
-   ```bash
-   docker compose -f infra/docker/docker-compose.test.yml up -d cockroachdb
-   ```
-2. Create a connection (default container runs insecure mode on port `26257` with `root` user):
-   ```bash
-   sqlit connection create \
-     --name "LocalCockroach" \
-     --db-type cockroachdb \
-     --server "localhost" \
-     --port "26257" \
-     --database "defaultdb" \
-     --username "root"
-   ```
-3. Launch sqlit and connect:
-   ```bash
-   sqlit
-   ```
-
-## CI/CD
-
-The project uses GitHub Actions for continuous integration:
-
-- **Build**: Verifies the package builds on Python 3.10-3.13
-- **SQLite Tests**: Runs SQLite integration tests (no external dependencies)
-- **SQL Server Tests**: Runs SQL Server integration tests with Docker service
--
-
 ### Vision
 
 The core purpose of this application is to read Read&Write to a SQL database.
@@ -292,11 +262,3 @@ sqlit should provide fun and a feeling of mastery and satisfaction for those who
 **Example:**
 <e> = explorer pane, <q> = query pane, <r> = results pane.
 Rationale: E;Q;R satisfies both intuitiveness (each binding is the first letter of the pane), harmony (proximity: qwerty speaks for itself)
-
-- **PostgreSQL Tests**: Runs PostgreSQL integration tests with Docker service
-- **MySQL Tests**: Runs MySQL integration tests with Docker service
-- **Firebird Tests**: Runs Firebird integration tests with Docker service
-- **MariaDB/Oracle/DuckDB/CockroachDB Tests**: Runs the remaining database integration tests with Docker service where applicable
-- **Full Test Suite**: Runs all tests across every supported database
-
-Pull requests must pass all CI checks before merging.
