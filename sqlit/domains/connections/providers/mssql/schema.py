@@ -19,6 +19,7 @@ def _get_mssql_auth_options() -> tuple[SelectOption, ...]:
         SelectOption("ad_password", "Azure AD Password"),
         SelectOption("ad_interactive", "Azure AD Interactive"),
         SelectOption("ad_integrated", "Azure AD Integrated"),
+        SelectOption("ad_default", "Azure AD Default (CLI)"),
     )
 
 
