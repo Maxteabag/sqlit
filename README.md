@@ -100,7 +100,7 @@ sqlit is for the developer who just wants to query their database with a user fr
 
 ## Installation
 
-```text
+```bash
 # pipx (recommended)
 pipx install sqlit-tui
 
@@ -279,7 +279,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 
 SSH tunnel functionality requires additional dependencies. Install with the `ssh` extra:
 
-```text
+```bash
 # pipx
 pipx install 'sqlit-tui[ssh]'
 
