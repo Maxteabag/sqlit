@@ -140,6 +140,13 @@ class UIStatusMixin:
             else:
                 query_area.add_class("vim-insert")
 
+        try:
+            query_input = self.query_input
+        except Exception:
+            query_input = None
+        if query_input is not None and hasattr(query_input, "sync_terminal_cursor"):
+            query_input.sync_terminal_cursor()
+
         # Also update the status bar
         self._update_status_bar()
 

@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 class QueryTextArea(TextArea):
     """TextArea that intercepts clipboard keys and defers Enter to app."""
 
+    _INSERT_CURSOR_COLOR = "#91C58D"
     _last_text: str = ""
+    _terminal_cursor_active: bool = False
 
     # Normalize OS-variant shortcuts to canonical forms
     # Maps: super → ctrl for common operations, strips shift where irrelevant
@@ -53,6 +55,48 @@ class QueryTextArea(TextArea):
         from sqlit.core.vim import VimMode
         vim_mode = getattr(self.app, "vim_mode", None)
         return vim_mode == VimMode.INSERT
+
+    def _should_use_terminal_cursor(self) -> bool:
+        """Use a terminal bar cursor only in INSERT mode with focus."""
+        return self.has_focus and self._is_insert_mode()
+
+    def _sync_terminal_cursor(self) -> None:
+        """Show/hide a terminal bar cursor based on insert mode and focus."""
+        use_terminal = self._should_use_terminal_cursor()
+        if use_terminal == self._terminal_cursor_active:
+            return
+
+        self._terminal_cursor_active = use_terminal
+        self._line_cache.clear()
+        self.refresh()
+
+        driver = getattr(self.app, "_driver", None)
+        if driver is None:
+            return
+
+        if use_terminal:
+            # Show cursor and request steady bar shape (DECSCUSR 6).
+            driver.write("\x1b[?25h\x1b[6 q")
+            driver.write(f"\x1b]12;{self._INSERT_CURSOR_COLOR}\x1b\\")
+        else:
+            # Hide cursor and reset to steady block (DECSCUSR 2).
+            driver.write("\x1b[?25l\x1b[2 q")
+            driver.write("\x1b]112\x1b\\")
+        driver.flush()
+
+    def sync_terminal_cursor(self) -> None:
+        """Public hook to refresh cursor rendering."""
+        self._sync_terminal_cursor()
+
+    @property
+    def _draw_cursor(self) -> bool:  # type: ignore[override]
+        if self._should_use_terminal_cursor():
+            return False
+        return super()._draw_cursor
+
+    def _watch_has_focus(self, focus: bool) -> None:
+        super()._watch_has_focus(focus)
+        self._sync_terminal_cursor()
 
     async def _on_key(self, event: Key) -> None:
         """Intercept clipboard, undo/redo, and Enter keys."""

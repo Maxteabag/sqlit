@@ -131,7 +131,7 @@
     }
 
     #query-area.vim-insert TextArea > .text-area--cursor {
-        /* Cursor for INSERT mode - soft green */
+        /* Cursor for INSERT mode - soft green (fallback when bar cursor is unavailable) */
         background: #91C58D;
         color: $surface;
     }
