@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from rich.syntax import Syntax
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
@@ -46,27 +49,31 @@ class ValueViewScreen(ModalScreen):
 
     def __init__(self, value: str, title: str = "Value"):
         super().__init__()
-        self.value = self._format_value(value)
+        self._raw_value = value
+        self._display_value = self._format_value(value)
         self.title = title
 
-    def _format_value(self, value: str) -> str:
-        """Try to format value as JSON or Python literal if possible."""
+    @property
+    def value(self) -> str:
+        return self._raw_value
+
+    def _format_value(self, value: str) -> str | Syntax:
+        """Try to format value as JSON with syntax highlighting."""
         import ast
         import json
 
         stripped = value.strip()
-        # Check if it looks like JSON/dict/list (starts with { or [)
         if stripped and stripped[0] in "{[":
-            # Try JSON first
             try:
                 parsed = json.loads(stripped)
-                return json.dumps(parsed, indent=2, ensure_ascii=False)
+                formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
+                return Syntax(formatted, "json", theme="ansi_dark", word_wrap=True)
             except (json.JSONDecodeError, ValueError):
                 pass
-            # Try Python literal (handles single quotes, True/False/None)
             try:
                 parsed = ast.literal_eval(stripped)
-                return json.dumps(parsed, indent=2, ensure_ascii=False)
+                formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
+                return Syntax(formatted, "json", theme="ansi_dark", word_wrap=True)
             except (ValueError, SyntaxError):
                 pass
         return value
@@ -74,7 +81,7 @@ class ValueViewScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         shortcuts = [("Copy", "y"), ("Close", "<enter>")]
         with Dialog(id="value-dialog", title=self.title, shortcuts=shortcuts), VerticalScroll(id="value-scroll"):
-            yield Static(self.value, id="value-text")
+            yield Static(self._display_value, id="value-text", markup=False)
 
     def on_mount(self) -> None:
         self.query_one("#value-scroll").focus()

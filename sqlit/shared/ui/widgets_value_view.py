@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from rich.syntax import Syntax
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.events import Key
@@ -64,7 +65,7 @@ class InlineValueView(VerticalScroll):
             return
 
     def compose(self) -> ComposeResult:
-        yield Static("", id="value-content")
+        yield Static("", id="value-content", markup=False)
 
     def set_value(self, value: str, column_name: str = "") -> None:
         """Set the value to display."""
@@ -72,9 +73,10 @@ class InlineValueView(VerticalScroll):
         self._column_name = column_name
         self._rebuild()
 
-    def _format_value(self, value: str, wrap_width: int = 100) -> str:
+    def _format_value(self, value: str, wrap_width: int = 100) -> str | Syntax:
         """Try to format value as JSON or Python literal if possible.
 
+        Returns a Syntax object for JSON (with highlighting), or a string for plain text.
         Long plain text strings are wrapped at wrap_width characters.
         """
         import ast
@@ -87,13 +89,15 @@ class InlineValueView(VerticalScroll):
             # Try JSON first
             try:
                 parsed = json.loads(stripped)
-                return json.dumps(parsed, indent=2, ensure_ascii=False)
+                formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
+                return Syntax(formatted, "json", theme="ansi_dark", word_wrap=True)
             except (json.JSONDecodeError, ValueError):
                 pass
             # Try Python literal (handles single quotes, True/False/None)
             try:
                 parsed = ast.literal_eval(stripped)
-                return json.dumps(parsed, indent=2, ensure_ascii=False)
+                formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
+                return Syntax(formatted, "json", theme="ansi_dark", word_wrap=True)
             except (ValueError, SyntaxError):
                 pass
 
