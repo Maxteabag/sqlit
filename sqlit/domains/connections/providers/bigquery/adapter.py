@@ -127,7 +127,16 @@ class BigQueryAdapter(CursorBasedAdapter):
         credentials = None
         client_options = None
 
+        # Check for emulator: either via env var or by detecting a port in config
+        # (BigQuery doesn't normally use TCP, so any port means emulator)
         emulator_host = os.environ.get("BIGQUERY_EMULATOR_HOST")
+        endpoint = config.tcp_endpoint
+        if not emulator_host and endpoint and endpoint.port:
+            # Any port specified means we're connecting to an emulator
+            # Default to localhost if no explicit host for emulator
+            host = "localhost"
+            emulator_host = f"http://{host}:{endpoint.port}"
+
         if emulator_host:
             if not emulator_host.startswith("http"):
                 emulator_host = f"http://{emulator_host}"

@@ -32,6 +32,13 @@ SCHEMA = ConnectionSchema(
             description="GCP Project ID (or infer from environment)",
         ),
         SchemaField(
+            name="port",
+            label="Emulator Port",
+            placeholder="9050",
+            required=False,
+            description="Port for local BigQuery emulator (leave empty for real BigQuery)",
+        ),
+        SchemaField(
             name="database",
             label="Dataset",
             placeholder="my_dataset",
