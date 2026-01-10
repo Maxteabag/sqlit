@@ -145,6 +145,35 @@ class ConnectionMixin:
         data = getattr(node, "data", None)
         return self._get_connection_config_from_data(data)
 
+    def _find_connection_node_by_name(self: ConnectionMixinHost, name: str) -> Any | None:
+        if not name:
+            return None
+        stack = [self.object_tree.root]
+        while stack:
+            node = stack.pop()
+            for child in node.children:
+                config = self._get_connection_config_from_node(child)
+                if config and config.name == name:
+                    return child
+                stack.append(child)
+        return None
+
+    def _get_connection_folder_path(self: ConnectionMixinHost, node: Any) -> str | None:
+        if not node or self._get_node_kind(node) != "connection_folder":
+            return None
+        parts: list[str] = []
+        current = node
+        while current and current != self.object_tree.root:
+            if self._get_node_kind(current) == "connection_folder":
+                data = getattr(current, "data", None)
+                name = getattr(data, "name", None)
+                if isinstance(name, str) and name:
+                    parts.append(name)
+            current = current.parent
+        if not parts:
+            return None
+        return "/".join(reversed(parts))
+
     def connect_to_server(self: ConnectionMixinHost, config: ConnectionConfig) -> None:
         """Connect to a database (async, non-blocking).
 
@@ -369,11 +398,9 @@ class ConnectionMixin:
             cursor_config = self._get_connection_config_from_node(cursor)
             if not cursor_config or cursor_config.name != self.current_config.name:
                 return
-        for node in self.object_tree.root.children:
-            config = self._get_connection_config_from_node(node)
-            if config and config.name == self.current_config.name:
-                self.object_tree.move_cursor(node)
-                break
+        node = self._find_connection_node_by_name(self.current_config.name)
+        if node is not None:
+            self.object_tree.move_cursor(node)
 
     def action_disconnect(self: ConnectionMixinHost) -> None:
         """Disconnect from current database."""
@@ -619,6 +646,179 @@ class ConnectionMixin:
         if credentials_error:
             self.push_screen(ErrorScreen("Keyring Error", str(credentials_error)))
 
+    def action_move_connection_to_folder(self: ConnectionMixinHost) -> None:
+        from sqlit.domains.connections.app.credentials import CredentialsPersistError
+        from sqlit.domains.connections.domain.config import normalize_folder_path
+        from sqlit.domains.connections.ui.screens import FolderInputScreen
+        from sqlit.shared.ui.screens.error import ErrorScreen
+
+        node = self.object_tree.cursor_node
+        if not node:
+            return
+
+        config = self._get_connection_config_from_node(node)
+        if not config:
+            return
+
+        if not any(c.name == config.name for c in self.connections):
+            self.notify("Only saved connections can be moved", severity="warning")
+            return
+
+        current_path = getattr(config, "folder_path", "")
+
+        def on_result(value: str | None) -> None:
+            if value is None:
+                return
+            new_path = normalize_folder_path(value)
+            if new_path == current_path:
+                return
+            config.folder_path = new_path
+            credentials_error: CredentialsPersistError | None = None
+
+            try:
+                self.services.connection_store.save_all(self.connections)
+            except CredentialsPersistError as exc:
+                credentials_error = exc
+            except Exception as exc:
+                config.folder_path = current_path
+                self.notify(f"Failed to move connection: {exc}", severity="error")
+                return
+
+            if not self.services.connection_store.is_persistent:
+                self.notify("Connections are not persisted in this session", severity="warning")
+
+            self._refresh_connection_tree()
+            if new_path:
+                self.notify(f"Moved to folder '{new_path}'")
+            else:
+                self.notify("Moved to root")
+            if credentials_error:
+                self.push_screen(ErrorScreen("Keyring Error", str(credentials_error)))
+
+        self.push_screen(
+            FolderInputScreen(config.name, current_value=current_path),
+            on_result,
+        )
+
+    def action_rename_connection_folder(self: ConnectionMixinHost) -> None:
+        from sqlit.domains.connections.app.credentials import CredentialsPersistError
+        from sqlit.domains.connections.domain.config import normalize_folder_path
+        from sqlit.domains.connections.ui.screens import FolderInputScreen
+        from sqlit.shared.ui.screens.error import ErrorScreen
+
+        node = self.object_tree.cursor_node
+        folder_path = self._get_connection_folder_path(node)
+        if not folder_path:
+            return
+
+        parent_path = "/".join(folder_path.split("/")[:-1])
+        current_name = folder_path.split("/")[-1]
+
+        def on_result(value: str | None) -> None:
+            if value is None:
+                return
+            new_segment = normalize_folder_path(value)
+            if not new_segment:
+                self.notify("Folder name cannot be empty", severity="warning")
+                return
+            new_path = f"{parent_path}/{new_segment}" if parent_path else new_segment
+            if new_path == folder_path:
+                return
+
+            updated = False
+            for conn in self.connections:
+                path = getattr(conn, "folder_path", "") or ""
+                if path == folder_path or path.startswith(f"{folder_path}/"):
+                    remainder = "" if path == folder_path else path[len(folder_path) + 1 :]
+                    conn.folder_path = f"{new_path}/{remainder}" if remainder else new_path
+                    updated = True
+
+            if not updated:
+                return
+
+            credentials_error: CredentialsPersistError | None = None
+            try:
+                self.services.connection_store.save_all(self.connections)
+            except CredentialsPersistError as exc:
+                credentials_error = exc
+            except Exception as exc:
+                self.notify(f"Failed to rename folder: {exc}", severity="error")
+                return
+
+            if not self.services.connection_store.is_persistent:
+                self.notify("Connections are not persisted in this session", severity="warning")
+
+            self._refresh_connection_tree()
+            self.notify(f"Renamed folder to '{new_path}'")
+            if credentials_error:
+                self.push_screen(ErrorScreen("Keyring Error", str(credentials_error)))
+
+        self.push_screen(
+            FolderInputScreen(
+                current_name,
+                current_value=current_name,
+                title="Rename Folder",
+                description=f"Rename folder '{folder_path}' (use / for nesting):",
+            ),
+            on_result,
+        )
+
+    def action_delete_connection_folder(self: ConnectionMixinHost) -> None:
+        from sqlit.domains.connections.app.credentials import CredentialsPersistError
+        from sqlit.shared.ui.screens.confirm import ConfirmScreen
+        from sqlit.shared.ui.screens.error import ErrorScreen
+
+        node = self.object_tree.cursor_node
+        folder_path = self._get_connection_folder_path(node)
+        if not folder_path:
+            return
+
+        parent_path = "/".join(folder_path.split("/")[:-1])
+
+        def do_delete(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+
+            updated = False
+            for conn in self.connections:
+                path = getattr(conn, "folder_path", "") or ""
+                if path == folder_path or path.startswith(f"{folder_path}/"):
+                    remainder = "" if path == folder_path else path[len(folder_path) + 1 :]
+                    if parent_path:
+                        new_path = f"{parent_path}/{remainder}" if remainder else parent_path
+                    else:
+                        new_path = remainder
+                    conn.folder_path = new_path
+                    updated = True
+
+            if not updated:
+                return
+
+            credentials_error: CredentialsPersistError | None = None
+            try:
+                self.services.connection_store.save_all(self.connections)
+            except CredentialsPersistError as exc:
+                credentials_error = exc
+            except Exception as exc:
+                self.notify(f"Failed to delete folder: {exc}", severity="error")
+                return
+
+            if not self.services.connection_store.is_persistent:
+                self.notify("Connections are not persisted in this session", severity="warning")
+
+            self._refresh_connection_tree()
+            self.notify(f"Deleted folder '{folder_path}'")
+            if credentials_error:
+                self.push_screen(ErrorScreen("Keyring Error", str(credentials_error)))
+
+        self.push_screen(
+            ConfirmScreen(
+                f"Delete folder '{folder_path}'?",
+                "Connections will move to the parent folder.",
+            ),
+            do_delete,
+        )
+
     def action_delete_connection(self: ConnectionMixinHost) -> None:
         from sqlit.shared.ui.screens.confirm import ConfirmScreen
 
@@ -708,15 +908,13 @@ class ConnectionMixin:
             matching_config = next((c for c in self.connections if c.name == config.name), None)
             if matching_config:
                 config = matching_config
-            for node in self.object_tree.root.children:
-                node_config = self._get_connection_config_from_node(node)
-                if node_config and node_config.name == config.name:
-                    self._emit_debug(
-                        "connection_picker.select_node",
-                        connection=config.name,
-                    )
-                    self.object_tree.move_cursor(node)
-                    break
+            node = self._find_connection_node_by_name(config.name)
+            if node is not None:
+                self._emit_debug(
+                    "connection_picker.select_node",
+                    connection=config.name,
+                )
+                self.object_tree.move_cursor(node)
             if self.current_config and self.current_config.name == config.name:
                 self._emit_debug("connection_picker.already_connected", connection=config.name)
                 self.notify(f"Already connected to {config.name}")
@@ -728,12 +926,10 @@ class ConnectionMixin:
         selected_config = next((c for c in self.connections if c.name == result), None)
         if selected_config:
             self._emit_debug("connection_picker.result", result="name", connection=selected_config.name)
-            for node in self.object_tree.root.children:
-                node_config = self._get_connection_config_from_node(node)
-                if node_config and node_config.name == result:
-                    self._emit_debug("connection_picker.select_node", connection=selected_config.name)
-                    self.object_tree.move_cursor(node)
-                    break
+            node = self._find_connection_node_by_name(result)
+            if node is not None:
+                self._emit_debug("connection_picker.select_node", connection=selected_config.name)
+                self.object_tree.move_cursor(node)
 
             if self.current_config and self.current_config.name == selected_config.name:
                 self._emit_debug("connection_picker.already_connected", connection=selected_config.name)

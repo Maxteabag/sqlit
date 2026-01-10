@@ -45,6 +45,7 @@ from tests.fixtures.postgres import (
 from tests.fixtures.utils import is_port_open, wait_for_port
 from tests.helpers import ConnectionConfig
 from tests.integration.browsing_base import (
+    find_connection_node,
     find_database_node,
     find_folder_node,
     find_node_by_type,
@@ -370,11 +371,7 @@ def _has_column_children(node: Any) -> bool:
 def _has_connected_tables_folder(app: SSMSTUI) -> bool:
     if app.current_config is None:
         return False
-    connected_node = None
-    for child in app.object_tree.root.children:
-        if isinstance(child.data, ConnectionNode) and child.data.config.name == app.current_config.name:
-            connected_node = child
-            break
+    connected_node = find_connection_node(app.object_tree.root, app.current_config.name)
     if connected_node is None:
         return False
     return find_folder_node(connected_node, "tables") is not None
@@ -614,11 +611,7 @@ async def _connect_and_prepare_tree(
         description="connection to be established",
     )
 
-    connected_node = None
-    for child in app.object_tree.root.children:
-        if isinstance(child.data, ConnectionNode) and child.data.config.name == config.name:
-            connected_node = child
-            break
+    connected_node = find_connection_node(app.object_tree.root, config.name)
     if connected_node is None:
         raise AssertionError("Connected node not found")
 

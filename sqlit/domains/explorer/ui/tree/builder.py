@@ -7,7 +7,7 @@ from typing import Any, Callable
 from rich.markup import escape as escape_markup
 
 from sqlit.domains.connections.providers.metadata import get_connection_display_info
-from sqlit.domains.explorer.domain.tree_nodes import ConnectionNode, FolderNode
+from sqlit.domains.explorer.domain.tree_nodes import ConnectionFolderNode, ConnectionNode, FolderNode
 from sqlit.shared.ui.protocols import TreeMixinHost
 
 MIN_TIMER_DELAY_S = 0.001
@@ -16,23 +16,94 @@ MAX_SYNC_CONNECTIONS = 50
 
 
 def _sort_connections_for_display(connections: list[Any]) -> list[Any]:
-    return [
-        conn
-        for _, conn in sorted(
-            enumerate(connections),
-            key=lambda item: (not getattr(item[1], "favorite", False), item[0]),
-        )
-    ]
+    grouped: dict[str, list[Any]] = {}
+    order: list[str] = []
+    for conn in connections:
+        folder_path = getattr(conn, "folder_path", "") or ""
+        if folder_path not in grouped:
+            grouped[folder_path] = []
+            order.append(folder_path)
+        grouped[folder_path].append(conn)
+
+    ordered: list[Any] = []
+    for folder_path in order:
+        items = grouped[folder_path]
+        favorites = [c for c in items if getattr(c, "favorite", False)]
+        others = [c for c in items if not getattr(c, "favorite", False)]
+        ordered.extend(favorites + others)
+    return ordered
+
+
+def _build_connection_folders(host: TreeMixinHost, connections: list[Any]) -> None:
+    for conn in connections:
+        folder_parts = _split_folder_path(getattr(conn, "folder_path", ""))
+        if folder_parts:
+            _ensure_connection_folder_path(host, folder_parts)
+
+
+def _split_folder_path(path: str | None) -> list[str]:
+    if not path:
+        return []
+    return [part for part in str(path).split("/") if part]
+
+
+def _find_connection_folder_child(host: TreeMixinHost, parent: Any, name: str) -> Any | None:
+    for child in parent.children:
+        if host._get_node_kind(child) != "connection_folder":
+            continue
+        data = getattr(child, "data", None)
+        if getattr(data, "name", None) == name:
+            return child
+    return None
+
+
+def _ensure_connection_folder_path(host: TreeMixinHost, folder_parts: list[str]) -> Any:
+    parent = host.object_tree.root
+    for part in folder_parts:
+        node = _find_connection_folder_child(host, parent, part)
+        if node is None:
+            node = parent.add(part)
+            node.data = ConnectionFolderNode(name=part)
+            node.allow_expand = True
+        parent = node
+    return parent
+
+
+def _add_connection_node(
+    host: TreeMixinHost,
+    config: Any,
+    *,
+    is_connected: bool,
+    is_connecting: bool,
+    spinner: str | None,
+) -> Any:
+    if is_connected:
+        label = host._format_connection_label(config, "connected")
+    elif is_connecting:
+        label = host._format_connection_label(config, "connecting", spinner=spinner)
+    else:
+        label = host._format_connection_label(config, "idle")
+
+    folder_parts = _split_folder_path(getattr(config, "folder_path", ""))
+    parent = _ensure_connection_folder_path(host, folder_parts)
+
+    node = parent.add(label)
+    node.data = ConnectionNode(config=config)
+    node.allow_expand = is_connected
+    return node
 
 
 def _find_connection_node(host: TreeMixinHost, config: Any) -> Any | None:
-    for node in host.object_tree.root.children:
-        if host._get_node_kind(node) != "connection":
-            continue
-        data = getattr(node, "data", None)
-        node_config = getattr(data, "config", None)
-        if node_config and node_config.name == config.name:
-            return node
+    stack = [host.object_tree.root]
+    while stack:
+        node = stack.pop()
+        for child in node.children:
+            if host._get_node_kind(child) == "connection":
+                data = getattr(child, "data", None)
+                node_config = getattr(data, "config", None)
+                if node_config and node_config.name == config.name:
+                    return child
+            stack.append(child)
     return None
 
 
@@ -45,8 +116,13 @@ def ensure_connecting_indicator(host: TreeMixinHost, config: Any) -> None:
         node.set_label(label)
         node.allow_expand = False
         return
-    node = host.object_tree.root.add(label)
-    node.data = ConnectionNode(config=config)
+    node = _add_connection_node(
+        host,
+        config,
+        is_connected=False,
+        is_connecting=True,
+        spinner=spinner,
+    )
     node.allow_expand = False
 
 
@@ -116,16 +192,10 @@ def update_connecting_indicator(host: TreeMixinHost) -> None:
 
     spinner = host._connect_spinner_frame()
     label = host._format_connection_label(connecting_config, "connecting", spinner=spinner)
-
-    for node in host.object_tree.root.children:
-        if host._get_node_kind(node) != "connection":
-            continue
-        data = getattr(node, "data", None)
-        config = getattr(data, "config", None)
-        if config and config.name == connecting_config.name:
-            node.set_label(label)
-            node.allow_expand = False
-            break
+    node = _find_connection_node(host, connecting_config)
+    if node is not None:
+        node.set_label(label)
+        node.allow_expand = False
 
 
 def refresh_tree(host: TreeMixinHost) -> None:
@@ -150,19 +220,18 @@ def refresh_tree(host: TreeMixinHost) -> None:
     if connecting_config and not any(c.name == connecting_config.name for c in connections):
         connections = connections + [connecting_config]
     connections = _sort_connections_for_display(connections)
+    _build_connection_folders(host, connections)
 
     for conn in connections:
         is_connected = host.current_config is not None and conn.name == host.current_config.name
         is_connecting = connecting_name == conn.name and not is_connected
-        if is_connected:
-            label = host._format_connection_label(conn, "connected")
-        elif is_connecting:
-            label = host._format_connection_label(conn, "connecting", spinner=connecting_spinner)
-        else:
-            label = host._format_connection_label(conn, "idle")
-        node = host.object_tree.root.add(label)
-        node.data = ConnectionNode(config=conn)
-        node.allow_expand = is_connected
+        _add_connection_node(
+            host,
+            conn,
+            is_connected=is_connected,
+            is_connecting=is_connecting,
+            spinner=connecting_spinner,
+        )
 
     if host.current_connection is not None and host.current_config is not None:
         populate_connected_tree(host)
@@ -198,6 +267,7 @@ def refresh_tree_chunked(
     if connecting_config and not any(c.name == connecting_config.name for c in connections):
         connections = connections + [connecting_config]
     connections = _sort_connections_for_display(connections)
+    _build_connection_folders(host, connections)
 
     def schedule_populate() -> None:
         if getattr(host, "_tree_refresh_token", None) is not token:
@@ -250,15 +320,13 @@ def refresh_tree_chunked(
         for conn in connections:
             is_connected = host.current_config is not None and conn.name == host.current_config.name
             is_connecting = connecting_name == conn.name and not is_connected
-            if is_connected:
-                label = host._format_connection_label(conn, "connected")
-            elif is_connecting:
-                label = host._format_connection_label(conn, "connecting", spinner=connecting_spinner)
-            else:
-                label = host._format_connection_label(conn, "idle")
-            node = host.object_tree.root.add(label)
-            node.data = ConnectionNode(config=conn)
-            node.allow_expand = is_connected
+            _add_connection_node(
+                host,
+                conn,
+                is_connected=is_connected,
+                is_connecting=is_connecting,
+                spinner=connecting_spinner,
+            )
 
         def finish_sync() -> None:
             schedule_populate()
@@ -277,15 +345,13 @@ def refresh_tree_chunked(
         for conn in connections[idx:end]:
             is_connected = host.current_config is not None and conn.name == host.current_config.name
             is_connecting = connecting_name == conn.name and not is_connected
-            if is_connected:
-                label = host._format_connection_label(conn, "connected")
-            elif is_connecting:
-                label = host._format_connection_label(conn, "connecting", spinner=connecting_spinner)
-            else:
-                label = host._format_connection_label(conn, "idle")
-            node = host.object_tree.root.add(label)
-            node.data = ConnectionNode(config=conn)
-            node.allow_expand = is_connected
+            _add_connection_node(
+                host,
+                conn,
+                is_connected=is_connected,
+                is_connecting=is_connecting,
+                spinner=connecting_spinner,
+            )
         idx = end
         if idx < len(connections):
             host.set_timer(MIN_TIMER_DELAY_S, add_batch)
@@ -321,19 +387,17 @@ def populate_connected_tree(host: TreeMixinHost) -> None:
             name = f"{favorite_prefix}{source_emoji}{escaped_name}"
         return f"{name} [{db_type_label}] ({display_info})"
 
-    active_node = None
-    for child in host.object_tree.root.children:
-        if host._get_node_kind(child) == "connection":
-            data = getattr(child, "data", None)
-            config = getattr(data, "config", None)
-            if config and config.name == host.current_config.name:
-                child.set_label(get_conn_label(host.current_config, connected=True))
-                active_node = child
-                break
-
-    if not active_node:
-        active_node = host.object_tree.root.add(get_conn_label(host.current_config, connected=True))
-        active_node.data = ConnectionNode(config=host.current_config)
+    active_node = _find_connection_node(host, host.current_config)
+    if active_node is not None:
+        active_node.set_label(get_conn_label(host.current_config, connected=True))
+    else:
+        active_node = _add_connection_node(
+            host,
+            host.current_config,
+            is_connected=True,
+            is_connecting=False,
+            spinner=None,
+        )
         active_node.allow_expand = True
 
     active_node.remove_children()

@@ -158,11 +158,15 @@ async def _wait_for_connection(app: SSMSTUI, pilot, *, timeout_s: float) -> bool
 async def _wait_for_connection_node(app: SSMSTUI, pilot, *, timeout_s: float) -> Any | None:
     start = time.monotonic()
     while time.monotonic() - start < timeout_s:
-        for candidate in app.object_tree.root.children:
-            data = getattr(candidate, "data", None)
-            config = getattr(data, "config", None)
-            if config and config.name == TARGET_CONNECTION:
-                return candidate
+        stack = [app.object_tree.root]
+        while stack:
+            node = stack.pop()
+            for child in node.children:
+                data = getattr(child, "data", None)
+                config = getattr(data, "config", None)
+                if config and config.name == TARGET_CONNECTION:
+                    return child
+                stack.append(child)
         tree_builder.refresh_tree(app)
         await pilot.pause(0.2)
     return None

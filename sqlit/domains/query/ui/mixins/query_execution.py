@@ -687,14 +687,20 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         object_tree = getattr(self, "object_tree", None)
         if object_tree is not None:
             try:
-                for candidate in object_tree.root.children:
-                    if getattr(self, "_get_node_kind", None) and self._get_node_kind(candidate) != "connection":
-                        continue
-                    data = getattr(candidate, "data", None)
-                    node_config = getattr(data, "config", None)
-                    if node_config and node_config.name == connection_name:
-                        node = candidate
-                        break
+                stack = [object_tree.root]
+                while stack:
+                    current = stack.pop()
+                    for child in current.children:
+                        if getattr(self, "_get_node_kind", None) and self._get_node_kind(child) != "connection":
+                            stack.append(child)
+                            continue
+                        data = getattr(child, "data", None)
+                        node_config = getattr(data, "config", None)
+                        if node_config and node_config.name == connection_name:
+                            node = child
+                            stack = []
+                            break
+                        stack.append(child)
             except Exception:
                 node = None
 

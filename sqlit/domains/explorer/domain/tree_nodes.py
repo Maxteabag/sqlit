@@ -29,6 +29,22 @@ class ConnectionNode:
 
 
 @dataclass(frozen=True)
+class ConnectionFolderNode:
+    """Node representing a folder that groups connections."""
+
+    name: str
+
+    def get_label_text(self) -> str:
+        return self.name
+
+    def get_node_kind(self) -> str:
+        return "connection_folder"
+
+    def get_node_path_part(self) -> str:
+        return f"conn_folder:{self.name}"
+
+
+@dataclass(frozen=True)
 class DatabaseNode:
     """Node representing a database in a multi-database server."""
 

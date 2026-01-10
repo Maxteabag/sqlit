@@ -16,6 +16,7 @@ class _ConnectionConfigFactory:
         source = kwargs.pop("source", None)
         connection_url = kwargs.pop("connection_url", None)
         favorite = bool(kwargs.pop("favorite", False))
+        folder_path = str(kwargs.pop("folder_path", "")) if "folder_path" in kwargs else ""
 
         extra_options = dict(kwargs.pop("extra_options", {}) or {})
         options = dict(kwargs.pop("options", {}) or {})
@@ -78,6 +79,7 @@ class _ConnectionConfigFactory:
             source=source,
             connection_url=connection_url,
             favorite=favorite,
+            folder_path=folder_path,
             extra_options=extra_options,
             options=options,
         )

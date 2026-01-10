@@ -51,13 +51,22 @@ def find_node_by_type(node: Any, node_type: type, name: str | None = None) -> An
     return None
 
 
+def find_connection_node(tree_root: Any, name: str | None = None) -> Any | None:
+    """Find a connection node by connection name."""
+    stack = [tree_root]
+    while stack:
+        node = stack.pop()
+        data = node.data
+        if data and isinstance(data, ConnectionNode):
+            if name is None or data.config.name == name:
+                return node
+        stack.extend(node.children)
+    return None
+
+
 def find_database_node(tree_root: Any, db_name: str) -> Any | None:
     """Find a database node by name."""
-    for child in tree_root.children:
-        result = find_node_by_type(child, DatabaseNode, db_name)
-        if result:
-            return result
-    return None
+    return find_node_by_type(tree_root, DatabaseNode, db_name)
 
 
 def find_folder_node(parent: Any, folder_type: str) -> Any | None:
@@ -175,7 +184,7 @@ class BaseDatabaseBrowsingTest:
             )
 
             # Step 1: Get the connection node from the tree
-            cursor_node = app.object_tree.root.children[0]
+            cursor_node = find_connection_node(app.object_tree.root)
             assert cursor_node is not None
             assert isinstance(cursor_node.data, ConnectionNode)
 
@@ -194,11 +203,7 @@ class BaseDatabaseBrowsingTest:
 
             # Step 3: Verify database list is shown
             # The connected node should have children (Databases folder with databases)
-            connected_node = None
-            for child in app.object_tree.root.children:
-                if isinstance(child.data, ConnectionNode) and child.data.config.name == connection_config.name:
-                    connected_node = child
-                    break
+            connected_node = find_connection_node(app.object_tree.root, connection_config.name)
             assert connected_node is not None, "Connected node not found"
 
             # Wait for tree to be populated with databases

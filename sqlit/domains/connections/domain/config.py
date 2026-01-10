@@ -127,6 +127,7 @@ class ConnectionConfig:
     source: str | None = None
     connection_url: str | None = None
     favorite: bool = False
+    folder_path: str = ""
     extra_options: dict[str, str] = field(default_factory=dict)
     options: dict[str, Any] = field(default_factory=dict)
 
@@ -218,6 +219,7 @@ class ConnectionConfig:
             "source",
             "connection_url",
             "favorite",
+            "folder_path",
             "extra_options",
         }
         for key in list(payload.keys()):
@@ -232,6 +234,7 @@ class ConnectionConfig:
         favorite = bool(raw_favorite)
         if isinstance(raw_favorite, str):
             favorite = raw_favorite.strip().lower() in {"1", "true", "yes", "y", "on"}
+        folder_path = normalize_folder_path(payload.get("folder_path", ""))
 
         return cls(
             name=str(payload.get("name", "")),
@@ -241,6 +244,7 @@ class ConnectionConfig:
             source=payload.get("source"),
             connection_url=payload.get("connection_url"),
             favorite=favorite,
+            folder_path=folder_path,
             extra_options=dict(payload.get("extra_options") or {}),
             options=options,
         )
@@ -308,6 +312,7 @@ class ConnectionConfig:
             "source": self.source,
             "connection_url": self.connection_url,
             "favorite": self.favorite,
+            "folder_path": self.folder_path,
             "extra_options": dict(self.extra_options),
             "options": dict(self.options),
         }
@@ -542,3 +547,13 @@ def get_source_emoji(source: str | None) -> str:
     if source is None:
         return ""
     return SOURCE_EMOJIS.get(source, "")
+
+
+def normalize_folder_path(path: str | None) -> str:
+    if not path:
+        return ""
+    if not isinstance(path, str):
+        path = str(path)
+    path = path.replace("\\", "/")
+    parts = [part.strip() for part in path.split("/") if part.strip()]
+    return "/".join(parts)

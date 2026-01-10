@@ -25,6 +25,7 @@ import pytest
 from tests.helpers import ConnectionConfig
 from tests.integration.browsing_base import (
     BaseDatabaseBrowsingTest,
+    find_connection_node,
     find_database_node,
     find_folder_node,
     find_table_node,
@@ -98,7 +99,7 @@ class TestMySQLDatabaseBrowsing(BaseDatabaseBrowsingTest):
                 description="tree to be populated with connections",
             )
 
-            cursor_node = app.object_tree.root.children[0]
+            cursor_node = find_connection_node(app.object_tree.root)
             assert cursor_node is not None
             assert isinstance(cursor_node.data, ConnectionNode)
 
@@ -112,11 +113,7 @@ class TestMySQLDatabaseBrowsing(BaseDatabaseBrowsingTest):
                 description="connection to be established",
             )
 
-            connected_node = None
-            for child in app.object_tree.root.children:
-                if isinstance(child.data, ConnectionNode) and child.data.config.name == connection_config.name:
-                    connected_node = child
-                    break
+            connected_node = find_connection_node(app.object_tree.root, connection_config.name)
             assert connected_node is not None, "Connected node not found"
 
             await wait_for_condition(

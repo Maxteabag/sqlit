@@ -97,29 +97,37 @@ def update_database_labels(host: TreeMixinHost) -> None:
     if hasattr(host, "_get_effective_database"):
         active_db = host._get_effective_database()
 
-    for conn_node in host.object_tree.root.children:
-        if host._get_node_kind(conn_node) != "connection":
-            continue
+    target_node = None
+    stack = [host.object_tree.root]
+    while stack:
+        node = stack.pop()
+        for child in node.children:
+            if host._get_node_kind(child) == "connection":
+                conn_data = getattr(child, "data", None)
+                conn_config = getattr(conn_data, "config", None)
+                if conn_config and conn_config.name == host.current_config.name:
+                    target_node = child
+                    break
+            stack.append(child)
+        if target_node is not None:
+            break
 
-        conn_data = getattr(conn_node, "data", None)
-        conn_config = getattr(conn_data, "config", None)
-        if not (conn_config and conn_config.name == host.current_config.name):
-            continue
+    if target_node is None:
+        return
 
-        for child in conn_node.children:
-            child_data = getattr(child, "data", None)
-            folder_type = getattr(child_data, "folder_type", None)
-            if host._get_node_kind(child) == "folder" and folder_type == "databases":
-                for db_node in child.children:
-                    if host._get_node_kind(db_node) == "database":
-                        db_data = getattr(db_node, "data", None)
-                        db_name = getattr(db_data, "name", None)
-                        if not db_name:
-                            continue
-                        is_active = active_db and db_name.lower() == active_db.lower()
-                        if is_active:
-                            db_node.set_label(f"[#4ADE80]* {escape_markup(db_name)}[/]")
-                        else:
-                            db_node.set_label(escape_markup(db_name))
-                break
-        break
+    for child in target_node.children:
+        child_data = getattr(child, "data", None)
+        folder_type = getattr(child_data, "folder_type", None)
+        if host._get_node_kind(child) == "folder" and folder_type == "databases":
+            for db_node in child.children:
+                if host._get_node_kind(db_node) == "database":
+                    db_data = getattr(db_node, "data", None)
+                    db_name = getattr(db_data, "name", None)
+                    if not db_name:
+                        continue
+                    is_active = active_db and db_name.lower() == active_db.lower()
+                    if is_active:
+                        db_node.set_label(f"[#4ADE80]* {escape_markup(db_name)}[/]")
+                    else:
+                        db_node.set_label(escape_markup(db_name))
+            break

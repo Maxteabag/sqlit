@@ -68,3 +68,16 @@ def test_from_dict_favorite_flag() -> None:
     config = ConnectionConfig.from_dict(data)
 
     assert config.favorite is True
+
+
+def test_from_dict_folder_path_normalized() -> None:
+    data = {
+        "name": "foldered",
+        "db_type": "sqlite",
+        "folder_path": "  Potato / Ninja  / ",
+        "options": {},
+    }
+
+    config = ConnectionConfig.from_dict(data)
+
+    assert config.folder_path == "Potato/Ninja"
