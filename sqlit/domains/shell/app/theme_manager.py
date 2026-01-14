@@ -34,7 +34,7 @@ from .themes import (
 )
 
 CUSTOM_THEME_SETTINGS_KEY = "custom_themes"
-CUSTOM_THEME_DIR = Path.home() / ".slit" / "themes"
+CUSTOM_THEME_DIR = Path.home() / ".sqlit" / "themes"
 CUSTOM_THEME_FIELDS = {
     "name",
     "primary",
