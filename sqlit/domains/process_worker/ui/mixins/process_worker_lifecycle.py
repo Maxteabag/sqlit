@@ -22,7 +22,11 @@ class ProcessWorkerLifecycleMixin(LifecycleHooksMixin):
             return False
         if bool(getattr(getattr(runtime, "mock", None), "enabled", False)):
             return False
-        return True
+        try:
+            from sqlit.domains.process_worker.app.support import supports_process_worker
+        except Exception:
+            return True
+        return supports_process_worker(provider)
 
     def _get_process_worker_client(self: QueryMixinHost) -> Any | None:
         client = getattr(self, "_process_worker_client", None)

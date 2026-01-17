@@ -66,6 +66,14 @@ def load_columns_async(host: TreeMixinHost, node: Any, data: TableNode | ViewNod
             use_worker = bool(getattr(runtime, "process_worker", False)) and not bool(
                 getattr(getattr(runtime, "mock", None), "enabled", False)
             )
+            if use_worker:
+                try:
+                    from sqlit.domains.process_worker.app.support import supports_process_worker
+                except Exception:
+                    pass
+                else:
+                    provider = getattr(host, "current_provider", None)
+                    use_worker = supports_process_worker(provider)
             if use_worker and hasattr(host, "_get_process_worker_client_async"):
                 client = await host._get_process_worker_client_async()  # type: ignore[attr-defined]
             else:
@@ -159,6 +167,14 @@ def load_folder_async(host: TreeMixinHost, node: Any, data: FolderNode) -> None:
             use_worker = bool(getattr(runtime, "process_worker", False)) and not bool(
                 getattr(getattr(runtime, "mock", None), "enabled", False)
             )
+            if use_worker:
+                try:
+                    from sqlit.domains.process_worker.app.support import supports_process_worker
+                except Exception:
+                    pass
+                else:
+                    provider = getattr(host, "current_provider", None)
+                    use_worker = supports_process_worker(provider)
             client = None
             if use_worker and hasattr(host, "_get_process_worker_client_async"):
                 client = await host._get_process_worker_client_async()  # type: ignore[attr-defined]

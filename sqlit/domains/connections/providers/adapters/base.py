@@ -195,6 +195,11 @@ class DatabaseAdapter(ABC):
         return False
 
     @property
+    def supports_process_worker(self) -> bool:
+        """Whether this adapter supports running queries in a separate process."""
+        return True
+
+    @property
     def test_query(self) -> str:
         """A simple query to test the connection.
 

@@ -56,6 +56,11 @@ class DuckDBAdapter(DatabaseAdapter):
         return True
 
     @property
+    def supports_process_worker(self) -> bool:
+        """DuckDB file locking conflicts with multi-process connections."""
+        return False
+
+    @property
     def default_schema(self) -> str:
         return "main"
 
