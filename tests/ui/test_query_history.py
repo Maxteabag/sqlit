@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import pytest
 
+from textual.widgets import OptionList
+
+from sqlit.domains.query.store.history import QueryHistoryEntry
+from sqlit.domains.query.ui.screens.query_history import QueryHistoryScreen
 from sqlit.domains.shell.app.main import SSMSTUI
 
-from .mocks import MockConnectionStore, MockSettingsStore, build_test_services, create_test_connection
+from .mocks import (
+    MockConnectionStore,
+    MockHistoryStore,
+    MockSettingsStore,
+    build_test_services,
+    create_test_connection,
+)
 
 
 class TestQueryHistoryCursorMemory:
@@ -153,3 +163,105 @@ class TestQueryHistoryCursorMemory:
 
             # Cursor should be at the remembered position
             assert app.query_input.cursor_location == (0, 5)
+
+
+class TestQueryHistorySavePolicy:
+    """Tests for query history behavior across saved and unsaved connections."""
+
+    @pytest.mark.asyncio
+    async def test_show_history_for_unsaved_connection_uses_session_history(self) -> None:
+        unsaved_conn = create_test_connection("temp-db", "sqlite")
+        history_store = MockHistoryStore()
+        services = build_test_services(
+            connection_store=MockConnectionStore([]),
+            settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+            history_store=history_store,
+        )
+        app = SSMSTUI(services=services)
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.current_config = unsaved_conn
+            app._save_query_history(unsaved_conn, "SELECT 1")
+
+            app.action_show_history()
+            await pilot.pause(0.2)
+
+            screen = next(
+                (s for s in app.screen_stack if isinstance(s, QueryHistoryScreen)),
+                None,
+            )
+            assert screen is not None, "History screen should be present"
+
+            option_list = screen.query_one("#history-list", OptionList)
+            assert option_list.option_count == 1
+
+    def test_saved_connection_queries_saved(self) -> None:
+        saved_conn = create_test_connection("saved-db", "sqlite")
+        history_store = MockHistoryStore()
+        services = build_test_services(
+            connection_store=MockConnectionStore([saved_conn]),
+            settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+            history_store=history_store,
+        )
+        app = SSMSTUI(services=services)
+        app.connections = [saved_conn]
+
+        app._save_query_history(saved_conn, "SELECT 1")
+
+        assert history_store.entries["saved-db"][0]["query"] == "SELECT 1"
+
+    @pytest.mark.asyncio
+    async def test_telescope_hides_unavailable_unsaved_history(self) -> None:
+        saved_conn = create_test_connection("saved-db", "sqlite")
+        saved_entry = QueryHistoryEntry(
+            query="select 1",
+            timestamp="2026-01-01T00:00:00",
+            connection_name="saved-db",
+        )
+        unsaved_entry = QueryHistoryEntry(
+            query="select 2",
+            timestamp="2026-01-02T00:00:00",
+            connection_name="temp-db",
+        )
+
+        class StubHistoryStore:
+            def __init__(self, entries):
+                self._entries = entries
+
+            def load_all(self):
+                return list(self._entries)
+
+            def load_for_connection(self, connection_name):
+                return [e for e in self._entries if e.connection_name == connection_name]
+
+            def delete_entry(self, connection_name, timestamp):
+                _ = connection_name
+                _ = timestamp
+                return False
+
+            def save_query(self, connection_name, query):
+                _ = connection_name
+                _ = query
+
+        history_store = StubHistoryStore([saved_entry, unsaved_entry])
+        services = build_test_services(
+            connection_store=MockConnectionStore([saved_conn]),
+            settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+            history_store=history_store,
+        )
+        app = SSMSTUI(services=services)
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.connections = [saved_conn]
+            app.action_telescope()
+            await pilot.pause(0.2)
+
+            screen = next(
+                (s for s in app.screen_stack if isinstance(s, QueryHistoryScreen)),
+                None,
+            )
+            assert screen is not None, "Telescope screen should be present"
+
+            option_list = screen.query_one("#history-list", OptionList)
+            assert option_list.option_count == 1
+            assert all(entry.connection_name == "saved-db" for entry in screen._merged_entries)

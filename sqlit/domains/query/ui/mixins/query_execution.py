@@ -125,6 +125,30 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             return store
         return self.services.history_store
 
+    def _get_unsaved_history_store(self: QueryMixinHost) -> Any:
+        store = getattr(self, "_unsaved_history_store", None)
+        if store is None:
+            from sqlit.domains.query.store.memory import InMemoryHistoryStore
+
+            store = InMemoryHistoryStore()
+            self._unsaved_history_store = store
+        return store
+
+    def _should_save_query_history(self: QueryMixinHost, config: Any) -> bool:
+        """Return True if the connection is saved and history should be persisted."""
+        name = getattr(config, "name", "")
+        if not name:
+            return False
+        connections = getattr(self, "connections", None) or []
+        return any(getattr(conn, "name", None) == name for conn in connections)
+
+    def _save_query_history(self: QueryMixinHost, config: Any, query: str) -> None:
+        """Save query history only for saved connections."""
+        if self._should_save_query_history(config):
+            self._get_history_store().save_query(config.name, query)
+            return
+        self._get_unsaved_history_store().save_query(config.name, query)
+
     def _get_query_service(self: QueryMixinHost, provider: Any) -> QueryService:
         if self._query_service is None or (
             self._query_service_db_type is not None
@@ -262,8 +286,6 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
         # Use TransactionExecutor for transaction-aware query execution
         executor = self._get_transaction_executor(config, provider)
-        service = self._get_query_service(provider)
-
         # Check if this is a multi-statement query
         statements = split_statements(query)
         is_multi_statement = len(statements) > 1
@@ -305,7 +327,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                         return
 
                     try:
-                        await asyncio.to_thread(service._save_to_history, config.name, query)
+                        await asyncio.to_thread(self._save_query_history, config, query)
                     except Exception:
                         pass
                     result = outcome.result
@@ -336,7 +358,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
 
                 try:
-                    await asyncio.to_thread(service._save_to_history, config.name, query)
+                    await asyncio.to_thread(self._save_query_history, config, query)
                 except Exception:
                     pass
                 self._display_multi_statement_results(multi_result, elapsed_ms)
@@ -350,7 +372,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
 
                 try:
-                    await asyncio.to_thread(service._save_to_history, config.name, query)
+                    await asyncio.to_thread(self._save_query_history, config, query)
                 except Exception:
                     pass
 
@@ -401,8 +423,6 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
         # Create a dedicated executor for atomic execution
         executor = TransactionExecutor(config=config, provider=provider)
-        service = self._get_query_service(provider)
-
         try:
             start_time = time.perf_counter()
             max_rows = self.services.runtime.max_rows or MAX_FETCH_ROWS
@@ -414,7 +434,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             elapsed_ms = (time.perf_counter() - start_time) * 1000
 
             try:
-                await asyncio.to_thread(service._save_to_history, config.name, query)
+                await asyncio.to_thread(self._save_query_history, config, query)
             except Exception:
                 pass
 
@@ -551,9 +571,11 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
         from ..screens import QueryHistoryScreen
 
-        history_store = self._get_history_store()
         starred_store = self.services.starred_store
-        history = history_store.load_for_connection(self.current_config.name)
+        if self._should_save_query_history(self.current_config):
+            history = self._get_history_store().load_for_connection(self.current_config.name)
+        else:
+            history = self._get_unsaved_history_store().load_for_connection(self.current_config.name)
         starred = starred_store.load_for_connection(self.current_config.name)
         self.push_screen(
             QueryHistoryScreen(history, self.current_config.name, starred),
@@ -587,16 +609,28 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         """Open telescope with optional filter preset."""
         from ..screens import QueryHistoryScreen
 
+        connection_map = self._get_telescope_connection_map()
+        available_connections = set(connection_map.keys())
+
         history_store = self._get_history_store()
         if hasattr(history_store, "load_all"):
             history = history_store.load_all()
         else:
             history = []
-            for config in self._get_telescope_connection_map().values():
+            for config in connection_map.values():
                 history.extend(history_store.load_for_connection(config.name))
             history.sort(key=lambda entry: entry.timestamp, reverse=True)
 
-        connection_map = self._get_telescope_connection_map()
+        unsaved_store = getattr(self, "_unsaved_history_store", None)
+        if unsaved_store is not None and hasattr(unsaved_store, "load_all"):
+            history.extend(unsaved_store.load_all())
+
+        if available_connections:
+            history = [
+                entry for entry in history
+                if getattr(entry, "connection_name", None) in available_connections
+            ]
+        history.sort(key=lambda entry: entry.timestamp, reverse=True)
         connection_labels = {
             name: self._format_telescope_connection_label(config)
             for name, config in connection_map.items()
