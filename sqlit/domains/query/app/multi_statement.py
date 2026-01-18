@@ -183,6 +183,118 @@ def _split_by_blank_lines(sql: str) -> list[str]:
     return statements
 
 
+def _get_statement_ranges(sql: str) -> list[tuple[str, int, int]]:
+    """Get statements with their character ranges in the original SQL. Semicolons
+    outside of strings are used to split statements. If no semicolons are found,
+    the entire SQL string is returned as a single statement.
+
+    Returns:
+        List of (statement_text, start_offset, end_offset) tuples.
+        Offsets are 0-based character positions in the original SQL string.
+    """
+    if not sql or not sql.strip():
+        return []
+
+    ranges: list[tuple[str, int, int]] = []
+
+    # Strategy 1: If semicolons exist, use semicolon splitting with tracking
+    if _has_semicolon_outside_strings(sql):
+        in_single_quote = False
+        in_double_quote = False
+        i = 0
+        stmt_start = 0
+
+        while i < len(sql):
+            char = sql[i]
+
+            # Handle escape sequences in strings
+            if i + 1 < len(sql) and char == "\\" and (in_single_quote or in_double_quote):
+                i += 2
+                continue
+
+            # Handle doubled quotes (SQL escape for quotes)
+            if char == "'" and i + 1 < len(sql) and sql[i + 1] == "'" and in_single_quote:
+                i += 2
+                continue
+            if char == '"' and i + 1 < len(sql) and sql[i + 1] == '"' and in_double_quote:
+                i += 2
+                continue
+
+            if char == "'" and not in_double_quote:
+                in_single_quote = not in_single_quote
+            elif char == '"' and not in_single_quote:
+                in_double_quote = not in_double_quote
+            elif char == ";" and not in_single_quote and not in_double_quote:
+                stmt_full = sql[stmt_start:i]
+                stmt_text = stmt_full.strip()
+                if stmt_text:
+                    actual_start = stmt_start + (len(stmt_full) - len(stmt_full.lstrip()))
+                    ranges.append((stmt_text, actual_start, actual_start + len(stmt_text)))
+                stmt_start = i + 1
+
+            i += 1
+
+        stmt_full = sql[stmt_start:]
+        stmt_text = stmt_full.strip()
+        if stmt_text:
+            actual_start = stmt_start + (len(stmt_full) - len(stmt_full.lstrip()))
+            ranges.append((stmt_text, actual_start, actual_start + len(stmt_text)))
+
+        return ranges
+
+    # Strategy 2: Single statement
+    stripped = sql.strip()
+    if stripped:
+        # Find actual start position (after leading whitespace)
+        start_offset = len(sql) - len(sql.lstrip())
+        return [(stripped, start_offset, len(sql))]
+
+    return []
+
+
+def find_statement_at_cursor(sql: str, row: int, col: int) -> tuple[str, int, int] | None:
+    """Find the SQL statement containing the cursor position.
+
+    Args:
+        sql: Full SQL text (may contain multiple statements).
+        row: Cursor row (0-based line number).
+        col: Cursor column (0-based character position within the line).
+
+    Returns:
+        Tuple of (statement_text, start_char_offset, end_char_offset) or None if not found.
+    """
+    if not sql:
+        return None
+
+    # Convert (row, col) to absolute character offset
+    lines = sql.split("\n")
+    if row >= len(lines):
+        # Cursor is past end of text, use last position
+        cursor_offset = len(sql)
+    else:
+        # Sum lengths of all previous lines plus newline characters
+        cursor_offset = sum(len(lines[i]) + 1 for i in range(row)) + col
+
+    ranges = _get_statement_ranges(sql)
+
+    if not ranges:
+        return None
+
+    # Find the statement containing the cursor
+    for stmt_text, start, end in ranges:
+        if start <= cursor_offset <= end:
+            return (stmt_text, start, end)
+
+    # If cursor is between statements or at the very end,
+    # return the nearest preceding statement
+    for stmt_text, start, end in reversed(ranges):
+        if cursor_offset >= start:
+            return (stmt_text, start, end)
+
+    # Fallback to first statement
+    return ranges[0] if ranges else None
+
+
 def split_statements(sql: str) -> list[str]:
     """Split SQL into individual statements.
 
