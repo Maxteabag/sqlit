@@ -15,6 +15,7 @@ class QueryNormalModeState(State):
     def _setup_actions(self) -> None:
         self.allows("enter_insert_mode", label="Insert Mode", help="Enter INSERT mode")
         self.allows("execute_query", label="Execute", help="Execute query")
+        self.allows("execute_single_statement", label="Run Statement", help="Execute statement at cursor")
         self.allows("delete_leader_key", label="Delete", help="Delete (menu)")
         self.allows("yank_leader_key", label="Copy", help="Copy (menu)")
         self.allows("change_leader_key", label="Change", help="Change (menu)")

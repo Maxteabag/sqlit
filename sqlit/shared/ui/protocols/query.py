@@ -43,6 +43,9 @@ class QueryActionsProtocol(Protocol):
     def action_execute_query(self) -> None:
         ...
 
+    def action_execute_single_statement(self) -> None: 
+        ...
+
     def _get_history_store(self) -> Any:
         ...
 

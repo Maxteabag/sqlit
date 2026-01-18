@@ -69,6 +69,44 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             exclusive=True,
         )
 
+    def action_execute_single_statement(self: QueryMixinHost) -> None:
+        """Execute only the SQL statement at the current cursor position."""
+        from sqlit.domains.query.app.multi_statement import find_statement_at_cursor
+
+        if self.current_connection is None or self.current_provider is None:
+            self.notify("Connect to a server to execute queries", severity="warning")
+            return
+
+        full_query = self.query_input.text
+        if not full_query or not full_query.strip():
+            self.notify("No query to execute", severity="warning")
+            return
+
+        # Get cursor position and find statement
+        row, col = self.query_input.cursor_location
+        result = find_statement_at_cursor(full_query, row, col)
+
+        if result is None:
+            self.notify("No statement found at cursor", severity="warning")
+            return
+
+        statement, _, _ = result
+
+        if not statement.strip():
+            self.notify("No statement found at cursor", severity="warning")
+            return
+
+        if hasattr(self, "_query_worker") and self._query_worker is not None:
+            self._query_worker.cancel()
+
+        self._start_query_spinner()
+
+        self._query_worker = self.run_worker(
+            self._run_query_async(statement, keep_insert_mode=False),
+            name="query_execution_single",
+            exclusive=True,
+        )
+
     def _execute_query_common(self: QueryMixinHost, keep_insert_mode: bool) -> None:
         """Common query execution logic."""
         if self.current_connection is None or self.current_provider is None:
