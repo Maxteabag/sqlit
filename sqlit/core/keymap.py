@@ -274,12 +274,14 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("E", "WORD_end_back", "End of prev WORD", "Go to", menu="g"),
             LeaderCommandDef("c", "comment", "Toggle comment...", "Toggle", menu="g"),
             LeaderCommandDef("r", "execute_query", "Run query", "Execute", menu="g"),
+            LeaderCommandDef("s", "execute_single_statement", "Run statement at cursor", "Execute", menu="g"),
             LeaderCommandDef("t", "execute_query_atomic", "Run as transaction", "Execute", menu="g"),
             # gc comment menu (vim-style)
             LeaderCommandDef("c", "line", "Toggle line comment", "Comment", menu="gc"),
             LeaderCommandDef("j", "down", "Comment line down", "Comment", menu="gc"),
             LeaderCommandDef("k", "up", "Comment line up", "Comment", menu="gc"),
             LeaderCommandDef("G", "to_end", "Comment to end", "Comment", menu="gc"),
+            LeaderCommandDef("s", "selection", "Toggle selection", "Comment", menu="gc"),
             # ry results yank menu
             LeaderCommandDef("c", "cell", "Copy cell", "Copy", menu="ry"),
             LeaderCommandDef("y", "row", "Copy row", "Copy", menu="ry"),

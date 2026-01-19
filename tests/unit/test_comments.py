@@ -129,3 +129,46 @@ class TestToggleCommentLines:
         new_text, col = toggle_comment_lines(text, 0, 0)
         assert new_text == "\t-- SELECT * FROM users"
         assert col == 4  # 1 tab + "-- "
+
+    @pytest.mark.parametrize(
+        "text, start_row, end_row, expected_text, expected_col",
+        [
+            # Toggle on: simple multi-line
+            (
+                "SELECT *\nFROM users",
+                0,
+                1,
+                "-- SELECT *\n-- FROM users",
+                3,
+            ),
+            # Toggle off: simple multi-line
+            (
+                "-- SELECT *\n-- FROM users",
+                0,
+                1,
+                "SELECT *\nFROM users",
+                0,
+            ),
+            # Toggle on: mixed content (first line uncommented -> comment all)
+            (
+                "SELECT *\n-- FROM users",
+                0,
+                1,
+                "-- SELECT *\n-- -- FROM users",
+                3,
+            ),
+            # Toggle off: mixed content (first line commented -> uncomment all)
+            (
+                "-- SELECT *\nFROM users",
+                0,
+                1,
+                "SELECT *\nFROM users",
+                0,
+            ),
+        ],
+    )
+    def test_toggle_scenarios_parametrized(self, text, start_row, end_row, expected_text, expected_col):
+        """Test various toggle scenarios mimicking selection behavior."""
+        new_text, col = toggle_comment_lines(text, start_row, end_row)
+        assert new_text == expected_text
+        assert col == expected_col
