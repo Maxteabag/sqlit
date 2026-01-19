@@ -65,3 +65,28 @@ class QueryEditingCommentsMixin:
         new_text, new_col = toggle_comment_lines(text, row, end_row)
         self.query_input.text = new_text
         self.query_input.cursor_location = (row, new_col)
+
+    def action_gc_selection(self: QueryMixinHost) -> None:
+        """Toggle comment on currently selected text (gcs)."""
+        self._clear_leader_pending()
+
+        if not self._has_selection():
+            return
+
+        self._push_undo_state()
+        from sqlit.domains.query.editing.comments import toggle_comment_lines
+
+        selection = self.query_input.selection
+        start, end = self._ordered_selection(selection)
+
+        start_row = start[0]
+        end_row = end[0]
+
+        # If selection ends at the start of a line, don't include that line
+        if end[1] == 0 and end_row > start_row:
+            end_row -= 1
+
+        text = self.query_input.text
+        new_text, new_col = toggle_comment_lines(text, start_row, end_row)
+        self.query_input.text = new_text
+        self.query_input.cursor_location = (start_row, new_col)
