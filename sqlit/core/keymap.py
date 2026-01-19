@@ -281,6 +281,7 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("j", "down", "Comment line down", "Comment", menu="gc"),
             LeaderCommandDef("k", "up", "Comment line up", "Comment", menu="gc"),
             LeaderCommandDef("G", "to_end", "Comment to end", "Comment", menu="gc"),
+            LeaderCommandDef("s", "selection", "Toggle selection", "Comment", menu="gc"),
             # ry results yank menu
             LeaderCommandDef("c", "cell", "Copy cell", "Copy", menu="ry"),
             LeaderCommandDef("y", "row", "Copy row", "Copy", menu="ry"),
