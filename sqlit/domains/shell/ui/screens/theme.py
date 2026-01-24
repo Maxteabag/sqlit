@@ -19,6 +19,7 @@ LIGHT_THEMES = {
     "sqlit-light": "Sqlit Light",
     "textual-light": "Textual Light",
     "solarized-light": "Solarized Light",
+    "gruvbox-light": "Gruvbox Light",
     "catppuccin-latte": "Catppuccin Latte",
     "rose-pine-dawn": "Rose Pine Dawn",
 }

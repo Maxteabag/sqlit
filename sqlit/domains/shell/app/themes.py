@@ -26,6 +26,7 @@ LIGHT_THEME_NAMES = {
     "solarized-light",
     "catppuccin-latte",
     "rose-pine-dawn",
+    "gruvbox-light",
 }
 
 SQLIT_THEMES = [
@@ -70,6 +71,28 @@ SQLIT_THEMES = [
             "footer-key-foreground": "#1565C0",
             "button-color-foreground": "#FFFFFF",
             "input-selection-background": "#1565C0 25%",
+        },
+    ),
+    Theme(
+        name="gruvbox-light",
+        primary="#427B58",
+        secondary="#B57614",
+        accent="#427B58",
+        warning="#AF3A03",
+        error="#9D0006",
+        success="#79740E",
+        foreground="#3C3836",
+        background="#FBF1C7",
+        surface="#EBDBB2",
+        panel="#D5C4A1",
+        dark=False,
+        variables={
+            "border": "#BDAE93",
+            "block-cursor-foreground": "#282828",
+            "input-selection-background": "#68986640",
+            "button-color-foreground": "#FBF1C7",
+            "footer-background": "#EBDBB2",
+            "footer-key-foreground": "#427B58",
         },
     ),
     Theme(
