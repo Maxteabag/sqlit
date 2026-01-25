@@ -118,6 +118,12 @@ class QueryEditingCursorMixin:
         """Move till after previous char (T{c})."""
         self._show_motion_char_pending_menu("T")
 
+    def action_prepend_insert_mode(self: QueryMixinHost) -> None:
+        """Enter insert mode at start of line (I)."""
+        row, _ = self.query_input.cursor_location
+        self.query_input.cursor_location = (row, 0)
+        self.action_enter_insert_mode()
+
     def action_append_insert_mode(self: QueryMixinHost) -> None:
         """Enter insert mode after cursor (a)."""
         lines = self.query_input.text.split("\n")

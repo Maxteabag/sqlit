@@ -38,11 +38,15 @@ class QueryNormalModeState(State):
         self.allows("cursor_find_char_back", help="Find char backward")
         self.allows("cursor_till_char", help="Move till char forward")
         self.allows("cursor_till_char_back", help="Move till char backward")
+        self.allows("prepend_insert_mode", help="Insert at line start")
         self.allows("append_insert_mode", help="Append after cursor")
         self.allows("append_line_end", help="Append at line end")
         # Vim open line
         self.allows("open_line_below", help="Open line below")
         self.allows("open_line_above", help="Open line above")
+        # Vim delete or change
+        self.allows("change_line_end_motion", help="Change to line end")
+        self.allows("delete_line_end", help="Delete to line end")
         # Clipboard actions
         self.allows("select_all", help="Select all text")
         self.allows("copy_selection", help="Copy selection")
