@@ -56,7 +56,17 @@ class TreeFilterMixin:
         self._update_footer_bindings()
 
     def action_tree_filter_accept(self: TreeFilterMixinHost) -> None:
-        """Accept current filter selection, close filter, and activate the node."""
+        """Accept filter:
+        First action: activate filter, enter navigation mode.
+        Second action: close filter, and activate the node.
+        """
+
+        # On first accept: switch to navigation mode (keep filter open)
+        if self._tree_filter_visible and self._tree_filter_typing:
+            self._tree_filter_typing = False
+            self._jump_to_current_match()
+            return
+
         # Store current match before closing
         current_node = None
         if self._tree_filter_matches and self._tree_filter_match_index < len(self._tree_filter_matches):
