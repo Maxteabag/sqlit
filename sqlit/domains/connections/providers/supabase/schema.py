@@ -27,6 +27,13 @@ SCHEMA = ConnectionSchema(
             required=True,
         ),
         SchemaField(
+            name="supabase_aws_shard",
+            label="AWS Shard",
+            placeholder="aws-0",
+            default="aws-0",
+            description="Pooler shard prefix (e.g. aws-0, aws-1)",
+        ),
+        SchemaField(
             name="password",
             label="Password",
             field_type=FieldType.PASSWORD,

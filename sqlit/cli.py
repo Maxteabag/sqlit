@@ -295,6 +295,10 @@ def main() -> int:
     parser.add_argument("--supabase-region", help="Supabase region (temporary connection)")
     parser.add_argument("--supabase-project-id", help="Supabase project id (temporary connection)")
     parser.add_argument(
+        "--supabase-aws-shard",
+        help="Supabase pooler shard prefix (temporary connection, e.g. aws-0, aws-1)",
+    )
+    parser.add_argument(
         "--settings",
         metavar="PATH",
         help="Path to settings JSON file (overrides ~/.sqlit/settings.json)",
