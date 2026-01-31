@@ -17,7 +17,11 @@ from sqlit.domains.query.ui.mixins.query_execution import QueryExecutionMixin
         ("SELECT 1; SELECT 2; SELECT 3", 0, 3, "SELECT 1"),
         ("SELECT 1; SELECT 2; SELECT 3", 0, 12, "SELECT 2"),
         ("SELECT ';'; SELECT 2", 0, 8, "SELECT ';'"),
-        ("SELECT 1\n\nSELECT 2", 0, 3, "SELECT 1\n\nSELECT 2"),
+        # Blank-line separated statements (no semicolons) should work like semicolon-separated
+        ("SELECT 1\n\nSELECT 2", 0, 3, "SELECT 1"),
+        ("SELECT 1\n\nSELECT 2", 2, 3, "SELECT 2"),
+        ("SELECT *\nFROM users\n\nSELECT 2", 1, 5, "SELECT *\nFROM users"),
+        # Semicolon-separated with blank lines
         ("SELECT 1;\n\nSELECT 2", 2, 3, "SELECT 2"),
         ("SELECT *\nFROM users;\nSELECT 2", 1, 5, "SELECT *\nFROM users"),
         ("SELECT 1;   SELECT 2", 0, 10, "SELECT 1"),

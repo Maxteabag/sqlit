@@ -184,9 +184,12 @@ def _split_by_blank_lines(sql: str) -> list[str]:
 
 
 def _get_statement_ranges(sql: str) -> list[tuple[str, int, int]]:
-    """Get statements with their character ranges in the original SQL. Semicolons
-    outside of strings are used to split statements. If no semicolons are found,
-    the entire SQL string is returned as a single statement.
+    """Get statements with their character ranges in the original SQL.
+
+    Splitting strategy (matches split_statements):
+    1. If query contains semicolons (outside strings) → split by semicolons
+    2. If no semicolons but has blank lines → split by blank lines
+    3. Otherwise → return as single statement
 
     Returns:
         List of (statement_text, start_offset, end_offset) tuples.
@@ -242,7 +245,69 @@ def _get_statement_ranges(sql: str) -> list[tuple[str, int, int]]:
 
         return ranges
 
-    # Strategy 2: Single statement
+    # Strategy 2: If blank lines exist, use blank line splitting with tracking
+    if re.search(r"\n\s*\n", sql):
+        in_single_quote = False
+        in_double_quote = False
+        i = 0
+        stmt_start = 0
+        line_start = 0
+        prev_line_empty = False
+
+        while i < len(sql):
+            char = sql[i]
+
+            # Handle escape sequences in strings
+            if i + 1 < len(sql) and char == "\\" and (in_single_quote or in_double_quote):
+                i += 2
+                continue
+
+            # Handle doubled quotes (SQL escape for quotes)
+            if char == "'" and i + 1 < len(sql) and sql[i + 1] == "'" and in_single_quote:
+                i += 2
+                continue
+            if char == '"' and i + 1 < len(sql) and sql[i + 1] == '"' and in_double_quote:
+                i += 2
+                continue
+
+            if char == "'" and not in_double_quote:
+                in_single_quote = not in_single_quote
+            elif char == '"' and not in_single_quote:
+                in_double_quote = not in_double_quote
+            elif char == "\n" and not in_single_quote and not in_double_quote:
+                line_content = sql[line_start:i]
+                current_line_empty = not line_content.strip()
+
+                if current_line_empty and prev_line_empty:
+                    # Consecutive blank lines, skip
+                    pass
+                elif current_line_empty:
+                    # Blank line after content - this is a statement boundary
+                    stmt_full = sql[stmt_start:i]
+                    stmt_text = stmt_full.strip()
+                    if stmt_text:
+                        actual_start = stmt_start + (len(stmt_full) - len(stmt_full.lstrip()))
+                        ranges.append((stmt_text, actual_start, actual_start + len(stmt_text)))
+                    stmt_start = i + 1
+
+                prev_line_empty = current_line_empty
+                line_start = i + 1
+            else:
+                if char not in " \t":
+                    prev_line_empty = False
+
+            i += 1
+
+        # Don't forget the last statement
+        stmt_full = sql[stmt_start:]
+        stmt_text = stmt_full.strip()
+        if stmt_text:
+            actual_start = stmt_start + (len(stmt_full) - len(stmt_full.lstrip()))
+            ranges.append((stmt_text, actual_start, actual_start + len(stmt_text)))
+
+        return ranges
+
+    # Strategy 3: Single statement
     stripped = sql.strip()
     if stripped:
         # Find actual start position (after leading whitespace)
