@@ -20,8 +20,13 @@ class MotherDuckAdapter(DuckDBAdapter):
 
     @property
     def supports_process_worker(self) -> bool:
-        """MotherDuck handles concurrency server-side."""
-        return True
+        """Disable process worker to avoid segfault when switching from other DBs.
+
+        The MotherDuck/DuckDB native library has issues when loaded in a subprocess
+        that has already loaded other database drivers. Running in the main process
+        avoids this issue.
+        """
+        return False
 
     @property
     def supports_multiple_databases(self) -> bool:
