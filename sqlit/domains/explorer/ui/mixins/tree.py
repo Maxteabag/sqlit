@@ -216,6 +216,18 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         if hasattr(self, "_loading_nodes"):
             self._loading_nodes.clear()
         self._schema_service = None
+
+        # Reload saved connections from disk (in case added via CLI)
+        try:
+            services = getattr(self, "services", None)
+            if services:
+                store = getattr(services, "connection_store", None)
+                if store:
+                    reloaded = store.load_all(load_credentials=False)
+                    self.connections = reloaded
+        except Exception:
+            pass  # Keep existing connections if reload fails
+
         self.refresh_tree()
         loader = getattr(self, "_load_schema_cache", None)
         if callable(loader):

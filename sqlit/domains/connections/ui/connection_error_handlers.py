@@ -36,8 +36,18 @@ class MissingDriverHandler:
 
     def handle(self, app: ConnectionErrorApp, error: Exception, config: ConnectionConfig) -> None:
         from sqlit.domains.connections.providers.exceptions import MissingDriverError
+        from sqlit.shared.core.debug_events import emit_debug_event
 
+        from .restart_cache import write_pending_connection_cache
         from .screens import PackageSetupScreen
+
+        # Save pending connection for auto-reconnect after driver install restart
+        if config.name:
+            write_pending_connection_cache(config.name)
+            emit_debug_event(
+                "driver_install.pending_connection_saved",
+                connection_name=config.name,
+            )
 
         # No on_success callback - uses default "Restart to apply" behavior
         app.push_screen(PackageSetupScreen(cast(MissingDriverError, error)))

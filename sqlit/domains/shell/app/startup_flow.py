@@ -36,6 +36,10 @@ def run_on_mount(app: AppProtocol) -> None:
     app._startup_stamp("settings_loaded")
 
     app._expanded_paths = set(settings.get("expanded_nodes", []))
+    if settings.get("debug_events_enabled"):
+        setter = getattr(app, "_set_debug_events_enabled", None)
+        if callable(setter):
+            setter(True)
     if "process_worker" in settings:
         app.services.runtime.process_worker = bool(settings.get("process_worker"))
     if "process_worker_warm_on_idle" in settings:
@@ -83,6 +87,9 @@ def run_on_mount(app: AppProtocol) -> None:
         app.object_tree.cursor_line = 0
     app._update_section_labels()
     maybe_restore_connection_screen(app)
+    # Auto-connect to pending connection after driver install (if not already connecting)
+    if app._startup_connect_config is None:
+        maybe_auto_connect_pending(app)
     app._startup_stamp("restore_checked")
     if app._debug_mode:
         app.call_after_refresh(app._record_launch_ms)
@@ -224,6 +231,83 @@ def _get_restart_cache_path() -> Path:
     return Path(tempfile.gettempdir()) / "sqlit-driver-install-restore.json"
 
 
+def maybe_auto_connect_pending(app: AppProtocol) -> bool:
+    """Auto-connect to a pending connection after driver install restart.
+
+    Returns True if a connection was initiated, False otherwise.
+    """
+    from sqlit.shared.core.debug_events import emit_debug_event
+
+    from sqlit.domains.connections.ui.restart_cache import (
+        clear_restart_cache,
+        get_restart_cache_path,
+    )
+
+    cache_path = get_restart_cache_path()
+    emit_debug_event(
+        "startup.pending_connection_check",
+        cache_path=str(cache_path),
+        exists=cache_path.exists(),
+    )
+    if not cache_path.exists():
+        return False
+
+    emit_debug_event(
+        "startup.pending_connection_found",
+        contents=cache_path.read_text(),
+    )
+
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        emit_debug_event("startup.pending_connection_parse_error", error=str(e))
+        clear_restart_cache()
+        return False
+
+    # Always clear cache after reading
+    clear_restart_cache()
+
+    # Check for version 2 pending_connection type
+    if not isinstance(payload, dict):
+        emit_debug_event("startup.pending_connection_invalid", reason="not a dict")
+        return False
+    if payload.get("version") != 2:
+        emit_debug_event("startup.pending_connection_invalid", reason="wrong version", version=payload.get("version"))
+        return False
+    if payload.get("type") != "pending_connection":
+        emit_debug_event("startup.pending_connection_invalid", reason="wrong type", type=payload.get("type"))
+        return False
+
+    connection_name = payload.get("connection_name")
+    if not connection_name:
+        emit_debug_event("startup.pending_connection_invalid", reason="no connection_name")
+        return False
+
+    emit_debug_event(
+        "startup.pending_connection_lookup",
+        connection_name=connection_name,
+        available_connections=[getattr(c, "name", None) for c in app.connections],
+    )
+
+    # Find the connection by name
+    config = next(
+        (c for c in app.connections if getattr(c, "name", None) == connection_name),
+        None,
+    )
+    if config is None:
+        emit_debug_event("startup.pending_connection_not_found", connection_name=connection_name)
+        return False
+
+    emit_debug_event("startup.pending_connection_connecting", connection_name=connection_name)
+
+    # Auto-connect after refresh (same pattern as startup_connect_config)
+    def _connect_pending() -> None:
+        app.connect_to_server(config)
+
+    app.call_after_refresh(_connect_pending)
+    return True
+
+
 def maybe_restore_connection_screen(app: AppProtocol) -> None:
     """Restore an in-progress connection form after a driver-install restart."""
     cache_path = _get_restart_cache_path()
@@ -239,13 +323,15 @@ def maybe_restore_connection_screen(app: AppProtocol) -> None:
             pass
         return
 
+    # Only handle version 1 (connection form restore), leave version 2 for maybe_auto_connect_pending
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return
+
+    # Clear cache only for version 1
     try:
         cache_path.unlink(missing_ok=True)
     except Exception:
         pass
-
-    if not isinstance(payload, dict) or payload.get("version") != 1:
-        return
 
     values = payload.get("values")
     if not isinstance(values, dict):

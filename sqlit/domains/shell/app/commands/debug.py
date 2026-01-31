@@ -41,6 +41,16 @@ def _set_debug_enabled(app: Any, enabled: bool) -> None:
     else:
         app._debug_events_enabled = bool(enabled)
 
+    # Persist the setting across sessions
+    try:
+        services = getattr(app, "services", None)
+        if services:
+            store = getattr(services, "settings_store", None)
+            if store:
+                store.set("debug_events_enabled", enabled)
+    except Exception:
+        pass
+
     path = getattr(app, "_debug_event_log_path", None)
     suffix = f" (log: {path})" if path else ""
     state = "enabled" if enabled else "disabled"

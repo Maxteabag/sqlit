@@ -28,3 +28,18 @@ def clear_restart_cache() -> None:
         get_restart_cache_path().unlink(missing_ok=True)
     except Exception:
         pass
+
+
+def write_pending_connection_cache(connection_name: str) -> None:
+    """Cache a pending connection name for auto-reconnect after driver install restart.
+
+    This is used when a user tries to connect to a server but the driver is missing.
+    After the driver is installed and the app restarts, it can auto-connect to this
+    connection.
+    """
+    payload = {
+        "version": 2,
+        "type": "pending_connection",
+        "connection_name": connection_name,
+    }
+    write_restart_cache(payload)
