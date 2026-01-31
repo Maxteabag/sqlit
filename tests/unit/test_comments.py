@@ -172,3 +172,48 @@ class TestToggleCommentLines:
         new_text, col = toggle_comment_lines(text, start_row, end_row)
         assert new_text == expected_text
         assert col == expected_col
+
+
+class TestSelectionCommentBehavior:
+    """Tests verifying how selection-based commenting behaves.
+
+    These tests document the current behavior: line comments operate on
+    ENTIRE lines, regardless of column positions in the selection.
+    """
+
+    def test_partial_selection_comments_entire_lines(self):
+        """Selecting from middle of line 0 to middle of line 1 comments both entire lines.
+
+        Example: selecting "CT *\nFROM" from "SELECT *\nFROM users"
+        (col 4 of line 0 to col 4 of line 1) should still comment both full lines.
+        """
+        text = "SELECT *\nFROM users"
+
+        # Simulating selection from (row=0, col=4) to (row=1, col=4)
+        # This is what action_gc_selection does - it only uses the row numbers
+        start_row = 0
+        end_row = 1
+
+        new_text, col = toggle_comment_lines(text, start_row, end_row)
+
+        # Both ENTIRE lines should be commented, not just the selected portion
+        assert new_text == "-- SELECT *\n-- FROM users"
+        assert col == 3
+
+    def test_selection_ending_at_line_start_excludes_that_line(self):
+        """If selection ends at column 0 of a line, that line should be excluded.
+
+        Example: selecting all of line 0 and ending at start of line 1
+        should only comment line 0.
+        """
+        text = "SELECT *\nFROM users\nWHERE id = 1"
+
+        # Selection from (0, 0) to (1, 0) - ends at very start of line 1
+        # action_gc_selection has special handling: end_col == 0 means exclude that line
+        start_row = 0
+        end_row = 0  # Would be decremented from 1 to 0 in action_gc_selection
+
+        new_text, col = toggle_comment_lines(text, start_row, end_row)
+
+        # Only line 0 should be commented
+        assert new_text == "-- SELECT *\nFROM users\nWHERE id = 1"
