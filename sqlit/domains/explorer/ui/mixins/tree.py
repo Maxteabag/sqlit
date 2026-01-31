@@ -208,8 +208,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         """Update footer when tree selection changes."""
         self._update_footer_bindings()
 
-    def action_refresh_tree(self: TreeMixinHost) -> None:
-        """Refresh the explorer."""
+    def _refresh_tree_common(self: TreeMixinHost, *, notify: bool) -> None:
         self._get_object_cache().clear()
         if hasattr(self, "_schema_cache") and "columns" in self._schema_cache:
             self._schema_cache["columns"] = {}
@@ -241,7 +240,16 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
                 )
             else:
                 self._schedule_timer(MIN_TIMER_DELAY_S, run_loader)
-        self.notify("Refreshed")
+        if notify:
+            self.notify("Refreshed")
+
+    def _refresh_tree_after_query(self: TreeMixinHost) -> None:
+        """Refresh the explorer without user-facing notifications."""
+        self._refresh_tree_common(notify=False)
+
+    def action_refresh_tree(self: TreeMixinHost) -> None:
+        """Refresh the explorer."""
+        self._refresh_tree_common(notify=True)
 
     def refresh_tree(self: TreeMixinHost) -> None:
         tree_builder.refresh_tree_chunked(self)

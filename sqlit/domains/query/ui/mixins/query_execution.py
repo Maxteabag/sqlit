@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, Callable
 
 from sqlit.domains.explorer.ui.tree import db_switching as tree_db_switching
@@ -19,6 +20,43 @@ if TYPE_CHECKING:
     from sqlit.domains.query.app.cancellable import CancellableQuery
     from sqlit.domains.query.app.query_service import QueryService
     from sqlit.domains.query.app.transaction import TransactionExecutor
+
+
+_SCHEMA_CHANGE_KEYWORDS = (
+    "CREATE",
+    "ALTER",
+    "DROP",
+    "TRUNCATE",
+    "RENAME",
+    "COMMENT",
+)
+_SCHEMA_CHANGE_RE = re.compile(r"\b(?:%s)\b" % "|".join(_SCHEMA_CHANGE_KEYWORDS), re.IGNORECASE)
+_SINGLE_QUOTE_RE = re.compile(r"'[^']*'")
+_DOUBLE_QUOTE_RE = re.compile(r'"[^"]*"')
+_BACKTICK_RE = re.compile(r"`[^`]*`")
+_BRACKET_RE = re.compile(r"\[[^\]]*\]")
+
+
+def _strip_literals(sql: str) -> str:
+    cleaned = _SINGLE_QUOTE_RE.sub("''", sql)
+    cleaned = _DOUBLE_QUOTE_RE.sub('""', cleaned)
+    cleaned = _BACKTICK_RE.sub("``", cleaned)
+    cleaned = _BRACKET_RE.sub("[]", cleaned)
+    return cleaned
+
+
+def _query_changes_schema(sql: str) -> bool:
+    if not sql or not sql.strip():
+        return False
+    from sqlit.domains.query.app.multi_statement import split_statements
+    from sqlit.domains.query.editing.comments import strip_all_comments
+
+    for statement in split_statements(sql):
+        cleaned = strip_all_comments(statement)
+        cleaned = _strip_literals(cleaned)
+        if _SCHEMA_CHANGE_RE.search(cleaned):
+            return True
+    return False
 
 
 class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
@@ -242,6 +280,25 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                     loader()
                 except Exception:
                     pass
+
+    def _maybe_refresh_explorer_after_query(self: QueryMixinHost, query: str) -> None:
+        if not _query_changes_schema(query):
+            return
+
+        def run_refresh() -> None:
+            refresher = getattr(self, "_refresh_tree_after_query", None)
+            if callable(refresher):
+                refresher()
+                return
+            action_refresh = getattr(self, "action_refresh_tree", None)
+            if callable(action_refresh):
+                action_refresh()
+
+        call_after_refresh = getattr(self, "call_after_refresh", None)
+        if callable(call_after_refresh):
+            call_after_refresh(run_refresh)
+        else:
+            run_refresh()
 
     def _get_history_store(self: QueryMixinHost) -> Any:
         store = getattr(self, "_history_store", None)
@@ -470,6 +527,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                         )
                     else:
                         self._display_non_query_result(result.rows_affected, elapsed_ms)
+                    self._maybe_refresh_explorer_after_query(query)
                     if keep_insert_mode:
                         self._restore_insert_mode()
                     return
@@ -489,6 +547,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                 except Exception:
                     pass
                 self._display_multi_statement_results(multi_result, elapsed_ms)
+                self._maybe_refresh_explorer_after_query(query)
             else:
                 # Single statement - existing behavior
                 result = await asyncio.to_thread(
@@ -509,6 +568,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                     )
                 else:
                     self._display_non_query_result(result.rows_affected, elapsed_ms)
+                self._maybe_refresh_explorer_after_query(query)
 
             if keep_insert_mode:
                 self._restore_insert_mode()
@@ -581,6 +641,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             else:
                 self._display_non_query_result(result.rows_affected, elapsed_ms)
                 self.notify("Query executed atomically (committed)", severity="information")
+            self._maybe_refresh_explorer_after_query(query)
 
         except Exception as e:
             self._display_query_error(f"Transaction rolled back: {e}")
