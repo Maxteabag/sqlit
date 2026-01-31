@@ -136,6 +136,9 @@ sqlit --mock=sqlite-demo
 ### CLI
 
 ```bash
+sqlit -c "MyConnection"
+sqlit --connection "MyConnection"
+
 # Run a query
 sqlit query -c "MyConnection" -q "SELECT * FROM Users"
 

@@ -392,6 +392,12 @@ def main() -> int:
         action="store_true",
         help="Show idle scheduler status in the status bar.",
     )
+    parser.add_argument(
+        "-c",
+        "--connection",
+        metavar="NAME",
+        help="Connect to a saved connection by name (opens TUI with only this connection)",
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -512,21 +518,38 @@ def main() -> int:
                 return 1
             services.apply_mock_profile(mock_profile)
 
-        temp_config = None
+        startup_config = None
+        exclusive_connection = False
         try:
-            # Check for connection URL first (extracted before argparse)
-            if connection_url:
-                temp_config = parse_connection_url(
+            # Check for saved connection by name first
+            if args.connection:
+                saved_connections = services.connection_store.load_all(load_credentials=False)
+                matching = [c for c in saved_connections if c.name == args.connection]
+                if not matching:
+                    print(f"Error: Connection '{args.connection}' not found")
+                    print("Available connections:")
+                    for conn in saved_connections:
+                        print(f"  - {conn.name}")
+                    return 1
+                startup_config = matching[0]
+                exclusive_connection = True
+            # Check for connection URL (extracted before argparse)
+            elif connection_url:
+                startup_config = parse_connection_url(
                     connection_url,
                     name=getattr(args, "name", None),
                 )
             else:
-                temp_config = _build_temp_connection(args)
+                startup_config = _build_temp_connection(args)
         except ValueError as exc:
             print(f"Error: {exc}")
             return 1
 
-        app = SSMSTUI(services=services, startup_connection=temp_config)
+        app = SSMSTUI(
+            services=services,
+            startup_connection=startup_config,
+            exclusive_connection=exclusive_connection,
+        )
         app.run()
         if getattr(app, "_restart_requested", False):
             argv = getattr(app, "_restart_argv", None) or app._compute_restart_argv()

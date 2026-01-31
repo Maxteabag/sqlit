@@ -98,6 +98,7 @@ class SSMSTUI(
         services: AppServices | None = None,
         runtime: RuntimeConfig | None = None,
         startup_connection: ConnectionConfig | None = None,
+        exclusive_connection: bool = False,
     ):
         super().__init__()
         self.services = services or build_app_services(runtime or RuntimeConfig.from_env())
@@ -105,6 +106,7 @@ class SSMSTUI(
 
         self._connection_manager = ConnectionManager(self.services)
         self._startup_connection = startup_connection
+        self._exclusive_connection = exclusive_connection
         self._startup_connect_config: ConnectionConfig | None = None
         self._debug_mode = self.services.runtime.debug_mode
         self._debug_idle_scheduler = self.services.runtime.debug_idle_scheduler
