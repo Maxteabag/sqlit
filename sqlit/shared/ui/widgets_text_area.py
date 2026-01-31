@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from rich.segment import Segment
 from textual.color import Color
 from textual.events import Key
+from textual.strip import Strip
 from textual.widgets import TextArea
 
 if TYPE_CHECKING:
@@ -17,6 +19,8 @@ class QueryTextArea(TextArea):
 
     _last_text: str = ""
     _terminal_cursor_active: bool = False
+    _relative_line_numbers: bool = False
+    _last_cursor_row: int = -1
 
     # Normalize OS-variant shortcuts to canonical forms
     # Maps: super → ctrl for common operations, strips shift where irrelevant
@@ -210,3 +214,87 @@ class QueryTextArea(TextArea):
             if hasattr(self.app, "_push_undo_state"):
                 self.app._push_undo_state()
             self._last_text = current_text
+
+    @property
+    def relative_line_numbers(self) -> bool:
+        """Whether to show relative line numbers."""
+        return self._relative_line_numbers
+
+    @relative_line_numbers.setter
+    def relative_line_numbers(self, value: bool) -> None:
+        """Set relative line numbers mode."""
+        if self._relative_line_numbers != value:
+            self._relative_line_numbers = value
+            self._line_cache.clear()
+            self.refresh()
+
+    def _watch_selection(self, previous_selection: object, selection: object) -> None:
+        """Clear line cache when cursor row changes (for relative line numbers)."""
+        super()._watch_selection(previous_selection, selection)  # type: ignore[arg-type]
+        if self._relative_line_numbers and self.show_line_numbers:
+            # Get current cursor row
+            cursor_row = self.selection.end[0]
+            if cursor_row != self._last_cursor_row:
+                self._last_cursor_row = cursor_row
+                self._line_cache.clear()
+                self.refresh()
+
+    def render_line(self, y: int) -> Strip:
+        """Render a line, with relative line numbers if enabled."""
+        # Get the base rendered line
+        strip = super().render_line(y)
+
+        # If relative line numbers not enabled, return as-is
+        if not self._relative_line_numbers or not self.show_line_numbers:
+            return strip
+
+        # Get line info
+        scroll_y = self.scroll_offset[1]
+        absolute_y = scroll_y + y
+        cursor_row = self.selection.end[0]
+        gutter_width = self.gutter_width
+
+        if gutter_width == 0:
+            return strip
+
+        # Get the wrapped document info to check if this is a continuation line
+        wrapped_document = self.wrapped_document
+        if absolute_y >= wrapped_document.height:
+            return strip
+
+        try:
+            line_info = wrapped_document._offset_to_line_info[absolute_y]
+        except (IndexError, AttributeError):
+            return strip
+
+        if line_info is None:
+            return strip
+
+        line_index, section_offset = line_info
+
+        # Only show line number on first section of wrapped lines
+        if section_offset != 0:
+            return strip
+
+        # Calculate the relative/absolute line number to display
+        if line_index == cursor_row:
+            # Current line shows absolute number
+            line_num = line_index + self.line_number_start
+        else:
+            # Other lines show relative distance
+            line_num = abs(line_index - cursor_row)
+
+        # Format the new gutter content
+        gutter_width_no_margin = gutter_width - 2
+        new_gutter_text = f"{line_num:>{gutter_width_no_margin}}  "
+
+        # Replace the gutter segment in the strip
+        segments = list(strip._segments)
+        if segments:
+            # The first segment should be the gutter
+            old_seg = segments[0]
+            if len(old_seg.text) == gutter_width:
+                segments[0] = Segment(new_gutter_text, old_seg.style)
+                return Strip(segments, strip.cell_length)
+
+        return strip

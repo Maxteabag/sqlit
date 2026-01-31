@@ -27,6 +27,7 @@ class UIStateProtocol(Protocol):
     _query_target_database: str | None
     _command_mode: bool
     _command_buffer: str
+    _count_buffer: str
     log: Any
 
 
@@ -74,6 +75,9 @@ class UINavigationActionsProtocol(Protocol):
         ...
 
     def action_copy_value_view(self) -> None:
+        ...
+
+    def _clear_count_buffer(self) -> None:
         ...
 
     @property

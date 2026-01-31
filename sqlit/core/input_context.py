@@ -33,3 +33,4 @@ class InputContext:
     last_result_is_error: bool
     has_results: bool
     stacked_result_count: int = 0
+    count_buffer: str = ""

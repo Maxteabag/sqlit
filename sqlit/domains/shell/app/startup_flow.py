@@ -56,6 +56,16 @@ def run_on_mount(app: AppProtocol) -> None:
             )
         except (TypeError, ValueError):
             app.services.runtime.ui_stall_watchdog_ms = 0.0
+    if "show_line_numbers" in settings:
+        try:
+            app.query_input.show_line_numbers = bool(settings.get("show_line_numbers"))
+        except Exception:
+            pass
+    if "relative_line_numbers" in settings:
+        try:
+            app.query_input.relative_line_numbers = bool(settings.get("relative_line_numbers"))
+        except Exception:
+            pass
     app._startup_stamp("settings_applied")
 
     apply_mock_settings(app, settings)

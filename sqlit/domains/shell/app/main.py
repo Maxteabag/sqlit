@@ -161,6 +161,7 @@ class SSMSTUI(
         self._query_handle: Any | None = None
         self._command_mode: bool = False
         self._command_buffer: str = ""
+        self._count_buffer: str = ""  # Vim count prefix (e.g., "3" for 3j)
         self._ui_stall_watchdog_timer: Timer | None = None
         self._ui_stall_watchdog_expected: float | None = None
         self._ui_stall_watchdog_interval_s: float = 0.0
@@ -299,6 +300,7 @@ class SSMSTUI(
             last_result_is_error=last_result_is_error,
             has_results=has_results,
             stacked_result_count=stacked_result_count,
+            count_buffer=self._count_buffer,
         )
 
     def _debug_screen_label(self, screen: Any | None) -> str:
@@ -425,6 +427,10 @@ class SSMSTUI(
         if self._handle_command_input(event, ctx):
             return
 
+        # Handle count digit accumulation (e.g., 3j, 10k)
+        if self._handle_count_digit(event, ctx):
+            return
+
         action = resolve_action(
             event.key,
             ctx,
@@ -500,6 +506,61 @@ class SSMSTUI(
         self._command_buffer = ""
         self._update_status_bar()
 
+    # ========================================================================
+    # Vim count prefix support
+    # ========================================================================
+
+    def _get_and_clear_count(self) -> int | None:
+        """Get the current count prefix and clear it. Returns None if no count."""
+        if not self._count_buffer:
+            return None
+        try:
+            count = int(self._count_buffer)
+            # Cap at 9999 for safety
+            count = min(count, 9999)
+        except ValueError:
+            count = None
+        self._count_buffer = ""
+        return count
+
+    def _append_count_digit(self, digit: str) -> None:
+        """Append a digit to the count buffer."""
+        if len(self._count_buffer) < 4:  # Max 4 digits (9999)
+            self._count_buffer += digit
+
+    def _clear_count_buffer(self) -> None:
+        """Clear the count buffer."""
+        self._count_buffer = ""
+
+    def _handle_count_digit(self, event: Key, ctx: InputContext) -> bool:
+        """Handle digit keys for count prefix accumulation.
+
+        Returns True if the digit was consumed as a count prefix.
+        """
+        from sqlit.core.vim import VimMode
+
+        # Only in NORMAL mode with query focus
+        if ctx.focus != "query" or self.vim_mode != VimMode.NORMAL:
+            return False
+
+        # Don't intercept digits during leader pending
+        if ctx.leader_pending:
+            return False
+
+        char = event.character
+        if not char or not char.isdigit():
+            return False
+
+        # '0' only appends if count already started (otherwise it's line-start motion)
+        if char == "0" and not self._count_buffer:
+            return False
+
+        # Digits 1-9 always start/continue count
+        self._append_count_digit(char)
+        event.prevent_default()
+        event.stop()
+        return True
+
     def _handle_command_input(self, event: Key, ctx: InputContext) -> bool:
         from sqlit.core.vim import VimMode
 
@@ -547,6 +608,12 @@ class SSMSTUI(
         normalized = command.strip()
         self._last_command = normalized
         self._last_command_at = time.perf_counter()
+
+        # Handle go-to-line command (e.g., :25 goes to line 25)
+        if normalized.isdigit():
+            self._goto_line(int(normalized))
+            return
+
         cmd, *args = normalized.split()
         cmd = cmd.lower()
 
@@ -590,6 +657,19 @@ class SSMSTUI(
         if cmd == "set" and args:
             target = args[0].lower().replace("-", "_")
             value = args[1].lower() if len(args) > 1 else ""
+            # Line number settings (vim-style)
+            if target in {"number", "nu"}:
+                self._set_line_numbers(True)
+                return
+            if target in {"nonumber", "nonu"}:
+                self._set_line_numbers(False)
+                return
+            if target in {"relativenumber", "rnu"}:
+                self._set_relative_line_numbers(True)
+                return
+            if target in {"norelativenumber", "nornu"}:
+                self._set_relative_line_numbers(False)
+                return
             if target in {"process_worker"}:
                 if not value:
                     self._execute_command_action("toggle_process_worker")
@@ -700,6 +780,22 @@ class SSMSTUI(
             ("Settings", ":set process_worker_warm on|off", "Warm worker on idle", ""),
             ("Settings", ":set process_worker_lazy on|off", "Lazy worker start", ""),
             ("Settings", ":set process_worker_auto_shutdown <seconds>", "Auto-shutdown worker", ""),
+            ("Editor", ":set number, :set nu", "Show line numbers", ""),
+            ("Editor", ":set nonumber, :set nonu", "Hide line numbers", ""),
+            ("Editor", ":set relativenumber, :set rnu", "Show relative line numbers", ""),
+            ("Editor", ":set norelativenumber, :set nornu", "Show absolute line numbers", ""),
+            (
+                "Navigation",
+                ":<number>",
+                "Go to line number",
+                "Jump to specified line in query editor (e.g., :25 goes to line 25).",
+            ),
+            (
+                "Navigation",
+                "<count>G",
+                "Go to line with count prefix",
+                "In NORMAL mode, type a number then G to go to that line (e.g., 25G).",
+            ),
         ]
         if hasattr(self, "_replace_results_table"):
             self._replace_results_table(columns, rows)
@@ -817,6 +913,48 @@ class SSMSTUI(
                 schedule_warm()
         state = "enabled" if enabled else "disabled"
         self.notify(f"Process worker {state}")
+
+    def _goto_line(self, line_number: int) -> None:
+        """Go to a specific line number (1-indexed)."""
+        try:
+            lines = self.query_input.text.split("\n")
+            num_lines = len(lines)
+            # Convert to 0-indexed and clamp
+            target_row = min(line_number - 1, num_lines - 1)
+            target_row = max(0, target_row)
+            self.query_input.cursor_location = (target_row, 0)
+            self.query_input.focus()
+        except Exception:
+            pass
+
+    def _set_line_numbers(self, enabled: bool) -> None:
+        """Enable or disable line numbers in the query editor."""
+        try:
+            self.query_input.show_line_numbers = enabled
+        except Exception:
+            pass
+        try:
+            self.services.settings_store.set("show_line_numbers", enabled)
+        except Exception:
+            pass
+        state = "enabled" if enabled else "disabled"
+        self.notify(f"Line numbers {state}")
+
+    def _set_relative_line_numbers(self, enabled: bool) -> None:
+        """Enable or disable relative line numbers in the query editor."""
+        try:
+            self.query_input.relative_line_numbers = enabled
+            # Also ensure line numbers are visible when enabling relative
+            if enabled and not self.query_input.show_line_numbers:
+                self.query_input.show_line_numbers = True
+        except Exception:
+            pass
+        try:
+            self.services.settings_store.set("relative_line_numbers", enabled)
+        except Exception:
+            pass
+        state = "enabled" if enabled else "disabled"
+        self.notify(f"Relative line numbers {state}")
 
     def _set_process_worker_warm_on_idle(self, enabled: bool) -> None:
         self.services.runtime.process_worker_warm_on_idle = enabled

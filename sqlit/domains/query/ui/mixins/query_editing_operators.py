@@ -10,22 +10,14 @@ class QueryEditingOperatorsMixin:
     """Delete/yank/change operator actions for the query editor."""
 
     def action_delete_line(self: QueryMixinHost) -> None:
-        """Delete the current line in the query editor."""
+        """Delete the current line (dd), with count support for multi-line delete."""
         self._clear_leader_pending()
-        result = edit_delete.delete_line(
-            self.query_input.text,
-            *self.query_input.cursor_location,
-        )
-        self._apply_edit_result(result)
+        self._delete_with_motion("_")  # _ is the current line motion
 
     def action_delete_word(self: QueryMixinHost) -> None:
-        """Delete forward word starting at cursor."""
+        """Delete forward word (dw), with count support."""
         self._clear_leader_pending()
-        result = edit_delete.delete_word(
-            self.query_input.text,
-            *self.query_input.cursor_location,
-        )
-        self._apply_edit_result(result)
+        self._delete_with_motion("w")
 
     def action_delete_word_back(self: QueryMixinHost) -> None:
         """Delete word backwards from cursor."""
@@ -200,24 +192,57 @@ class QueryEditingOperatorsMixin:
         self.push_screen(TextObjectMenuScreen(mode, operator="delete"), handle_result)
 
     def _delete_with_motion(self: QueryMixinHost, motion_key: str, char: str | None = None) -> None:
-        """Execute delete with a motion."""
-        from sqlit.domains.query.editing import MOTIONS, operator_delete
+        """Execute delete with a motion, with optional count prefix support."""
+        from sqlit.domains.query.editing import MOTIONS, MotionType, Position, Range, operator_delete
 
         motion_func = MOTIONS.get(motion_key)
         if not motion_func:
             return
 
+        # Get count prefix (if any)
+        count = self._get_and_clear_count() or 1
+
         text = self.query_input.text
         row, col = self.query_input.cursor_location
+        lines = text.split("\n")
 
         result = motion_func(text, row, col, char)
         if not result.range:
             return
 
+        final_range = result.range
+
+        # Handle count for line motions (e.g., 3dd deletes 3 lines)
+        if motion_key == "_" and count > 1:
+            # _ is the current line motion; expand to cover `count` lines
+            start_row = row
+            end_row = min(row + count - 1, len(lines) - 1)
+            end_col = len(lines[end_row]) if end_row < len(lines) else 0
+            final_range = Range(
+                Position(start_row, 0),
+                Position(end_row, end_col),
+                MotionType.LINEWISE,
+            )
+        elif count > 1:
+            # For other motions, iterate to expand range
+            end_row, end_col = result.position.row, result.position.col
+            for _ in range(count - 1):
+                next_result = motion_func(text, end_row, end_col, char)
+                if (next_result.position.row, next_result.position.col) == (end_row, end_col):
+                    break  # Motion didn't move
+                end_row, end_col = next_result.position.row, next_result.position.col
+            # Rebuild range from original position to final position
+            final_range = Range(
+                result.range.start,
+                Position(end_row, end_col),
+                result.range.motion_type,
+                result.range.inclusive,
+            )
+
         # Push undo state before delete
         self._push_undo_state()
 
-        op_result = operator_delete(text, result.range)
+        op_result = operator_delete(text, final_range)
         self.query_input.text = op_result.text
         self.query_input.cursor_location = (op_result.row, op_result.col)
 
@@ -389,27 +414,58 @@ class QueryEditingOperatorsMixin:
         self.push_screen(TextObjectMenuScreen(mode, operator="yank"), handle_result)
 
     def _yank_with_motion(self: QueryMixinHost, motion_key: str, char: str | None = None) -> None:
-        """Execute yank with a motion."""
-        from sqlit.domains.query.editing import MOTIONS, operator_yank
+        """Execute yank with a motion, with optional count prefix support."""
+        from sqlit.domains.query.editing import MOTIONS, MotionType, Position, Range, operator_yank
 
         motion_func = MOTIONS.get(motion_key)
         if not motion_func:
             return
 
+        # Get count prefix (if any)
+        count = self._get_and_clear_count() or 1
+
         text = self.query_input.text
         row, col = self.query_input.cursor_location
+        lines = text.split("\n")
 
         result = motion_func(text, row, col, char)
         if not result.range:
             return
 
-        op_result = operator_yank(text, result.range)
+        final_range = result.range
+
+        # Handle count for line motions (e.g., 3yy yanks 3 lines)
+        if motion_key == "_" and count > 1:
+            start_row = row
+            end_row = min(row + count - 1, len(lines) - 1)
+            end_col = len(lines[end_row]) if end_row < len(lines) else 0
+            final_range = Range(
+                Position(start_row, 0),
+                Position(end_row, end_col),
+                MotionType.LINEWISE,
+            )
+        elif count > 1:
+            # For other motions, iterate to expand range
+            end_row, end_col = result.position.row, result.position.col
+            for _ in range(count - 1):
+                next_result = motion_func(text, end_row, end_col, char)
+                if (next_result.position.row, next_result.position.col) == (end_row, end_col):
+                    break
+                end_row, end_col = next_result.position.row, next_result.position.col
+            final_range = Range(
+                result.range.start,
+                Position(end_row, end_col),
+                result.range.motion_type,
+                result.range.inclusive,
+            )
+
+        op_result = operator_yank(text, final_range)
 
         # Copy yanked text to system clipboard
         if op_result.yanked:
             self._copy_text(op_result.yanked)
             # Flash the yanked range
-            ordered = result.range.ordered()
+            ordered = final_range.ordered()
             self._flash_yank_range(
                 ordered.start.row, ordered.start.col,
                 ordered.end.row, ordered.end.col,
@@ -590,24 +646,55 @@ class QueryEditingOperatorsMixin:
         self.push_screen(TextObjectMenuScreen(mode, operator="change"), handle_result)
 
     def _change_with_motion(self: QueryMixinHost, motion_key: str, char: str | None = None) -> None:
-        """Execute change with a motion (delete + enter insert mode)."""
-        from sqlit.domains.query.editing import MOTIONS, operator_change
+        """Execute change with a motion, with optional count prefix support."""
+        from sqlit.domains.query.editing import MOTIONS, MotionType, Position, Range, operator_change
 
         motion_func = MOTIONS.get(motion_key)
         if not motion_func:
             return
 
+        # Get count prefix (if any)
+        count = self._get_and_clear_count() or 1
+
         text = self.query_input.text
         row, col = self.query_input.cursor_location
+        lines = text.split("\n")
 
         result = motion_func(text, row, col, char)
         if not result.range:
             return
 
+        final_range = result.range
+
+        # Handle count for line motions (e.g., 3cc changes 3 lines)
+        if motion_key == "_" and count > 1:
+            start_row = row
+            end_row = min(row + count - 1, len(lines) - 1)
+            end_col = len(lines[end_row]) if end_row < len(lines) else 0
+            final_range = Range(
+                Position(start_row, 0),
+                Position(end_row, end_col),
+                MotionType.LINEWISE,
+            )
+        elif count > 1:
+            # For other motions, iterate to expand range
+            end_row, end_col = result.position.row, result.position.col
+            for _ in range(count - 1):
+                next_result = motion_func(text, end_row, end_col, char)
+                if (next_result.position.row, next_result.position.col) == (end_row, end_col):
+                    break
+                end_row, end_col = next_result.position.row, next_result.position.col
+            final_range = Range(
+                result.range.start,
+                Position(end_row, end_col),
+                result.range.motion_type,
+                result.range.inclusive,
+            )
+
         # Push undo state before change
         self._push_undo_state()
 
-        op_result = operator_change(text, result.range)
+        op_result = operator_change(text, final_range)
         self.query_input.text = op_result.text
         self.query_input.cursor_location = (op_result.row, op_result.col)
 

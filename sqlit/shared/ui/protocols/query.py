@@ -219,6 +219,12 @@ class QueryActionsProtocol(Protocol):
     def action_enter_insert_mode(self) -> None:
         ...
 
+    def _get_and_clear_count(self) -> int | None:
+        ...
+
+    def _clear_count_buffer(self) -> None:
+        ...
+
 
 class QueryProtocol(QueryStateProtocol, QueryActionsProtocol, Protocol):
     """Composite protocol for query-related mixins."""

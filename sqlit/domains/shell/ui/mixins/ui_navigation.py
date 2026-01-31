@@ -38,6 +38,7 @@ class UINavigationMixin(UIStatusMixin, UILeaderMixin):
 
     def action_focus_explorer(self: UINavigationMixinHost) -> None:
         """Focus the Explorer pane."""
+        self._clear_count_buffer()  # Clear any pending count prefix
         if self._fullscreen_mode != "none":
             self._set_fullscreen_mode("none")
         # Unhide explorer if hidden
@@ -53,6 +54,7 @@ class UINavigationMixin(UIStatusMixin, UILeaderMixin):
         """Focus the Query pane (in NORMAL mode)."""
         from sqlit.core.vim import VimMode
 
+        self._clear_count_buffer()  # Clear any pending count prefix
         if self._fullscreen_mode != "none":
             self._set_fullscreen_mode("none")
         self.vim_mode = VimMode.NORMAL
@@ -62,6 +64,7 @@ class UINavigationMixin(UIStatusMixin, UILeaderMixin):
 
     def action_focus_results(self: UINavigationMixinHost) -> None:
         """Focus the Results pane."""
+        self._clear_count_buffer()  # Clear any pending count prefix
         if self._fullscreen_mode != "none":
             self._set_fullscreen_mode("none")
         if self.results_area.has_class("stacked-mode"):
@@ -101,6 +104,7 @@ class UINavigationMixin(UIStatusMixin, UILeaderMixin):
         """Exit INSERT mode, return to NORMAL mode."""
         from sqlit.core.vim import VimMode
 
+        self._clear_count_buffer()  # Clear any pending count prefix
         if self.vim_mode == VimMode.INSERT:
             self.vim_mode = VimMode.NORMAL
             self.query_input.read_only = True

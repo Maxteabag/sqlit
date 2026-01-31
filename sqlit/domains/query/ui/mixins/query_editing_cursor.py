@@ -9,17 +9,29 @@ class QueryEditingCursorMixin:
     """Cursor movement and navigation for the query editor."""
 
     def _move_with_motion(self: QueryMixinHost, motion_key: str, char: str | None = None) -> None:
-        """Move cursor using a vim motion."""
+        """Move cursor using a vim motion, with optional count prefix support."""
         from sqlit.domains.query.editing import MOTIONS
 
         motion_func = MOTIONS.get(motion_key)
         if not motion_func:
             return
 
+        # Get count prefix (if any)
+        count = self._get_and_clear_count() or 1
+
         text = self.query_input.text
         row, col = self.query_input.cursor_location
-        result = motion_func(text, row, col, char)
-        self.query_input.cursor_location = (result.position.row, result.position.col)
+
+        # Apply motion `count` times
+        for _ in range(count):
+            result = motion_func(text, row, col, char)
+            new_row, new_col = result.position.row, result.position.col
+            # Stop if motion didn't move (hit boundary)
+            if (new_row, new_col) == (row, col):
+                break
+            row, col = new_row, new_col
+
+        self.query_input.cursor_location = (row, col)
 
     def action_g_leader_key(self: QueryMixinHost) -> None:
         """Show the g motion leader menu."""
@@ -56,32 +68,20 @@ class QueryEditingCursorMixin:
         self.action_execute_query_atomic()
 
     def action_cursor_left(self: QueryMixinHost) -> None:
-        """Move cursor left (h in normal mode)."""
-        row, col = self.query_input.cursor_location
-        self.query_input.cursor_location = (row, max(0, col - 1))
+        """Move cursor left (h in normal mode), with count support."""
+        self._move_with_motion("h")
 
     def action_cursor_right(self: QueryMixinHost) -> None:
-        """Move cursor right (l in normal mode)."""
-        lines = self.query_input.text.split("\n")
-        row, col = self.query_input.cursor_location
-        line_len = len(lines[row]) if row < len(lines) else 0
-        self.query_input.cursor_location = (row, min(col + 1, line_len))
+        """Move cursor right (l in normal mode), with count support."""
+        self._move_with_motion("l")
 
     def action_cursor_up(self: QueryMixinHost) -> None:
-        """Move cursor up (k in normal mode)."""
-        lines = self.query_input.text.split("\n")
-        row, col = self.query_input.cursor_location
-        new_row = max(0, row - 1)
-        new_col = min(col, len(lines[new_row]) if new_row < len(lines) else 0)
-        self.query_input.cursor_location = (new_row, new_col)
+        """Move cursor up (k in normal mode), with count support."""
+        self._move_with_motion("k")
 
     def action_cursor_down(self: QueryMixinHost) -> None:
-        """Move cursor down (j in normal mode)."""
-        lines = self.query_input.text.split("\n")
-        row, col = self.query_input.cursor_location
-        new_row = min(row + 1, len(lines) - 1)
-        new_col = min(col, len(lines[new_row]) if new_row < len(lines) else 0)
-        self.query_input.cursor_location = (new_row, new_col)
+        """Move cursor down (j in normal mode), with count support."""
+        self._move_with_motion("j")
 
     def action_cursor_word_forward(self: QueryMixinHost) -> None:
         """Move cursor to next word (w)."""
@@ -108,8 +108,18 @@ class QueryEditingCursorMixin:
         self._move_with_motion("$")
 
     def action_cursor_last_line(self: QueryMixinHost) -> None:
-        """Move cursor to last line (G)."""
-        self._move_with_motion("G")
+        """Move cursor to last line (G), or to line N with count prefix (e.g., 25G)."""
+        count = self._get_and_clear_count()
+        if count is not None:
+            # Go to specific line (1-indexed)
+            lines = self.query_input.text.split("\n")
+            num_lines = len(lines)
+            target_row = min(count - 1, num_lines - 1)  # Convert to 0-indexed, clamp
+            target_row = max(0, target_row)
+            self.query_input.cursor_location = (target_row, 0)
+        else:
+            # Go to last line
+            self._move_with_motion("G")
 
     def action_cursor_matching_bracket(self: QueryMixinHost) -> None:
         """Move cursor to matching bracket (%)."""
