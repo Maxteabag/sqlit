@@ -202,6 +202,14 @@ class MockHost:
     def notify(self, message, severity="info"):
         pass
 
+    def _load_folder_async(self, node, data):
+        """No-op for testing - folder loading is simulated manually."""
+        pass
+
+    def _load_columns_async(self, node, data):
+        """No-op for testing - column loading is simulated manually."""
+        pass
+
 
 @dataclass
 class MockColumn:

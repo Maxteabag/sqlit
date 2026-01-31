@@ -28,6 +28,12 @@ class MotherDuckAdapter(DuckDBAdapter):
         """MotherDuck supports multiple databases."""
         return True
 
+    def apply_database_override(self, config: ConnectionConfig, database: str) -> ConnectionConfig:
+        """Apply a default database for unqualified queries."""
+        if not database:
+            return config
+        return config.with_endpoint(database=database)
+
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to MotherDuck cloud database."""
         duckdb = self._import_driver_module(

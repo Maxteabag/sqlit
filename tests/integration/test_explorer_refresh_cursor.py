@@ -74,7 +74,8 @@ async def test_explorer_refresh_keeps_cursor_on_connection() -> None:
 
         # Simulate refresh with a reordered connection list (e.g. discovery/sort changes).
         # Keep the selected connection in the middle so a jump to first/last fails.
-        app.connections = [connections[2], connections[1], connections[0]]
+        # Update the store so refresh picks up the new order.
+        app.services.connection_store.connections = [connections[2], connections[1], connections[0]]
 
         before_token = getattr(app, "_tree_refresh_token", None)
         await pilot.press("f")
@@ -143,7 +144,8 @@ async def test_explorer_refresh_keeps_cursor_when_connection_moves_folder() -> N
         assert app.object_tree.cursor_node == target
 
         # Move the selected connection to a different folder before refresh.
-        app.connections = [
+        # Update the store so refresh picks up the new folder assignments.
+        app.services.connection_store.connections = [
             ConnectionConfig(
                 name="Alpha",
                 db_type="sqlite",
@@ -177,4 +179,3 @@ async def test_explorer_refresh_keeps_cursor_when_connection_moves_folder() -> N
         parent = getattr(cursor, "parent", None)
         parent_data = getattr(parent, "data", None)
         assert getattr(parent_data, "name", None) == "B"
-
