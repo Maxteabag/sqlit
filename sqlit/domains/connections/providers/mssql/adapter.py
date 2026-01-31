@@ -183,7 +183,10 @@ class SQLServerAdapter(DatabaseAdapter):
         # Append extra_options to connection string
         for key, value in config.extra_options.items():
             conn_str += f"{key}={value};"
-        return mssql_python.connect(conn_str)
+        conn = mssql_python.connect(conn_str)
+        # Enable autocommit to allow DDL statements like CREATE DATABASE
+        conn.autocommit = True
+        return conn
 
     def get_databases(self, conn: Any) -> list[str]:
         """Get list of databases from SQL Server."""

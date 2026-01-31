@@ -94,9 +94,11 @@ class ExplorerSchemaService:
         cache_key = database or "__default__"
         obj_cache = self.object_cache
 
-        def cached(key: str, loader: Callable[[], Any]) -> Any:
+        def cached(key: str, loader: Callable[[], Any], *, allow_empty: bool = True) -> Any:
             if cache_key in obj_cache and key in obj_cache[cache_key]:
-                return obj_cache[cache_key][key]
+                data = obj_cache[cache_key][key]
+                if allow_empty or data:
+                    return data
             data = loader()
             if cache_key not in obj_cache:
                 obj_cache[cache_key] = {}
@@ -110,6 +112,7 @@ class ExplorerSchemaService:
                     lambda: inspector.get_tables(self.session.connection, db_arg),
                     database,
                 ),
+                allow_empty=self.session.provider.metadata.db_type != "duckdb",
             )
             return [("table", schema, name) for schema, name in raw_data]
         if folder_type == "views":
@@ -119,6 +122,7 @@ class ExplorerSchemaService:
                     lambda: inspector.get_views(self.session.connection, db_arg),
                     database,
                 ),
+                allow_empty=self.session.provider.metadata.db_type != "duckdb",
             )
             return [("view", schema, name) for schema, name in raw_data]
         if folder_type == "databases":

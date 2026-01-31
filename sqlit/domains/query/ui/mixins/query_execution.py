@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from typing import TYPE_CHECKING, Any, Callable
 
 from sqlit.domains.explorer.ui.tree import db_switching as tree_db_switching
@@ -19,6 +21,19 @@ if TYPE_CHECKING:
     from sqlit.domains.query.app.cancellable import CancellableQuery
     from sqlit.domains.query.app.query_service import QueryService
     from sqlit.domains.query.app.transaction import TransactionExecutor
+
+
+_SCHEMA_CHANGE_RE = re.compile(
+    r"\b(create|alter|drop|truncate|rename|comment|grant|revoke)\b",
+    re.IGNORECASE,
+)
+_SQL_COMMENT_RE = re.compile(r"(--[^\n]*|/\*.*?\*/)", re.DOTALL)
+_SQL_LITERAL_RE = re.compile(r"('([^']|'')*'|\"([^\"]|\"\")*\"|`[^`]*`|\[[^\]]*\])", re.DOTALL)
+
+
+def _strip_sql_comments_and_literals(sql: str) -> str:
+    sql = _SQL_COMMENT_RE.sub(" ", sql)
+    return _SQL_LITERAL_RE.sub(" ", sql)
 
 
 class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
@@ -215,6 +230,21 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             ConfirmScreen(title, executable_sql, yes_label="Yes", no_label="No"),
             _on_result,
         )
+
+    def _query_changes_schema(self: QueryMixinHost, query: str) -> bool:
+        cleaned = _strip_sql_comments_and_literals(query)
+        return bool(_SCHEMA_CHANGE_RE.search(cleaned))
+
+    def _maybe_refresh_explorer_after_query(self: QueryMixinHost, query: str) -> None:
+        if not self._query_changes_schema(query):
+            return
+        refresh = getattr(self, "_refresh_tree_after_schema_change", None)
+        if callable(refresh):
+            refresh()
+            return
+        action = getattr(self, "action_refresh_tree", None)
+        if callable(action):
+            action()
 
     def _start_query_spinner(self: QueryMixinHost) -> None:
         """Start the query execution spinner animation."""
@@ -481,6 +511,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                         )
                     else:
                         self._display_non_query_result(result.rows_affected, elapsed_ms)
+                    self._maybe_refresh_explorer_after_query(query)
                     if keep_insert_mode:
                         self._restore_insert_mode()
                     return
@@ -500,6 +531,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                 except Exception:
                     pass
                 self._display_multi_statement_results(multi_result, elapsed_ms)
+                self._maybe_refresh_explorer_after_query(query)
             else:
                 # Single statement - existing behavior
                 result = await asyncio.to_thread(
@@ -520,6 +552,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                     )
                 else:
                     self._display_non_query_result(result.rows_affected, elapsed_ms)
+                self._maybe_refresh_explorer_after_query(query)
 
             if keep_insert_mode:
                 self._restore_insert_mode()
@@ -584,14 +617,17 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                     self.notify("Transaction rolled back (error in statement)", severity="error")
                 else:
                     self.notify("Query executed atomically (committed)", severity="information")
+                    self._maybe_refresh_explorer_after_query(query)
             elif isinstance(result, QueryResult):
                 await self._display_query_results(
                     result.columns, result.rows, result.row_count, result.truncated, elapsed_ms
                 )
                 self.notify("Query executed atomically (committed)", severity="information")
+                self._maybe_refresh_explorer_after_query(query)
             else:
                 self._display_non_query_result(result.rows_affected, elapsed_ms)
                 self.notify("Query executed atomically (committed)", severity="information")
+                self._maybe_refresh_explorer_after_query(query)
 
         except Exception as e:
             self._display_query_error(f"Transaction rolled back: {e}")

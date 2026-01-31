@@ -20,6 +20,21 @@ def _get_oracle_role_options() -> tuple[SelectOption, ...]:
     )
 
 
+def _get_oracle_connection_type_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("service_name", "Service Name"),
+        SelectOption("sid", "SID"),
+    )
+
+
+def _oracle_connection_type_is_service_name(values: dict) -> bool:
+    return values.get("oracle_connection_type", "service_name") != "sid"
+
+
+def _oracle_connection_type_is_sid(values: dict) -> bool:
+    return values.get("oracle_connection_type") == "sid"
+
+
 def _get_oracle_client_mode_options() -> tuple[SelectOption, ...]:
     return (
         SelectOption("thick", "Thick (Instant Client)"),
@@ -44,10 +59,25 @@ SCHEMA = ConnectionSchema(
         ),
         _port_field("1521"),
         SchemaField(
+            name="oracle_connection_type",
+            label="Connection Type",
+            field_type=FieldType.DROPDOWN,
+            options=_get_oracle_connection_type_options(),
+            default="service_name",
+        ),
+        SchemaField(
             name="database",
             label="Service Name",
+            placeholder="ORCL or XEPDB1",
+            required=True,
+            visible_when=_oracle_connection_type_is_service_name,
+        ),
+        SchemaField(
+            name="oracle_sid",
+            label="SID",
             placeholder="ORCL",
             required=True,
+            visible_when=_oracle_connection_type_is_sid,
         ),
         _username_field(),
         _password_field(),

@@ -210,9 +210,21 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
     def action_refresh_tree(self: TreeMixinHost) -> None:
         """Refresh the explorer."""
+        self._refresh_tree_common(notify=True)
+
+    def _refresh_tree_after_schema_change(self: TreeMixinHost) -> None:
+        """Refresh tree after DDL without showing a notification."""
+        self._refresh_tree_common(notify=False)
+
+    def _refresh_tree_common(self: TreeMixinHost, *, notify: bool) -> None:
         self._get_object_cache().clear()
-        if hasattr(self, "_schema_cache") and "columns" in self._schema_cache:
+        if hasattr(self, "_schema_cache") and isinstance(self._schema_cache, dict):
             self._schema_cache["columns"] = {}
+            self._schema_cache["tables"] = []
+            self._schema_cache["views"] = []
+            self._schema_cache["procedures"] = []
+        if hasattr(self, "_db_object_cache"):
+            self._db_object_cache = {}
         if hasattr(self, "_loading_nodes"):
             self._loading_nodes.clear()
         self._schema_service = None
@@ -253,7 +265,8 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
                 )
             else:
                 self._schedule_timer(MIN_TIMER_DELAY_S, run_loader)
-        self.notify("Refreshed")
+        if notify:
+            self.notify("Refreshed")
 
     def refresh_tree(self: TreeMixinHost) -> None:
         tree_builder.refresh_tree_chunked(self)

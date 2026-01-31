@@ -111,4 +111,24 @@ class MySQLAdapter(MySQLBaseAdapter):
             connect_args["ssl"] = ssl_params
 
         connect_args.update(config.extra_options)
-        return pymysql.connect(**connect_args)
+        conn = pymysql.connect(**connect_args)
+
+        # Auto-sync charset with server to handle legacy encodings (e.g., TIS-620, Latin1).
+        # This ensures data is read correctly when the database uses a non-UTF-8 charset.
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT @@character_set_database")
+            row = cursor.fetchone()
+            if row:
+                server_charset = row[0]
+                # Only switch if server uses a different charset than our default (utf8mb4)
+                if server_charset and server_charset.lower() != "utf8mb4":
+                    # Use set_charset() which both sends SET NAMES AND updates
+                    # PyMySQL's internal encoding for proper byte decoding
+                    conn.set_charset(server_charset)
+            cursor.close()
+        except Exception:
+            # If charset sync fails, continue with default - better than failing completely
+            pass
+
+        return conn

@@ -14,6 +14,7 @@ from tests.fixtures.flight import *
 from tests.fixtures.mariadb import *
 from tests.fixtures.mssql import *
 from tests.fixtures.mysql import *
+from tests.fixtures.mysql_charset import *
 from tests.fixtures.oracle import *
 from tests.fixtures.oracle_legacy import *
 from tests.fixtures.presto import *

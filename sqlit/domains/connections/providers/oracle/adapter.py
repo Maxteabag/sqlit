@@ -72,8 +72,18 @@ class OracleAdapter(DatabaseAdapter):
         if endpoint is None:
             raise ValueError("Oracle connections require a TCP-style endpoint.")
         port = int(endpoint.port or get_default_port("oracle"))
-        # Use Easy Connect string format: host:port/service_name
-        dsn = f"{endpoint.host}:{port}/{endpoint.database}"
+
+        # Determine connection type: service_name (default) or sid
+        connection_type = config.get_option("oracle_connection_type", "service_name")
+
+        if connection_type == "sid":
+            # SID format: host:port:sid (uses colon separator)
+            # SID is stored in oracle_sid field, fall back to database for backward compat
+            sid = config.get_option("oracle_sid") or endpoint.database
+            dsn = f"{endpoint.host}:{port}:{sid}"
+        else:
+            # Service Name format: host:port/service_name (uses slash separator)
+            dsn = f"{endpoint.host}:{port}/{endpoint.database}"
 
         # Determine connection mode based on oracle_role
         oracle_role = config.get_option("oracle_role", "normal")
