@@ -16,6 +16,7 @@ class ResultsStateProtocol(Protocol):
     _last_result_row_count: int
     _internal_clipboard: str
     _last_query_table: dict[str, Any] | None
+    _pending_result_table_info: dict[str, Any] | None
     _results_table_counter: int
     _results_filter_visible: bool
     _results_filter_text: str

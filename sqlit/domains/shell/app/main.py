@@ -197,6 +197,7 @@ class SSMSTUI(
         self._columns_loading: set[str] = set()
         self._state_machine = UIStateMachine()
         self._last_query_table: dict[str, Any] | None = None
+        self._pending_result_table_info: dict[str, Any] | None = None
         self._query_target_database: str | None = None  # Target DB for auto-generated queries
         self._restart_requested: bool = False
         # Idle scheduler for background work

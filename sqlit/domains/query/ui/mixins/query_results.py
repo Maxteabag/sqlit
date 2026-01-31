@@ -224,6 +224,7 @@ class QueryResultsMixin:
         escape: bool,
         row_limit: int,
         render_token: int,
+        table_info: dict[str, Any] | None = None,
     ) -> None:
         initial_count = min(RESULTS_RENDER_INITIAL_ROWS, row_limit)
         initial_rows = rows[:initial_count] if initial_count > 0 else []
@@ -269,9 +270,16 @@ class QueryResultsMixin:
                 pass
             if render_token == getattr(self, "_results_render_token", 0):
                 self._replace_results_table_with_data(columns, rows, escape=escape)
+                if table_info is not None:
+                    try:
+                        self.results_table.result_table_info = table_info
+                    except Exception:
+                        pass
             return
         if render_token != getattr(self, "_results_render_token", 0):
             return
+        if table_info is not None:
+            table.result_table_info = table_info
         self._replace_results_table_with_table(table)
         self._schedule_results_render(
             table,
@@ -291,6 +299,7 @@ class QueryResultsMixin:
         self._last_result_columns = columns
         self._last_result_rows = rows
         self._last_result_row_count = row_count
+        table_info = getattr(self, "_pending_result_table_info", None)
 
         # Switch to single result mode (in case we were showing stacked results)
         self._show_single_result_mode()
@@ -304,12 +313,15 @@ class QueryResultsMixin:
                 escape=True,
                 row_limit=row_limit,
                 render_token=render_token,
+                table_info=table_info,
             )
         else:
             render_rows = rows[:row_limit] if row_limit else []
             table = self._build_results_table(columns, render_rows, escape=True)
             if render_token != getattr(self, "_results_render_token", 0):
                 return
+            if table_info is not None:
+                table.result_table_info = table_info
             self._replace_results_table_with_table(table)
 
         time_str = format_duration_ms(elapsed_ms)
@@ -320,9 +332,15 @@ class QueryResultsMixin:
             )
         else:
             self.notify(f"Query returned {row_count} rows in {time_str}")
+        if table_info is not None:
+            prime = getattr(self, "_prime_result_table_columns", None)
+            if callable(prime):
+                prime(table_info)
+        self._pending_result_table_info = None
 
     def _display_non_query_result(self: QueryMixinHost, affected: int, elapsed_ms: float) -> None:
         """Display non-query result (called on main thread)."""
+        self._pending_result_table_info = None
         self._last_result_columns = ["Result"]
         self._last_result_rows = [(f"{affected} row(s) affected",)]
         self._last_result_row_count = 1
@@ -337,6 +355,7 @@ class QueryResultsMixin:
     def _display_query_error(self: QueryMixinHost, error_message: str) -> None:
         """Display query error (called on main thread)."""
         self._cancel_results_render()
+        self._pending_result_table_info = None
         # notify(severity="error") handles displaying the error in results via _show_error_in_results
         self.notify(f"Query error: {error_message}", severity="error")
 
@@ -360,7 +379,17 @@ class QueryResultsMixin:
 
         # Add each result section
         for i, stmt_result in enumerate(multi_result.results):
-            container.add_result_section(stmt_result, i, auto_collapse=auto_collapse)
+            table_info = self._infer_result_table_info(stmt_result.statement)
+            if table_info is not None:
+                prime = getattr(self, "_prime_result_table_columns", None)
+                if callable(prime):
+                    prime(table_info)
+            container.add_result_section(
+                stmt_result,
+                i,
+                auto_collapse=auto_collapse,
+                table_info=table_info,
+            )
 
         # Show the stacked results container, hide single result table
         self._show_stacked_results_mode()
@@ -378,6 +407,7 @@ class QueryResultsMixin:
             )
         else:
             self.notify(f"Executed {total} statements in {time_str}")
+        self._pending_result_table_info = None
 
     def _get_stacked_results_container(self: QueryMixinHost) -> Any:
         """Get the stacked results container."""
@@ -410,3 +440,30 @@ class QueryResultsMixin:
             stacked.remove_class("active")
         except Exception:
             pass
+
+    def _infer_result_table_info(self: QueryMixinHost, sql: str) -> dict[str, Any] | None:
+        """Best-effort inference of a single source table for query results."""
+        from sqlit.domains.query.completion import extract_table_refs
+
+        refs = extract_table_refs(sql)
+        if len(refs) != 1:
+            return None
+        ref = refs[0]
+        schema = ref.schema
+        name = ref.name
+        database = None
+        table_metadata = getattr(self, "_table_metadata", {}) or {}
+        key_candidates = [name.lower()]
+        if schema:
+            key_candidates.insert(0, f"{schema}.{name}".lower())
+        for key in key_candidates:
+            metadata = table_metadata.get(key)
+            if metadata:
+                schema, name, database = metadata
+                break
+        return {
+            "database": database,
+            "schema": schema,
+            "name": name,
+            "columns": [],
+        }

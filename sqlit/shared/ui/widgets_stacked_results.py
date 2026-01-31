@@ -104,6 +104,7 @@ class ResultSection(Collapsible):
         self.is_error = is_error
         self.result_columns: list[str] = []
         self.result_rows: list[tuple] = []
+        self.result_table_info: dict[str, Any] | None = None
         self._content = content
         if is_error:
             self.add_class("error")
@@ -156,6 +157,7 @@ class StackedResultsContainer(VerticalScroll):
         index: int,
         *,
         auto_collapse: bool = False,
+        table_info: dict[str, Any] | None = None,
     ) -> None:
         """Add a result section for a statement result."""
         from sqlit.domains.query.app.query_service import QueryResult
@@ -169,6 +171,8 @@ class StackedResultsContainer(VerticalScroll):
                 # SELECT result - build a DataTable
                 result_columns, result_rows = self._get_result_table_data(stmt_result.result)
                 content = self._build_result_table_from_rows(result_columns, result_rows, index)
+                if table_info is not None:
+                    content.result_table_info = table_info
             else:
                 # Non-query result (INSERT/UPDATE/DELETE)
                 content = NonQueryDisplay(stmt_result.result.rows_affected)
@@ -186,6 +190,7 @@ class StackedResultsContainer(VerticalScroll):
         )
         section.result_columns = result_columns
         section.result_rows = result_rows
+        section.result_table_info = table_info
 
         self.mount(section)
         self._section_count += 1

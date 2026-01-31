@@ -295,6 +295,8 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
                 "name": data.name,
                 "columns": [],
             }
+            # Stash per-result metadata so results can resolve PKs without relying on globals.
+            self._pending_result_table_info = self._last_query_table
             self._prime_last_query_table_columns(data.database, data.schema, data.name)
 
             self.query_input.text = self.current_provider.dialect.build_select_query(

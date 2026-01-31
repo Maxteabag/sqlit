@@ -8,6 +8,8 @@ from typing import Any
 from sqlit.shared.ui.protocols import ResultsMixinHost
 from sqlit.shared.ui.widgets import SqlitDataTable
 
+MIN_TIMER_DELAY_S = 0.001
+
 
 class ResultsMixin:
     """Mixin providing results handling functionality."""
@@ -18,6 +20,122 @@ class ResultsMixin:
     _tooltip_cell_coord: tuple[int, int] | None = None
     _tooltip_showing: bool = False
     _tooltip_timer: Any | None = None
+
+    def _schedule_results_timer(self: ResultsMixinHost, delay_s: float, callback: Any) -> Any | None:
+        set_timer = getattr(self, "set_timer", None)
+        if callable(set_timer):
+            return set_timer(delay_s, callback)
+        call_later = getattr(self, "call_later", None)
+        if callable(call_later):
+            try:
+                call_later(callback)
+                return None
+            except Exception:
+                pass
+        try:
+            callback()
+        except Exception:
+            pass
+        return None
+
+    def _apply_result_table_columns(
+        self: ResultsMixinHost,
+        table_info: dict[str, Any],
+        token: int,
+        columns: list[Any],
+    ) -> None:
+        if table_info.get("_columns_token") != token:
+            return
+        table_info["columns"] = columns
+
+    def _prime_result_table_columns(self: ResultsMixinHost, table_info: dict[str, Any] | None) -> None:
+        if not table_info:
+            return
+        if table_info.get("columns"):
+            return
+        name = table_info.get("name")
+        if not name:
+            return
+        database = table_info.get("database")
+        schema = table_info.get("schema")
+        token = int(table_info.get("_columns_token", 0)) + 1
+        table_info["_columns_token"] = token
+
+        async def work_async() -> None:
+            import asyncio
+
+            columns: list[Any] = []
+            try:
+                runtime = getattr(self.services, "runtime", None)
+                use_worker = bool(getattr(runtime, "process_worker", False)) and not bool(
+                    getattr(getattr(runtime, "mock", None), "enabled", False)
+                )
+                client = None
+                if use_worker and hasattr(self, "_get_process_worker_client_async"):
+                    client = await self._get_process_worker_client_async()  # type: ignore[attr-defined]
+
+                if client is not None and hasattr(client, "list_columns") and self.current_config is not None:
+                    outcome = await asyncio.to_thread(
+                        client.list_columns,
+                        config=self.current_config,
+                        database=database,
+                        schema=schema,
+                        name=name,
+                    )
+                    if getattr(outcome, "cancelled", False):
+                        return
+                    error = getattr(outcome, "error", None)
+                    if error:
+                        raise RuntimeError(error)
+                    columns = outcome.columns or []
+                else:
+                    schema_service = getattr(self, "_get_schema_service", None)
+                    if callable(schema_service):
+                        service = self._get_schema_service()
+                        if service:
+                            columns = await asyncio.to_thread(
+                                service.list_columns,
+                                database,
+                                schema,
+                                name,
+                            )
+            except Exception:
+                columns = []
+
+            self._schedule_results_timer(
+                MIN_TIMER_DELAY_S,
+                lambda: self._apply_result_table_columns(table_info, token, columns),
+            )
+
+        self.run_worker(work_async(), name=f"prime-result-columns-{name}", exclusive=False)
+
+    def _normalize_column_name(self: ResultsMixinHost, name: str) -> str:
+        trimmed = name.strip()
+        if len(trimmed) >= 2:
+            if trimmed[0] == trimmed[-1] and trimmed[0] in ("\"", "`"):
+                trimmed = trimmed[1:-1]
+            elif trimmed[0] == "[" and trimmed[-1] == "]":
+                trimmed = trimmed[1:-1]
+        if "." in trimmed and not any(q in trimmed for q in ("\"", "`", "[")):
+            trimmed = trimmed.split(".")[-1]
+        return trimmed.lower()
+
+    def _get_active_results_table_info(
+        self: ResultsMixinHost,
+        table: SqlitDataTable | None,
+        stacked: bool,
+    ) -> dict[str, Any] | None:
+        if not table:
+            return None
+        if stacked:
+            section = self._find_results_section(table)
+            table_info = getattr(section, "result_table_info", None)
+            if table_info:
+                return table_info
+        table_info = getattr(table, "result_table_info", None)
+        if table_info:
+            return table_info
+        return getattr(self, "_last_query_table", None)
 
     def _copy_text(self: ResultsMixinHost, text: str) -> bool:
         """Copy text to clipboard if possible, otherwise store internally."""
@@ -610,21 +728,20 @@ class ResultsMixin:
         # Get table name and primary key columns
         table_name = "<table>"
         pk_column_names: set[str] = set()
-
-        if hasattr(self, "_last_query_table") and self._last_query_table:
-            table_info = self._last_query_table
-            table_name = table_info["name"]
+        table_info = self._get_active_results_table_info(table, _stacked)
+        if table_info:
+            table_name = table_info.get("name", table_name)
             # Get PK columns from column info
             for col in table_info.get("columns", []):
                 if col.is_primary_key:
-                    pk_column_names.add(col.name)
+                    pk_column_names.add(self._normalize_column_name(col.name))
 
         # Build WHERE clause - prefer PK columns, fall back to all columns
         where_parts = []
         for i, col in enumerate(columns):
             if i < len(row_values):
                 # If we have PK info, only use PK columns; otherwise use all columns
-                if pk_column_names and col not in pk_column_names:
+                if pk_column_names and self._normalize_column_name(col) not in pk_column_names:
                     continue
                 val = row_values[i]
                 if val is None:
@@ -685,9 +802,10 @@ class ResultsMixin:
         column_name = columns[cursor_col]
 
         # Check if this column is a primary key - don't allow editing PKs
-        if hasattr(self, "_last_query_table") and self._last_query_table:
-            for col in self._last_query_table.get("columns", []):
-                if col.name == column_name and col.is_primary_key:
+        table_info = self._get_active_results_table_info(table, _stacked)
+        if table_info:
+            for col in table_info.get("columns", []):
+                if col.is_primary_key and self._normalize_column_name(col.name) == self._normalize_column_name(column_name):
                     self.notify("Cannot edit primary key column", severity="warning")
                     return
 
@@ -705,21 +823,19 @@ class ResultsMixin:
         # Get table name and primary key columns
         table_name = "<table>"
         pk_column_names: set[str] = set()
-
-        if hasattr(self, "_last_query_table") and self._last_query_table:
-            table_info = self._last_query_table
-            table_name = table_info["name"]
+        if table_info:
+            table_name = table_info.get("name", table_name)
             # Get PK columns from column info
             for col in table_info.get("columns", []):
                 if col.is_primary_key:
-                    pk_column_names.add(col.name)
+                    pk_column_names.add(self._normalize_column_name(col.name))
 
         # Build WHERE clause - prefer PK columns, fall back to all columns
         where_parts = []
         for i, col in enumerate(columns):
             if i < len(row_values):
                 # If we have PK info, only use PK columns; otherwise use all columns
-                if pk_column_names and col not in pk_column_names:
+                if pk_column_names and self._normalize_column_name(col) not in pk_column_names:
                     continue
                 val = row_values[i]
                 if val is None:

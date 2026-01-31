@@ -417,6 +417,17 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         executable_statements = [s for s in statements if not is_comment_only_statement(s)]
         is_multi_statement = len(executable_statements) > 1
 
+        if is_multi_statement:
+            self._pending_result_table_info = None
+        elif executable_statements:
+            if getattr(self, "_pending_result_table_info", None) is None:
+                table_info = self._infer_result_table_info(executable_statements[0])
+                if table_info is not None:
+                    self._pending_result_table_info = table_info
+                    prime = getattr(self, "_prime_result_table_columns", None)
+                    if callable(prime):
+                        prime(table_info)
+
         try:
             start_time = time.perf_counter()
             max_rows = self.services.runtime.max_rows or MAX_FETCH_ROWS
