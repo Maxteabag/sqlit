@@ -310,5 +310,16 @@ class UIStateMachine:
         lines.append(section("COMMAND MODE"))
         lines.append(binding(":", "Enter command mode"))
         lines.append(binding(":commands", "Show command list"))
+        lines.append("")
+
+        # ═══════════════════════════════════════════════════════════════════
+        # SETTINGS
+        # ═══════════════════════════════════════════════════════════════════
+        lines.append(section("SETTINGS"))
+        lines.append(binding(":alert off|delete|write", "Confirm risky queries"))
+        lines.append(binding(":set number, :set nu", "Show line numbers"))
+        lines.append(binding(":set nonumber, :set nonu", "Hide line numbers"))
+        lines.append(binding(":set relativenumber, :set rnu", "Show relative line numbers"))
+        lines.append(binding(":set norelativenumber, :set nornu", "Show absolute line numbers"))
 
         return "\n".join(lines)

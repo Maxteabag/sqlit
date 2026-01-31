@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from sqlit.domains.explorer.ui.tree import db_switching as tree_db_switching
 from sqlit.domains.process_worker.ui.mixins.process_worker_lifecycle import (
@@ -58,16 +58,19 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             self.notify("No query to execute", severity="warning")
             return
 
-        if hasattr(self, "_query_worker") and self._query_worker is not None:
-            self._query_worker.cancel()
+        def _proceed() -> None:
+            if hasattr(self, "_query_worker") and self._query_worker is not None:
+                self._query_worker.cancel()
 
-        self._start_query_spinner()
+            self._start_query_spinner()
 
-        self._query_worker = self.run_worker(
-            self._run_query_atomic_async(query),
-            name="query_execution_atomic",
-            exclusive=True,
-        )
+            self._query_worker = self.run_worker(
+                self._run_query_atomic_async(query),
+                name="query_execution_atomic",
+                exclusive=True,
+            )
+
+        self._maybe_confirm_query(query, _proceed)
 
     def action_execute_single_statement(self: QueryMixinHost) -> None:
         """Execute only the SQL statement at the current cursor position."""
@@ -96,16 +99,19 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             self.notify("No statement found at cursor", severity="warning")
             return
 
-        if hasattr(self, "_query_worker") and self._query_worker is not None:
-            self._query_worker.cancel()
+        def _proceed() -> None:
+            if hasattr(self, "_query_worker") and self._query_worker is not None:
+                self._query_worker.cancel()
 
-        self._start_query_spinner()
+            self._start_query_spinner()
 
-        self._query_worker = self.run_worker(
-            self._run_query_async(statement, keep_insert_mode=False),
-            name="query_execution_single",
-            exclusive=True,
-        )
+            self._query_worker = self.run_worker(
+                self._run_query_async(statement, keep_insert_mode=False),
+                name="query_execution_single",
+                exclusive=True,
+            )
+
+        self._maybe_confirm_query(statement, _proceed)
 
     def _execute_query_common(self: QueryMixinHost, keep_insert_mode: bool) -> None:
         """Common query execution logic."""
@@ -119,15 +125,71 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             self.notify("No query to execute", severity="warning")
             return
 
-        if hasattr(self, "_query_worker") and self._query_worker is not None:
-            self._query_worker.cancel()
+        def _proceed() -> None:
+            if hasattr(self, "_query_worker") and self._query_worker is not None:
+                self._query_worker.cancel()
 
-        self._start_query_spinner()
+            self._start_query_spinner()
 
-        self._query_worker = self.run_worker(
-            self._run_query_async(query, keep_insert_mode),
-            name="query_execution",
-            exclusive=True,
+            self._query_worker = self.run_worker(
+                self._run_query_async(query, keep_insert_mode),
+                name="query_execution",
+                exclusive=True,
+            )
+
+        self._maybe_confirm_query(query, _proceed)
+
+    def _maybe_confirm_query(self: QueryMixinHost, query: str, proceed: Callable[[], None]) -> None:
+        """Confirm query execution based on alert mode, then call proceed."""
+        from sqlit.domains.query.app.alerts import (
+            AlertMode,
+            AlertSeverity,
+            classify_query_alert,
+            format_alert_mode,
+            should_confirm,
+        )
+        from sqlit.shared.ui.screens.confirm import ConfirmScreen
+
+        raw_mode = getattr(self.services.runtime, "query_alert_mode", 0) or 0
+        try:
+            mode = AlertMode(int(raw_mode))
+        except ValueError:
+            mode = AlertMode.OFF
+
+        if mode == AlertMode.OFF:
+            proceed()
+            return
+
+        severity = classify_query_alert(query)
+        if severity == AlertSeverity.NONE or not should_confirm(mode, severity):
+            proceed()
+            return
+
+        title = "Confirm query"
+        if severity == AlertSeverity.DELETE:
+            title = "Confirm DELETE query"
+        elif severity == AlertSeverity.WRITE:
+            title = "Confirm write query"
+
+        description = None
+        snippet = query.strip().splitlines()[0] if query.strip() else ""
+        if snippet:
+            if len(snippet) > 120:
+                snippet = snippet[:117] + "..."
+            description = snippet
+
+        def _on_result(confirmed: bool | None) -> None:
+            if confirmed:
+                proceed()
+                return
+            self.notify(
+                f"Query cancelled (alert mode: {format_alert_mode(mode)})",
+                severity="warning",
+            )
+
+        self.push_screen(
+            ConfirmScreen(title, description, yes_label="Run", no_label="Cancel"),
+            _on_result,
         )
 
     def _start_query_spinner(self: QueryMixinHost) -> None:

@@ -43,6 +43,7 @@ class RuntimeConfig:
     process_worker_warm_on_idle: bool = True
     process_worker_auto_shutdown_s: float = 0.0
     ui_stall_watchdog_ms: float = 0.0
+    query_alert_mode: int = 0
     mock: MockConfig = field(default_factory=MockConfig)
 
     @classmethod

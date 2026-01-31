@@ -748,6 +748,7 @@ class SSMSTUI(
                 "Use 'plaintext' to store passwords in ~/.sqlit/ (protected folder), 'keyring' to use system keyring.",
             ),
             ("Appearance", ":theme", "Open theme selection", ""),
+            ("Query", ":alert off|delete|write", "Confirm before risky queries", "Modes: off, delete, write"),
             ("Query", ":run, :r", "Execute query", ""),
             ("Query", ":run!, :r!", "Execute query (stay in INSERT)", ""),
             (
