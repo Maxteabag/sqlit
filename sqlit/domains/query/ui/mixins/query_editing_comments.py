@@ -90,3 +90,30 @@ class QueryEditingCommentsMixin:
         new_text, new_col = toggle_comment_lines(text, start_row, end_row)
         self.query_input.text = new_text
         self.query_input.cursor_location = (start_row, new_col)
+
+    def action_gc_statement(self: QueryMixinHost) -> None:
+        """Toggle comment on statement at cursor (gcS)."""
+        self._clear_leader_pending()
+        from sqlit.domains.query.app.multi_statement import find_statement_at_cursor
+        from sqlit.domains.query.editing.comments import toggle_comment_lines
+
+        text = self.query_input.text
+        if not text or not text.strip():
+            return
+
+        row, col = self.query_input.cursor_location
+        result = find_statement_at_cursor(text, row, col)
+
+        if result is None:
+            return
+
+        _, start_offset, end_offset = result
+
+        # Convert character offsets to line numbers
+        start_row = text[:start_offset].count("\n")
+        end_row = text[:end_offset].count("\n")
+
+        self._push_undo_state()
+        new_text, new_col = toggle_comment_lines(text, start_row, end_row)
+        self.query_input.text = new_text
+        self.query_input.cursor_location = (start_row, new_col)
