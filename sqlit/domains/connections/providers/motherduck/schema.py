@@ -11,22 +11,19 @@ SCHEMA = ConnectionSchema(
     display_name="MotherDuck",
     fields=(
         SchemaField(
-            name="database",
+            name="file_path",
             label="Database",
-            placeholder="my_database (optional)",
-            required=False,
-            description="MotherDuck database name. Leave empty to use default.",
+            placeholder="my_database",
+            required=True,
         ),
         SchemaField(
             name="motherduck_token",
             label="Access Token",
             field_type=FieldType.PASSWORD,
-            placeholder="(optional - uses browser auth if empty)",
-            required=False,
-            description="MotherDuck access token for non-interactive authentication.",
+            required=True,
         ),
     ),
     supports_ssh=False,
-    is_file_based=False,
-    requires_auth=False,
+    is_file_based=True,
+    requires_auth=True,
 )

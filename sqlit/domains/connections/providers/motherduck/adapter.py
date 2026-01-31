@@ -23,11 +23,7 @@ class MotherDuckAdapter(DuckDBAdapter):
         return True
 
     def connect(self, config: ConnectionConfig) -> Any:
-        """Connect to MotherDuck cloud database.
-
-        Connection string format: md:[database_name][?motherduck_token=TOKEN]
-        If no token is provided, browser-based authentication is used.
-        """
+        """Connect to MotherDuck cloud database."""
         duckdb = self._import_driver_module(
             "duckdb",
             driver_name=self.name,
@@ -35,13 +31,22 @@ class MotherDuckAdapter(DuckDBAdapter):
             package_name=self.install_package,
         )
 
-        # Build MotherDuck connection string
-        database = config.get_option("database", "") or config.database or ""
-        token = config.get_option("motherduck_token", "")
+        # Get database from file_path
+        database = ""
+        if config.file_endpoint and config.file_endpoint.path:
+            database = config.file_endpoint.path.lstrip("/")
 
-        conn_str = f"md:{database}" if database else "md:"
-        if token:
-            conn_str += f"?motherduck_token={token}"
+        # Get token from extra_options (URL) or options (UI)
+        token = config.extra_options.get("motherduck_token", "")
+        if not token:
+            token = config.get_option("motherduck_token", "")
+
+        if not database:
+            raise ValueError("MotherDuck connections require a database name.")
+        if not token:
+            raise ValueError("MotherDuck connections require an access token.")
+
+        conn_str = f"md:{database}?motherduck_token={token}"
 
         duckdb_any: Any = duckdb
         return duckdb_any.connect(conn_str)

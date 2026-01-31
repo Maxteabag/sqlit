@@ -2,106 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from sqlit.domains.connections.domain.config import ConnectionConfig, TcpEndpoint
-
-
-class TestMotherDuckConnectionString:
-    """Test MotherDuck connection string building."""
-
-    def test_basic_connection_string(self):
-        """Test basic md: connection string."""
-        from sqlit.domains.connections.providers.motherduck.adapter import MotherDuckAdapter
-
-        adapter = MotherDuckAdapter()
-        config = ConnectionConfig(
-            name="test",
-            db_type="motherduck",
-            endpoint=TcpEndpoint(),
-        )
-
-        # We can't actually connect without duckdb/motherduck, but we can test
-        # that the adapter builds the correct connection string
-        database = config.get_option("database", "") or config.database or ""
-        token = config.get_option("motherduck_token", "")
-
-        conn_str = f"md:{database}" if database else "md:"
-        if token:
-            conn_str += f"?motherduck_token={token}"
-
-        assert conn_str == "md:"
-
-    def test_connection_string_with_database(self):
-        """Test md:database connection string."""
-        config = ConnectionConfig(
-            name="test",
-            db_type="motherduck",
-            endpoint=TcpEndpoint(database="my_database"),
-        )
-
-        database = config.get_option("database", "") or config.database or ""
-        token = config.get_option("motherduck_token", "")
-
-        conn_str = f"md:{database}" if database else "md:"
-        if token:
-            conn_str += f"?motherduck_token={token}"
-
-        assert conn_str == "md:my_database"
-
-    def test_connection_string_with_database_in_options(self):
-        """Test database from options."""
-        config = ConnectionConfig(
-            name="test",
-            db_type="motherduck",
-            endpoint=TcpEndpoint(),
-            options={"database": "options_database"},
-        )
-
-        database = config.get_option("database", "") or config.database or ""
-        token = config.get_option("motherduck_token", "")
-
-        conn_str = f"md:{database}" if database else "md:"
-        if token:
-            conn_str += f"?motherduck_token={token}"
-
-        assert conn_str == "md:options_database"
-
-    def test_connection_string_with_token(self):
-        """Test md: with token."""
-        config = ConnectionConfig(
-            name="test",
-            db_type="motherduck",
-            endpoint=TcpEndpoint(),
-            options={"motherduck_token": "my_secret_token"},
-        )
-
-        database = config.get_option("database", "") or config.database or ""
-        token = config.get_option("motherduck_token", "")
-
-        conn_str = f"md:{database}" if database else "md:"
-        if token:
-            conn_str += f"?motherduck_token={token}"
-
-        assert conn_str == "md:?motherduck_token=my_secret_token"
-
-    def test_connection_string_with_database_and_token(self):
-        """Test md:database?token connection string."""
-        config = ConnectionConfig(
-            name="test",
-            db_type="motherduck",
-            endpoint=TcpEndpoint(database="prod_db"),
-            options={"motherduck_token": "my_token"},
-        )
-
-        database = config.get_option("database", "") or config.database or ""
-        token = config.get_option("motherduck_token", "")
-
-        conn_str = f"md:{database}" if database else "md:"
-        if token:
-            conn_str += f"?motherduck_token={token}"
-
-        assert conn_str == "md:prod_db?motherduck_token=my_token"
+from sqlit.domains.connections.domain.config import ConnectionConfig, FileEndpoint
 
 
 def test_motherduck_provider_registered():
@@ -118,8 +19,9 @@ def test_motherduck_provider_metadata():
 
     provider = get_provider("motherduck")
     assert provider.metadata.display_name == "MotherDuck"
-    assert provider.metadata.is_file_based is False
+    assert provider.metadata.is_file_based is True
     assert provider.metadata.supports_ssh is False
+    assert provider.metadata.requires_auth is True
     assert "md" in provider.metadata.url_schemes
     assert "motherduck" in provider.metadata.url_schemes
 
@@ -129,3 +31,25 @@ def test_motherduck_database_type_enum():
     from sqlit.domains.connections.domain.config import DatabaseType
 
     assert DatabaseType.MOTHERDUCK.value == "motherduck"
+
+
+def test_motherduck_url_parsing():
+    """Test MotherDuck URL parsing."""
+    from sqlit.domains.connections.app.url_parser import parse_connection_url
+
+    config = parse_connection_url("motherduck:///my_database?motherduck_token=abc123")
+
+    assert config.db_type == "motherduck"
+    assert config.file_path == "/my_database"
+    assert config.extra_options.get("motherduck_token") == "abc123"
+
+
+def test_motherduck_md_scheme_url_parsing():
+    """Test MotherDuck md:// URL parsing."""
+    from sqlit.domains.connections.app.url_parser import parse_connection_url
+
+    config = parse_connection_url("md:///prod_db?motherduck_token=xyz789")
+
+    assert config.db_type == "motherduck"
+    assert config.file_path == "/prod_db"
+    assert config.extra_options.get("motherduck_token") == "xyz789"
