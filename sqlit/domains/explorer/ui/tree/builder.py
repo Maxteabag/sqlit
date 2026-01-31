@@ -206,14 +206,22 @@ def refresh_tree(host: TreeMixinHost) -> None:
     connecting_name = connecting_config.name if connecting_config else None
     connecting_spinner = host._connect_spinner_frame() if connecting_config else None
 
+    # Check for active direct connection or pending startup connection
     direct_config = getattr(host, "_direct_connection_config", None)
+    startup_config = getattr(host, "_startup_connect_config", None)
     direct_active = (
         direct_config is not None
         and host.current_config is not None
         and direct_config.name == host.current_config.name
     )
+    # Also hide saved connections when startup connection is pending (before it's connected)
+    startup_pending = startup_config is not None and not any(
+        c.name == startup_config.name for c in host.connections
+    )
     if direct_active and host.current_config is not None:
         connections = [host.current_config]
+    elif startup_pending:
+        connections = [startup_config]
     else:
         connections = list(host.connections)
     if connecting_config and not any(c.name == connecting_config.name for c in connections):
@@ -255,14 +263,22 @@ def refresh_tree_chunked(
     connecting_name = connecting_config.name if connecting_config else None
     connecting_spinner = host._connect_spinner_frame() if connecting_config else None
 
+    # Check for active direct connection or pending startup connection
     direct_config = getattr(host, "_direct_connection_config", None)
+    startup_config = getattr(host, "_startup_connect_config", None)
     direct_active = (
         direct_config is not None
         and host.current_config is not None
         and direct_config.name == host.current_config.name
     )
+    # Also hide saved connections when startup connection is pending (before it's connected)
+    startup_pending = startup_config is not None and not any(
+        c.name == startup_config.name for c in host.connections
+    )
     if direct_active and host.current_config is not None:
         connections = [host.current_config]
+    elif startup_pending:
+        connections = [startup_config]
     else:
         connections = list(host.connections)
     if connecting_config and not any(c.name == connecting_config.name for c in connections):
