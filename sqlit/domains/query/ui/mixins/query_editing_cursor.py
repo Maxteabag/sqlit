@@ -40,6 +40,10 @@ class QueryEditingCursorMixin:
         self._clear_leader_pending()
         self._move_with_motion("gE")
 
+    def action_g_execute_single_statement(self: QueryMixinHost) -> None:
+        """Execute single statement at cursor via g menu (gs)."""
+        self._clear_leader_pending()
+        self.action_execute_single_statement()
 
     def action_cursor_left(self: QueryMixinHost) -> None:
         """Move cursor left (h in normal mode)."""
@@ -84,7 +88,6 @@ class QueryEditingCursorMixin:
     def action_cursor_WORD_back(self: QueryMixinHost) -> None:
         """Move cursor to previous WORD (B)."""
         self._move_with_motion("B")
-
 
     def action_cursor_line_start(self: QueryMixinHost) -> None:
         """Move cursor to start of line (0)."""
