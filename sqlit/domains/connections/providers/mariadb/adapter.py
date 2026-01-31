@@ -101,6 +101,11 @@ class MariaDBAdapter(MySQLBaseAdapter):
                 connect_args["ssl_verify_identity"] = tls_mode_verifies_hostname(tls_mode)
 
         conn = mariadb_any.connect(**connect_args)
+
+        # Note: The MariaDB Python connector only supports UTF-8 family charsets.
+        # Legacy charsets like TIS-620 or Latin1 are not supported. For databases
+        # using legacy charsets, use the MySQL provider with PyMySQL instead.
+
         self._supports_sequences = self._detect_sequences_support(conn)
         return conn
 

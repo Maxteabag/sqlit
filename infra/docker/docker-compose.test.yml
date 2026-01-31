@@ -51,6 +51,48 @@ services:
     tmpfs:
       - /var/lib/mysql
 
+  # MySQL with TIS-620 charset (Thai) - for charset testing
+  mysql-tis620:
+    image: mysql:8.0
+    container_name: sqlit-test-mysql-tis620
+    command: --character-set-server=tis620 --collation-server=tis620_thai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: "TestPassword123!"
+      MYSQL_USER: "testuser"
+      MYSQL_PASSWORD: "TestPassword123!"
+      MYSQL_DATABASE: "test_sqlit"
+    ports:
+      - "${MYSQL_TIS620_PORT:-3308}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "testuser", "-pTestPassword123!"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    tmpfs:
+      - /var/lib/mysql
+
+  # MySQL with Latin1 charset - for charset testing
+  mysql-latin1:
+    image: mysql:8.0
+    container_name: sqlit-test-mysql-latin1
+    command: --character-set-server=latin1 --collation-server=latin1_swedish_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: "TestPassword123!"
+      MYSQL_USER: "testuser"
+      MYSQL_PASSWORD: "TestPassword123!"
+      MYSQL_DATABASE: "test_sqlit"
+    ports:
+      - "${MYSQL_LATIN1_PORT:-3309}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "testuser", "-pTestPassword123!"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    tmpfs:
+      - /var/lib/mysql
+
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     container_name: sqlit-test-clickhouse
