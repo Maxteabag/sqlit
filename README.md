@@ -233,14 +233,13 @@ Autocomplete triggers automatically in INSERT mode. Use `Tab` to accept.
 
 ## Configuration
 
-Connections and settings are stored in `~/.sqlit/` by default, but can
-be overridden with the `SQLIT_CONFIG_DIR` environment variable.
-E.g., to use the standard `XDG_CONFIG_HOME` directory `~/.config/sqlit/`:
-`SQLIT_CONFIG_DIR=~/.config/sqlit`
+Connections and settings are stored in `~/.sqlit/` by default, but this can be overridden with the `SQLIT_CONFIG_DIR` environment variable.
+
+E.g., to use the standard `XDG_CONFIG_HOME` directory `~/.config/sqlit/`, you can run with `SQLIT_CONFIG_DIR=~/.config/sqlit sqlit`.
 
 It is recommended to throw this in your `~/.bashrc` or equivalent shell configuration, e.g.:
 
-```
+```bash
 mkdir -p ~/.config/sqlit
 echo "export SQLIT_CONFIG_DIR=~/.config/sqlit" >> ~/.bashrc
 ```
