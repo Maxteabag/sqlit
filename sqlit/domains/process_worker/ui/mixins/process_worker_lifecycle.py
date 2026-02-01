@@ -31,17 +31,61 @@ class ProcessWorkerLifecycleMixin(LifecycleHooksMixin):
     def _get_process_worker_client(self: QueryMixinHost) -> Any | None:
         client = getattr(self, "_process_worker_client", None)
         if client is not None:
+            try:
+                from sqlit.shared.core.debug_events import emit_debug_event
+
+                emit_debug_event(
+                    "process_worker.use",
+                    category="process_worker",
+                    cached=True,
+                    path="sync",
+                )
+            except Exception:
+                pass
             self._touch_process_worker()
             return client
+        start = None
         try:
             from sqlit.domains.process_worker.app.process_worker_client import ProcessWorkerClient
+            from sqlit.shared.core.debug_events import emit_debug_event
+            import time
 
+            start = time.perf_counter()
             client = ProcessWorkerClient()
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            emit_debug_event(
+                "process_worker.startup",
+                category="process_worker",
+                method="main-thread",
+                elapsed_ms=elapsed_ms,
+                success=True,
+            )
+            emit_debug_event(
+                "process_worker.use",
+                category="process_worker",
+                cached=False,
+                path="sync",
+            )
             self._process_worker_client = client
             self._process_worker_client_error = None
             self._touch_process_worker()
             return client
         except Exception as exc:
+            try:
+                from sqlit.shared.core.debug_events import emit_debug_event
+                import time
+
+                elapsed_ms = (time.perf_counter() - start) * 1000.0 if start is not None else None
+                emit_debug_event(
+                    "process_worker.startup",
+                    category="process_worker",
+                    method="main-thread",
+                    elapsed_ms=elapsed_ms,
+                    success=False,
+                    error=str(exc),
+                )
+            except Exception:
+                pass
             self._process_worker_client_error = str(exc)
             try:
                 self.log.error(f"Failed to start process worker: {exc}")
@@ -51,20 +95,71 @@ class ProcessWorkerLifecycleMixin(LifecycleHooksMixin):
 
     async def _get_process_worker_client_async(self: QueryMixinHost) -> Any | None:
         import asyncio
+        import sys
 
         client = getattr(self, "_process_worker_client", None)
         if client is not None:
+            try:
+                from sqlit.shared.core.debug_events import emit_debug_event
+
+                emit_debug_event(
+                    "process_worker.use",
+                    category="process_worker",
+                    cached=True,
+                    path="async",
+                )
+            except Exception:
+                pass
             self._touch_process_worker()
             return client
+        start = None
         try:
             from sqlit.domains.process_worker.app.process_worker_client import ProcessWorkerClient
+            from sqlit.shared.core.debug_events import emit_debug_event
+            import time
 
-            client = await asyncio.to_thread(ProcessWorkerClient)
+            start = time.perf_counter()
+            if sys.platform == "darwin":
+                # Avoid forking from a background thread on macOS; it can crash pre-exec.
+                client = ProcessWorkerClient()
+                method = "main-thread"
+            else:
+                client = await asyncio.to_thread(ProcessWorkerClient)
+                method = "to-thread"
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            emit_debug_event(
+                "process_worker.startup",
+                category="process_worker",
+                method=method,
+                elapsed_ms=elapsed_ms,
+                success=True,
+            )
+            emit_debug_event(
+                "process_worker.use",
+                category="process_worker",
+                cached=False,
+                path="async",
+            )
             self._process_worker_client = client
             self._process_worker_client_error = None
             self._touch_process_worker()
             return client
         except Exception as exc:
+            try:
+                from sqlit.shared.core.debug_events import emit_debug_event
+                import time
+
+                elapsed_ms = (time.perf_counter() - start) * 1000.0 if start is not None else None
+                emit_debug_event(
+                    "process_worker.startup",
+                    category="process_worker",
+                    method="main-thread",
+                    elapsed_ms=elapsed_ms,
+                    success=False,
+                    error=str(exc),
+                )
+            except Exception:
+                pass
             self._process_worker_client_error = str(exc)
             try:
                 self.log.error(f"Failed to start process worker: {exc}")
