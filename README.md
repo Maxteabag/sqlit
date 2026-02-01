@@ -233,7 +233,21 @@ Autocomplete triggers automatically in INSERT mode. Use `Tab` to accept.
 
 ## Configuration
 
-Connections and settings are stored in `~/.sqlit/`.
+Connections and settings are stored in `~/.sqlit/` by default, but can
+be overridden with the `SQLIT_CONFIG_DIR` environment variable.
+E.g., to use the standard `XDG_CONFIG_HOME` directory `~/.config/sqlit/`:
+`SQLIT_CONFIG_DIR=~/.config/sqlit`
+
+It is recommended to throw this in your `~/.bashrc` or equivalent shell configuration, e.g.:
+
+```
+mkdir -p ~/.config/sqlit
+echo "export SQLIT_CONFIG_DIR=~/.config/sqlit" >> ~/.bashrc
+```
+
+If you already have existing configuration files in `~/.sqlit/`, it should be
+sufficient to copy these over to `~/.config/sqlit/` before/after setting
+`SQLIT_CONFIG_DIR`.
 
 ## FAQ
 
@@ -266,22 +280,22 @@ See `CONTRIBUTING.md` for development setup, testing, and CI steps.
 
 Most of the time you can just run `sqlit` and connect. If a Python driver is missing, `sqlit` will show (and often run) the right install command for your environment.
 
-| Database                            | Driver package               | `pipx`                                             | `pip` / venv                                       |
-| :---------------------------------- | :--------------------------- | :------------------------------------------------- | :------------------------------------------------- |
-| SQLite                              | *(built-in)*                 | *(built-in)*                                       | *(built-in)*                                       |
-| PostgreSQL / CockroachDB / Supabase | `psycopg2-binary`            | `pipx inject sqlit-tui psycopg2-binary`            | `python -m pip install psycopg2-binary`            |
-| SQL Server                          | `mssql-python`               | `pipx inject sqlit-tui mssql-python`               | `python -m pip install mssql-python`               |
-| MySQL                               | `PyMySQL`                    | `pipx inject sqlit-tui PyMySQL`                    | `python -m pip install PyMySQL`                    |
-| MariaDB                             | `mariadb`                    | `pipx inject sqlit-tui mariadb`                    | `python -m pip install mariadb`                    |
-| Oracle                              | `oracledb`                   | `pipx inject sqlit-tui oracledb`                   | `python -m pip install oracledb`                   |
-| DuckDB                              | `duckdb`                     | `pipx inject sqlit-tui duckdb`                     | `python -m pip install duckdb`                     |
-| ClickHouse                          | `clickhouse-connect`         | `pipx inject sqlit-tui clickhouse-connect`         | `python -m pip install clickhouse-connect`         |
-| Turso                               | `libsql`                     | `pipx inject sqlit-tui libsql`                     | `python -m pip install libsql`                     |
-| Cloudflare D1                       | `requests`                   | `pipx inject sqlit-tui requests`                   | `python -m pip install requests`                   |
-| Snowflake                           | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` |
-| Firebird                            | `firebirdsql`                | `pipx inject sqlit-tui firebirdsql`                | `python -m pip install firebirdsql`                |
-| Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   |
-| Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      |
+| Database                            | Driver package               | `pipx`                                             | `pip` / venv                                       | `uv tool`
+| :---------------------------------- | :--------------------------- | :------------------------------------------------- | :------------------------------------------------- | :-------------------------------------------------------- |
+| SQLite                              | *(built-in)*                 | *(built-in)*                                       | *(built-in)*                                       | *(built-in)*                                              |
+| PostgreSQL / CockroachDB / Supabase | `psycopg2-binary`            | `pipx inject sqlit-tui psycopg2-binary`            | `python -m pip install psycopg2-binary`            | `uv tool install sqlit-tui -w psycopg2-binary`            |
+| SQL Server                          | `mssql-python`               | `pipx inject sqlit-tui mssql-python`               | `python -m pip install mssql-python`               | `uv tool install sqlit-tui -w mssql-python`               |
+| MySQL                               | `PyMySQL`                    | `pipx inject sqlit-tui PyMySQL`                    | `python -m pip install PyMySQL`                    | `uv tool install sqlit-tui -w PyMySQL`                    |
+| MariaDB                             | `mariadb`                    | `pipx inject sqlit-tui mariadb`                    | `python -m pip install mariadb`                    | `uv tool install sqlit-tui -w mariadb`                    |
+| Oracle                              | `oracledb`                   | `pipx inject sqlit-tui oracledb`                   | `python -m pip install oracledb`                   | `uv tool install sqlit-tui -w oracledb`                   |
+| DuckDB                              | `duckdb`                     | `pipx inject sqlit-tui duckdb`                     | `python -m pip install duckdb`                     | `uv tool install sqlit-tui -w duckdb`                     |
+| ClickHouse                          | `clickhouse-connect`         | `pipx inject sqlit-tui clickhouse-connect`         | `python -m pip install clickhouse-connect`         | `uv tool install sqlit-tui -w clickhouse-connect`         |
+| Turso                               | `libsql`                     | `pipx inject sqlit-tui libsql`                     | `python -m pip install libsql`                     | `uv tool install sqlit-tui -w libsql`                     |
+| Cloudflare D1                       | `requests`                   | `pipx inject sqlit-tui requests`                   | `python -m pip install requests`                   | `uv tool install sqlit-tui -w requests`                   |
+| Snowflake                           | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` | `uv tool install sqlit-tui -w snowflake-connector-python` |
+| Firebird                            | `firebirdsql`                | `pipx inject sqlit-tui firebirdsql`                | `python -m pip install firebirdsql`                | `uv tool install sqlit-tui -w firebirdsql`                |
+| Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   | `uv tool install sqlit-tui -w pyathena`                   |
+| Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      | `uv tool install sqlit-tui -w adbc-driver-flightsql`      |
 
 ### SSH Tunnel Support
 
