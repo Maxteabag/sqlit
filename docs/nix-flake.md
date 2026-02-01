@@ -50,7 +50,11 @@ nix profile install github:Maxteabag/sqlit#sqlit-full
 
 ## Custom Builds
 
-You can create a custom build with exactly the dependencies you need by creating a `flake.nix` in your project:
+You can create a custom build with exactly the dependencies you need by creating a `flake.nix` in your project.
+
+**See `examples/custom-flake.nix` for a complete working example.**
+
+Basic structure:
 
 ```nix
 {
