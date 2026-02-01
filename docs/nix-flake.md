@@ -21,7 +21,6 @@ nix profile install github:Maxteabag/sqlit
 - PostgreSQL driver (psycopg2)
 - MySQL driver (pymysql)
 - DuckDB driver (duckdb)
-- Cloudflare D1 support (requests)
 
 ### Minimal Package
 For users who only need SQLite support:
@@ -96,7 +95,7 @@ All options default to sensible values for common use cases. Set to `true` to en
 ### Popular Database Drivers
 - `enablePostgres` (default: `true`) - PostgreSQL, CockroachDB, Supabase
 - `enableMySQL` (default: `true`) - MySQL support
-- `enableMSSQL` (default: `true`) - SQL Server support (not in nixpkgs, placeholder)
+- `enableMSSQL` (default: `false`) - SQL Server support (not in nixpkgs, placeholder)
 - `enableDuckDB` (default: `true`) - DuckDB analytics database
 
 ### Advanced Database Drivers

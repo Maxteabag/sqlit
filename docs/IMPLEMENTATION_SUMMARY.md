@@ -11,7 +11,7 @@
 
 #### Parameters Added:
 - **SSH Support**: `enableSSH` (default: true)
-- **Popular Databases**: `enablePostgres`, `enableMySQL`, `enableMSSQL`, `enableDuckDB` (default: true)
+- **Popular Databases**: `enablePostgres`, `enableMySQL`, `enableDuckDB` (default: true); `enableMSSQL` (default: false, not in nixpkgs)
 - **Advanced Databases**: `enableOracle`, `enableMariaDB`, `enableDB2`, `enableHANA`, `enableTeradata`, `enableTrino`, `enablePresto` (default: false)
 - **Cloud Databases**: `enableBigQuery`, `enableRedshift`, `enableClickHouse`, `enableCloudflareD1`, `enableTurso`, `enableFirebird`, `enableSnowflake`, `enableAthena`, `enableFlightSQL` (default: false)
 - **Enable All**: `enableAll` (default: false) - When true, enables all available dependencies

@@ -20,7 +20,7 @@
           # Popular database drivers
           enablePostgres ? true,
           enableMySQL ? true,
-          enableMSSQL ? true,
+          enableMSSQL ? false,  # Not available in nixpkgs
           # Advanced database drivers
           enableOracle ? false,
           enableMariaDB ? false,
@@ -84,6 +84,23 @@
           withFlightSQL = enableAll || enableFlightSQL;
 
           # Build list of optional dependencies based on flags
+          # Note: Some packages are not available in nixpkgs and are documented here:
+          # - mssql-python (SQL Server)
+          # - oracledb (Oracle)
+          # - mariadb (MariaDB) 
+          # - ibm_db (DB2)
+          # - hdbcli (SAP HANA)
+          # - teradatasql (Teradata)
+          # - trino (Trino)
+          # - presto-python-client (Presto)
+          # - redshift-connector (Redshift)
+          # - clickhouse-connect (ClickHouse)
+          # - libsql (Turso)
+          # - firebirdsql (Firebird)
+          # - pyathena (Athena)
+          # - adbc-driver-flightsql (Apache Arrow Flight SQL)
+          # Users needing these can install via pipx inject or pip after installation
+          
           optionalDeps = lib.optionals withSSH [
             pyPkgs.sshtunnel
             pyPkgs.paramiko
@@ -91,42 +108,14 @@
             pyPkgs.psycopg2
           ] ++ lib.optionals withMySQL [
             pyPkgs.pymysql
-          ] ++ lib.optionals withMSSQL [
-            # mssql-python not available in nixpkgs, may need manual installation
-          ] ++ lib.optionals withOracle [
-            # oracledb not available in nixpkgs
-          ] ++ lib.optionals withMariaDB [
-            # mariadb python package not in nixpkgs
-          ] ++ lib.optionals withDB2 [
-            # ibm_db not available in nixpkgs
-          ] ++ lib.optionals withHANA [
-            # hdbcli not available in nixpkgs
-          ] ++ lib.optionals withTeradata [
-            # teradatasql not available in nixpkgs
-          ] ++ lib.optionals withTrino [
-            # trino not available in nixpkgs
-          ] ++ lib.optionals withPresto [
-            # presto-python-client not available in nixpkgs
           ] ++ lib.optionals withBigQuery [
             pyPkgs.google-cloud-bigquery
-          ] ++ lib.optionals withRedshift [
-            # redshift-connector not available in nixpkgs
           ] ++ lib.optionals withDuckDB [
             pyPkgs.duckdb
-          ] ++ lib.optionals withClickHouse [
-            # clickhouse-connect not available in nixpkgs
           ] ++ lib.optionals withCloudflareD1 [
             pyPkgs.requests
-          ] ++ lib.optionals withTurso [
-            # libsql not available in nixpkgs
-          ] ++ lib.optionals withFirebird [
-            # firebirdsql not available in nixpkgs
           ] ++ lib.optionals withSnowflake [
             pyPkgs.snowflake-connector-python
-          ] ++ lib.optionals withAthena [
-            # pyathena not available in nixpkgs
-          ] ++ lib.optionals withFlightSQL [
-            # adbc-driver-flightsql not available in nixpkgs
           ];
         in pyPkgs.buildPythonApplication {
           pname = "sqlit";
@@ -178,7 +167,6 @@
           enableSSH = false;
           enablePostgres = false;
           enableMySQL = false;
-          enableMSSQL = false;
           enableDuckDB = false;
         };
 
