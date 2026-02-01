@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Test script for Nix flake optional dependencies
 # This script requires Nix to be installed
+#
+# Usage:
+#   chmod +x test-nix-flake.sh  # Make executable (first time only)
+#   ./test-nix-flake.sh         # Run tests
 
 set -e
 

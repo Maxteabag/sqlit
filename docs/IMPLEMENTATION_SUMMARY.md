@@ -17,7 +17,7 @@
 - **Enable All**: `enableAll` (default: false) - When true, enables all available dependencies
 
 #### Pre-configured Variants:
-1. **sqlit** (default): Includes common dependencies (SSH, Postgres, MySQL, DuckDB, Cloudflare D1)
+1. **sqlit** (default): Includes common dependencies (SSH, Postgres, MySQL, DuckDB)
 2. **sqlit-minimal**: Only core dependencies, no optional drivers (SQLite only)
 3. **sqlit-full**: All available dependencies from nixpkgs
 
