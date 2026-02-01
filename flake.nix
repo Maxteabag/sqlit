@@ -20,7 +20,7 @@
           # Popular database drivers
           enablePostgres ? true,
           enableMySQL ? true,
-          enableMSSQL ? false,  # Not available in nixpkgs
+          enableMSSQL ? false,
           # Advanced database drivers
           enableOracle ? false,
           enableMariaDB ? false,

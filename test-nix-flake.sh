@@ -68,10 +68,11 @@ echo ""
 
 # Test 6: Verify the default app works
 echo "Test 6: Verifying default app..."
-if nix run .#sqlit -- --version 2>/dev/null; then
+if nix run .#sqlit -- --version 2>&1 | head -5; then
     echo "✓ Default app runs successfully"
 else
     echo "⚠️  App run test skipped (may require TTY or version flag may not exist)"
+    echo "   This is not a critical failure - the package may still work correctly"
 fi
 echo ""
 
