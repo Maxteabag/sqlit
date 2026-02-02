@@ -160,6 +160,9 @@ max-complexity = 25  # complex domain logic in cloud providers and TUI screens
 "tests/*" = ["S101", "S106", "S108"]
 "sqlit/domains/query/completion/completion.py" = ["C901"]  # SQL autocomplete is inherently complex
 
+[tool.bandit]
+exclude_dirs = ["tests"]
+
 [project.scripts]
 sqlit = "sqlit.cli:main"
 
