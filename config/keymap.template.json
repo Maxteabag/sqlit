@@ -1,0 +1,234 @@
+{
+  "_note": "Copy to ~/.sqlit/keymaps/my-custom.json and customize keybindings",
+  "_usage": "Set 'custom_keymap' in settings.json to 'my-custom' (without .json extension)",
+  "keymap": {
+    "leader_commands": [
+      {
+        "_comment": "Leader commands are triggered by pressing the leader key (default: space) followed by another key",
+        "key": "q",
+        "action": "quit",
+        "label": "Quit",
+        "category": "Actions",
+        "guard": null,
+        "menu": "leader"
+      },
+      {
+        "key": "h",
+        "action": "show_help",
+        "label": "Help",
+        "category": "Actions",
+        "menu": "leader"
+      },
+      {
+        "key": "e",
+        "action": "toggle_explorer",
+        "label": "Toggle Explorer",
+        "category": "View",
+        "menu": "leader"
+      },
+      {
+        "key": "f",
+        "action": "toggle_fullscreen",
+        "label": "Toggle Maximize",
+        "category": "View",
+        "menu": "leader"
+      },
+      {
+        "key": "c",
+        "action": "show_connection_picker",
+        "label": "Connect",
+        "category": "Connection",
+        "menu": "leader"
+      },
+      {
+        "key": "x",
+        "action": "disconnect",
+        "label": "Disconnect",
+        "category": "Connection",
+        "guard": "has_connection",
+        "menu": "leader"
+      },
+      {
+        "key": "z",
+        "action": "cancel_operation",
+        "label": "Cancel",
+        "category": "Actions",
+        "guard": "query_executing",
+        "menu": "leader"
+      },
+      {
+        "key": "t",
+        "action": "change_theme",
+        "label": "Change Theme",
+        "category": "Actions",
+        "menu": "leader"
+      },
+      {
+        "key": "space",
+        "action": "telescope",
+        "label": "Telescope",
+        "category": "Actions",
+        "menu": "leader"
+      },
+      {
+        "key": "slash",
+        "action": "telescope_filter",
+        "label": "Telescope Search",
+        "category": "Actions",
+        "menu": "leader"
+      }
+    ],
+    "action_keys": [
+      {
+        "_comment": "Action keys are direct keybindings that work in specific contexts",
+        "key": "space",
+        "action": "leader_key",
+        "context": "global",
+        "guard": null,
+        "primary": true,
+        "show": false,
+        "priority": true
+      },
+      {
+        "key": "ctrl+q",
+        "action": "quit",
+        "context": "global",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "escape",
+        "action": "cancel_operation",
+        "context": "global",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "question_mark",
+        "action": "show_help",
+        "context": "global",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "_comment": "Query editor keybindings (normal mode)",
+        "key": "i",
+        "action": "enter_insert_mode",
+        "context": "query_normal",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "I",
+        "action": "prepend_insert_mode",
+        "context": "query_normal",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "o",
+        "action": "open_line_below",
+        "context": "query_normal",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "O",
+        "action": "open_line_above",
+        "context": "query_normal",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "enter",
+        "action": "execute_query",
+        "context": "query_normal",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "_comment": "Vim cursor movement (normal mode)",
+        "key": "h",
+        "action": "cursor_left",
+        "context": "query_normal",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "j",
+        "action": "cursor_down",
+        "context": "query_normal",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "k",
+        "action": "cursor_up",
+        "context": "query_normal",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "l",
+        "action": "cursor_right",
+        "context": "query_normal",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "_comment": "Query editor keybindings (insert mode)",
+        "key": "escape",
+        "action": "exit_insert_mode",
+        "context": "query_insert",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "ctrl+enter",
+        "action": "execute_query_insert",
+        "context": "query_insert",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "_comment": "Navigation between panes",
+        "key": "e",
+        "action": "focus_explorer",
+        "context": "navigation",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "q",
+        "action": "focus_query",
+        "context": "navigation",
+        "primary": true,
+        "show": false,
+        "priority": false
+      },
+      {
+        "key": "r",
+        "action": "focus_results",
+        "context": "navigation",
+        "primary": true,
+        "show": false,
+        "priority": false
+      }
+    ]
+  }
+}

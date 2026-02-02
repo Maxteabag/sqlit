@@ -35,6 +35,9 @@ def run_on_mount(app: AppProtocol) -> None:
     settings = app._theme_manager.initialize()
     app._startup_stamp("settings_loaded")
 
+    app._keymap_manager.initialize()
+    app._startup_stamp("keymap_loaded")
+
     app._expanded_paths = set(settings.get("expanded_nodes", []))
     if settings.get("debug_events_enabled"):
         setter = getattr(app, "_set_debug_events_enabled", None)
