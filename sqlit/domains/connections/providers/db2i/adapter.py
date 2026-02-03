@@ -114,21 +114,21 @@ class Db2iAdapter(CursorBasedAdapter):
         # Query QSYS2.SYSTABLES to get distinct schemas/libraries
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT DISTINCT TABLE_SCHEMA FROM QSYS2.SYSTABLES "
-            "WHERE TABLE_SCHEMA NOT LIKE 'Q%' "
-            "ORDER BY TABLE_SCHEMA"
+            "SELECT DISTINCT table_schema FROM QSYS2.SYSTABLES "
+            "WHERE table_schema NOT LIKE 'Q%' "
+            "ORDER BY table_schema"
         )
         return [row[0] for row in cursor.fetchall()]
 
     def get_tables(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         cursor = conn.cursor()
         query = (
-            "SELECT TABLE_SCHEMA, TABLE_NAME FROM QSYS2.SYSTABLES "
-            "WHERE TABLE_TYPE = 'T' AND TABLE_SCHEMA NOT LIKE 'Q%' "
+            "SELECT table_schema, table_name FROM QSYS2.SYSTABLES "
+            "WHERE table_type = 'T' AND table_schema NOT LIKE 'Q%' "
         )
         if database:
-            query += f"AND TABLE_SCHEMA = '{database}' "
-        query += "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+            query += f"AND table_schema = '{database}' "
+        query += "ORDER BY table_schema, table_name"
         
         cursor.execute(query)
         return [(row[0], row[1]) for row in cursor.fetchall()]
@@ -136,12 +136,12 @@ class Db2iAdapter(CursorBasedAdapter):
     def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         cursor = conn.cursor()
         query = (
-            "SELECT TABLE_SCHEMA, TABLE_NAME FROM QSYS2.SYSVIEWS "
-            "WHERE TABLE_SCHEMA NOT LIKE 'Q%' "
+            "SELECT table_schema, table_name FROM QSYS2.SYSVIEWS "
+            "WHERE table_schema NOT LIKE 'Q%' "
         )
         if database:
-            query += f"AND TABLE_SCHEMA = '{database}' "
-        query += "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+            query += f"AND table_schema = '{database}' "
+        query += "ORDER BY table_schema, table_name"
         
         cursor.execute(query)
         return [(row[0], row[1]) for row in cursor.fetchall()]
@@ -151,32 +151,42 @@ class Db2iAdapter(CursorBasedAdapter):
     ) -> list[ColumnInfo]:
         cursor = conn.cursor()
         
-        # Get primary key columns
+        # Get primary key columns (try-catch for permissions)
         pk_columns: set[str] = set()
         if schema:
-            cursor.execute(
-                "SELECT COLUMN_NAME FROM QSYS2.SYSCST "
-                "WHERE CONSTRAINT_SCHEMA = ? AND CONSTRAINT_NAME IN ("
-                "  SELECT CONSTRAINT_NAME FROM QSYS2.SYSCST "
-                "  WHERE CONSTRAINT_SCHEMA = ? AND CONSTRAINT_TYPE = 'PRIMARY KEY' "
-                "  AND TABLE_SCHEMA = ? AND TABLE_NAME = ?"
-                ")",
-                (schema, schema, schema, table),
-            )
-            pk_columns = {row[0] for row in cursor.fetchall()}
+            try:
+                cursor.execute(
+                    "SELECT COLNAME FROM QSYS2.SYSCST "
+                    "WHERE CONSTRAINT_SCHEMA = ? AND CONSTRAINT_NAME IN ("
+                    "  SELECT CONSTRAINT_NAME FROM QSYS2.SYSCST "
+                    "  WHERE CONSTRAINT_SCHEMA = ? AND TYPE = 'PRIMARY KEY' "
+                    "  AND TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+                    ")",
+                    (schema, schema, schema, table),
+                )
+                pk_columns = {row[0] for row in cursor.fetchall()}
+            except Exception:
+                # If primary key query fails, continue without PK info
+                pass
         
-        # Get column information
-        query = (
-            "SELECT COLUMN_NAME, DATA_TYPE FROM QSYS2.SYSCOLUMNS "
-            "WHERE TABLE_NAME = ? "
-        )
-        params: list[Any] = [table]
-        
+        # Get column information using SYSIBM catalog (more compatible)
+        # Use columns() table function which is available on IBM i
         if schema:
-            query += "AND TABLE_SCHEMA = ? "
-            params.append(schema)
-        
-        query += "ORDER BY ORDINAL_POSITION"
+            query = (
+                "SELECT COLUMN_NAME, TYPE_NAME "
+                "FROM SYSIBM.SQLCOLUMNS "
+                "WHERE TABLE_SCHEM = ? AND TABLE_NAME = ? "
+                "ORDER BY ORDINAL_POSITION"
+            )
+            params = [schema, table]
+        else:
+            query = (
+                "SELECT COLUMN_NAME, TYPE_NAME "
+                "FROM SYSIBM.SQLCOLUMNS "
+                "WHERE TABLE_NAME = ? "
+                "ORDER BY ORDINAL_POSITION"
+            )
+            params = [table]
         
         cursor.execute(query, params)
         return [
@@ -187,13 +197,13 @@ class Db2iAdapter(CursorBasedAdapter):
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         cursor = conn.cursor()
         query = (
-            "SELECT ROUTINE_NAME FROM QSYS2.SYSROUTINES "
-            "WHERE ROUTINE_SCHEMA NOT LIKE 'Q%' "
-            "AND ROUTINE_TYPE = 'PROCEDURE' "
+            "SELECT routine_name FROM QSYS2.SYSROUTINES "
+            "WHERE routine_schema NOT LIKE 'Q%' "
+            "AND routine_type = 'PROCEDURE' "
         )
         if database:
-            query += f"AND ROUTINE_SCHEMA = '{database}' "
-        query += "ORDER BY ROUTINE_NAME"
+            query += f"AND routine_schema = '{database}' "
+        query += "ORDER BY routine_name"
         
         cursor.execute(query)
         return [row[0] for row in cursor.fetchall()]
@@ -203,16 +213,16 @@ class Db2iAdapter(CursorBasedAdapter):
     ) -> list[IndexInfo]:
         cursor = conn.cursor()
         query = (
-            "SELECT INDEX_NAME, IS_UNIQUE FROM QSYS2.SYSINDEXES "
-            "WHERE TABLE_NAME = ? "
+            "SELECT index_name, is_unique FROM QSYS2.SYSINDEXES "
+            "WHERE table_name = ? "
         )
         params: list[Any] = [table]
         
         if schema:
-            query += "AND TABLE_SCHEMA = ? "
+            query += "AND table_schema = ? "
             params.append(schema)
         
-        query += "ORDER BY INDEX_NAME"
+        query += "ORDER BY index_name"
         
         cursor.execute(query, params)
         return [
@@ -225,16 +235,16 @@ class Db2iAdapter(CursorBasedAdapter):
     ) -> list[TriggerInfo]:
         cursor = conn.cursor()
         query = (
-            "SELECT TRIGGER_NAME, EVENT_MANIPULATION FROM QSYS2.SYSTRIGGERS "
-            "WHERE EVENT_OBJECT_TABLE = ? "
+            "SELECT trigger_name, event_manipulation FROM QSYS2.SYSTRIGGERS "
+            "WHERE event_object_table = ? "
         )
         params: list[Any] = [table]
         
         if schema:
-            query += "AND TRIGGER_SCHEMA = ? "
+            query += "AND trigger_schema = ? "
             params.append(schema)
         
-        query += "ORDER BY TRIGGER_NAME"
+        query += "ORDER BY trigger_name"
         
         cursor.execute(query, params)
         return [
@@ -245,12 +255,12 @@ class Db2iAdapter(CursorBasedAdapter):
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         cursor = conn.cursor()
         query = (
-            "SELECT SEQUENCE_NAME FROM QSYS2.SYSSEQUENCES "
-            "WHERE SEQUENCE_SCHEMA NOT LIKE 'Q%' "
+            "SELECT sequence_name FROM QSYS2.SYSSEQUENCES "
+            "WHERE sequence_schema NOT LIKE 'Q%' "
         )
         if database:
-            query += f"AND SEQUENCE_SCHEMA = '{database}' "
-        query += "ORDER BY SEQUENCE_NAME"
+            query += f"AND sequence_schema = '{database}' "
+        query += "ORDER BY sequence_name"
         
         cursor.execute(query)
         return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
@@ -261,14 +271,14 @@ class Db2iAdapter(CursorBasedAdapter):
         """Get detailed information about a DB2 for i sequence."""
         cursor = conn.cursor()
         query = (
-            "SELECT START_VALUE, INCREMENT, MIN_VALUE, MAX_VALUE, CYCLE_OPTION "
+            "SELECT start_value, increment, minimum_value, maximum_value, cycle_option "
             "FROM QSYS2.SYSSEQUENCES "
-            "WHERE SEQUENCE_NAME = ? "
+            "WHERE sequence_name = ? "
         )
         params: list[Any] = [sequence_name]
         
         if database:
-            query += "AND SEQUENCE_SCHEMA = ? "
+            query += "AND sequence_schema = ? "
             params.append(database)
         
         cursor.execute(query, params)
