@@ -9,6 +9,12 @@ Note on INFORMATION_SCHEMA queries:
 Note on DNS resolution:
     Some networks have issues with gRPC's default c-ares DNS resolver.
     The adapter sets GRPC_DNS_RESOLVER=native if not already set.
+
+Note on dialect support:
+    Spanner supports two SQL dialects: GoogleSQL and PostgreSQL.
+    The adapter detects the dialect on connect and adjusts identifier
+    quoting accordingly (backticks for GoogleSQL, double quotes for PostgreSQL).
+    PostgreSQL dialect support is experimental and untested.
 """
 
 from __future__ import annotations
@@ -26,6 +32,10 @@ from sqlit.domains.connections.providers.adapters.base import (
 
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
+
+# Dialect constants
+DIALECT_GOOGLESQL = "GOOGLE_STANDARD_SQL"
+DIALECT_POSTGRESQL = "POSTGRESQL"
 
 
 class SpannerAdapter(CursorBasedAdapter):
@@ -134,7 +144,36 @@ class SpannerAdapter(CursorBasedAdapter):
         # Store config for later use
         conn._sqlit_spanner_database = database
 
+        # Detect and store the database dialect (GoogleSQL or PostgreSQL)
+        conn._sqlit_spanner_dialect = self._detect_dialect(conn)
+
         return conn
+
+    def _detect_dialect(self, conn: Any) -> str:
+        """Detect the database dialect (GoogleSQL or PostgreSQL).
+
+        Queries INFORMATION_SCHEMA.DATABASE_OPTIONS to determine which SQL
+        dialect the database uses. This affects identifier quoting.
+        """
+        query = """
+            SELECT OPTION_VALUE
+            FROM INFORMATION_SCHEMA.DATABASE_OPTIONS
+            WHERE OPTION_NAME = 'database_dialect'
+        """
+        rows = self._execute_readonly(conn, query)
+        if rows and rows[0]:
+            return str(rows[0][0])
+        # If we can't detect, raise an error (no fallback)
+        msg = "Could not detect Spanner database dialect"
+        raise ValueError(msg)
+
+    def _get_dialect(self, conn: Any) -> str:
+        """Get the cached dialect for a connection."""
+        dialect = getattr(conn, "_sqlit_spanner_dialect", None)
+        if dialect is None:
+            msg = "Spanner dialect not detected on connection"
+            raise ValueError(msg)
+        return dialect
 
     def get_databases(self, conn: Any) -> list[str]:
         """Return the connected database (Spanner is single-database per connection)."""
@@ -292,12 +331,48 @@ class SpannerAdapter(CursorBasedAdapter):
         """Spanner doesn't support traditional sequences."""
         return []
 
+    def _quote_identifier_for_dialect(self, dialect: str, name: str) -> str:
+        """Quote an identifier based on dialect.
+
+        - GoogleSQL: `identifier` (backticks)
+        - PostgreSQL: "identifier" (double quotes)
+        """
+        if dialect == DIALECT_POSTGRESQL:
+            # PostgreSQL dialect uses double quotes
+            escaped = name.replace('"', '""')
+            return f'"{escaped}"'
+        # GoogleSQL uses backticks
+        escaped = name.replace("`", "\\`")
+        return f"`{escaped}`"
+
+    def _quote_identifier_for_conn(self, conn: Any, name: str) -> str:
+        """Quote an identifier using the connection's dialect."""
+        dialect = self._get_dialect(conn)
+        return self._quote_identifier_for_dialect(dialect, name)
+
     def quote_identifier(self, name: str) -> str:
-        """Quote an identifier for GoogleSQL (backticks)."""
-        return f"`{name}`"
+        """Quote an identifier for GoogleSQL (backticks).
+
+        Note: This method doesn't have access to the connection, so it always
+        uses GoogleSQL syntax. For connection-aware quoting, use
+        _quote_identifier_for_conn() instead.
+        """
+        return self._quote_identifier_for_dialect(DIALECT_GOOGLESQL, name)
 
     def build_select_query(
         self, table: str, limit: int, database: str | None = None, schema: str | None = None
     ) -> str:
-        """Build SELECT query with LIMIT."""
-        return f"SELECT * FROM `{table}` LIMIT {limit}"
+        """Build SELECT query with LIMIT.
+
+        Note: This method doesn't have access to the connection, so it always
+        uses GoogleSQL syntax for identifier quoting.
+        """
+        quoted = self._quote_identifier_for_dialect(DIALECT_GOOGLESQL, table)
+        return f"SELECT * FROM {quoted} LIMIT {limit}"
+
+    def build_select_query_for_conn(
+        self, conn: Any, table: str, limit: int, database: str | None = None, schema: str | None = None
+    ) -> str:
+        """Build SELECT query with LIMIT using connection-aware quoting."""
+        quoted = self._quote_identifier_for_conn(conn, table)
+        return f"SELECT * FROM {quoted} LIMIT {limit}"
