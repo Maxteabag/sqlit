@@ -48,6 +48,7 @@ all = [
     "trino>=0.329.0",
     "presto-python-client>=0.8.4",
     "google-cloud-bigquery",
+    "google-cloud-spanner>=3.0.0",
     "duckdb>=1.1.0",  # min avoids known CVEs
     "clickhouse-connect>=0.7.0",
     "requests>=2.32.4",  # min avoids known CVEs
@@ -72,6 +73,7 @@ teradata = ["teradatasql>=20.0.0"]
 trino = ["trino>=0.329.0"]
 presto = ["presto-python-client>=0.8.4"]
 bigquery = ["google-cloud-bigquery"]
+spanner = ["google-cloud-spanner>=3.0.0"]
 redshift = ["redshift-connector"]
 duckdb = ["duckdb>=1.1.0"]  # min avoids known CVEs
 clickhouse = ["clickhouse-connect>=0.7.0"]
@@ -187,6 +189,7 @@ markers = [
     "firebird: Firebird database tests",
     "clickhouse: ClickHouse database tests",
     "flight: Apache Arrow Flight SQL database tests",
+    "spanner: Google Cloud Spanner database tests",
     "asyncio: async tests",
     "integration: integration tests (may require external services)",
 ]
@@ -241,7 +244,18 @@ module = [
     "adbc_driver_flightsql",
     "adbc_driver_flightsql.dbapi",
     "adbc_driver_manager",
-    "textual_fastdatatable"
+    "textual_fastdatatable",
+    "google.cloud",
+    "google.cloud.bigquery",
+    "google.cloud.bigquery.dbapi",
+    "google.cloud.spanner",
+    "google.cloud.spanner_dbapi",
+    "google.api_core",
+    "google.api_core.client_options",
+    "google.auth",
+    "google.auth.credentials",
+    "google.oauth2",
+    "google.oauth2.service_account",
 ]
 ignore_missing_imports = true
 

@@ -29,6 +29,7 @@ class DatabaseType(str, Enum):
     PRESTO = "presto"
     REDSHIFT = "redshift"
     SNOWFLAKE = "snowflake"
+    SPANNER = "spanner"
     SQLITE = "sqlite"
     SUPABASE = "supabase"
     TERADATA = "teradata"
@@ -50,6 +51,7 @@ DATABASE_TYPE_DISPLAY_ORDER: list[DatabaseType] = [
     DatabaseType.TERADATA,
     DatabaseType.SNOWFLAKE,
     DatabaseType.BIGQUERY,
+    DatabaseType.SPANNER,
     DatabaseType.TRINO,
     DatabaseType.PRESTO,
     DatabaseType.DUCKDB,

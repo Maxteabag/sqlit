@@ -21,6 +21,7 @@ from tests.fixtures.presto import *
 from tests.fixtures.postgres import *
 from tests.fixtures.trino import *
 from tests.fixtures.ssh import *
+from tests.fixtures.spanner import *
 from tests.fixtures.sqlite import *
 from tests.fixtures.turso import *
 from tests.fixtures.utils import *
