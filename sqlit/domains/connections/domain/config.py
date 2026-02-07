@@ -16,6 +16,7 @@ class DatabaseType(str, Enum):
     D1 = "d1"
     DUCKDB = "duckdb"
     DB2 = "db2"
+    DB2I = "db2i"
     FIREBIRD = "firebird"
     FLIGHT = "flight"
     HANA = "hana"
@@ -46,6 +47,7 @@ DATABASE_TYPE_DISPLAY_ORDER: list[DatabaseType] = [
     DatabaseType.ORACLE,
     DatabaseType.ORACLE_LEGACY,
     DatabaseType.DB2,
+    DatabaseType.DB2I,
     DatabaseType.HANA,
     DatabaseType.TERADATA,
     DatabaseType.SNOWFLAKE,

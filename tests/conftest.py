@@ -8,6 +8,7 @@ from tests.fixtures.clickhouse import *
 from tests.fixtures.cockroachdb import *
 from tests.fixtures.db2 import *
 from tests.fixtures.d1 import *
+from tests.fixtures.db2i import *
 from tests.fixtures.duckdb import *
 from tests.fixtures.firebird import *
 from tests.fixtures.flight import *
