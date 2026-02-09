@@ -31,6 +31,7 @@ class QueryNormalModeState(State):
         self.allows("cursor_WORD_forward", help="Move to next WORD")
         self.allows("cursor_word_back", help="Move to previous word")
         self.allows("cursor_WORD_back", help="Move to previous WORD")
+        self.allows("cursor_first_non_blank", help="Move to first non-blank")
         self.allows("cursor_line_start", help="Move to line start")
         self.allows("cursor_line_end", help="Move to line end")
         self.allows("cursor_last_line", help="Move to last line")
@@ -45,6 +46,8 @@ class QueryNormalModeState(State):
         # Vim open line
         self.allows("open_line_below", help="Open line below")
         self.allows("open_line_above", help="Open line above")
+        # Vim delete char
+        self.allows("delete_char", help="Delete character under cursor")
         # Vim delete or change
         self.allows("change_line_end_motion", help="Change to line end")
         self.allows("delete_line_end", help="Delete to line end")

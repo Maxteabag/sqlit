@@ -22,6 +22,24 @@ def motion_line_start(
     )
 
 
+def motion_first_non_blank(
+    text: str, row: int, col: int, char: str | None = None
+) -> MotionResult:
+    """Move to first non-whitespace character on line (^)."""
+    lines, row, col = _normalize(text, row, col)
+    line = lines[row]
+    first_col = len(line) - len(line.lstrip())
+    return MotionResult(
+        position=Position(row, first_col),
+        range=Range(
+            Position(row, min(col, first_col)),
+            Position(row, max(col, first_col)),
+            MotionType.CHARWISE,
+            inclusive=False,
+        ),
+    )
+
+
 def motion_line_end(
     text: str, row: int, col: int, char: str | None = None
 ) -> MotionResult:
