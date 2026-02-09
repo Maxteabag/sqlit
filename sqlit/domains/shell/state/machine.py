@@ -224,7 +224,7 @@ class UIStateMachine:
         lines.append(binding("h/j/k/l", "Cursor left/down/up/right"))
         lines.append(binding("w/W", "Word forward"))
         lines.append(binding("b/B", "Word backward"))
-        lines.append(binding("0/$", "Line start/end"))
+        lines.append(binding("0/^/$", "Line start/first char/end"))
         lines.append(binding("gg/G", "File start/end"))
         lines.append(binding("f{c}/F{c}", "Find char forward/back"))
         lines.append(binding("t{c}/T{c}", "Till char forward/back"))
