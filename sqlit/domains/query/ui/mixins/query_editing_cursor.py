@@ -99,6 +99,10 @@ class QueryEditingCursorMixin:
         """Move cursor to next WORD (W)."""
         self._move_with_motion("W")
 
+    def action_cursor_word_end(self: QueryMixinHost) -> None:
+        """Move cursor to end of word (e)."""
+        self._move_with_motion("e")
+
     def action_cursor_word_back(self: QueryMixinHost) -> None:
         """Move cursor to previous word (b)."""
         self._move_with_motion("b")
