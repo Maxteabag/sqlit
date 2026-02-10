@@ -754,6 +754,28 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         # Focus query input - this triggers on_descendant_focus which updates footer bindings
         self.query_input.focus()
 
+    def _append_history_query(self: QueryMixinHost, query: str) -> None:
+        """Append a query to the end of the editor without replacing text."""
+        if query is None:
+            return
+
+        current_text = self.query_input.text
+        if current_text:
+            trimmed_current = current_text.rstrip("\n")
+            separator = "\n" if trimmed_current else ""
+            new_text = f"{trimmed_current}{separator}{query}"
+        else:
+            new_text = query
+
+        self._push_undo_state()
+        self.query_input.text = new_text
+
+        lines = new_text.split("\n")
+        last_line = len(lines) - 1
+        last_col = len(lines[-1]) if lines else 0
+        self.query_input.cursor_location = (last_line, last_col)
+        self.query_input.focus()
+
     def action_show_history(self: QueryMixinHost) -> None:
         """Show query history for the current connection."""
         if not self.current_config:
@@ -781,6 +803,8 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         action, data = result
         if action == "select":
             self._apply_history_query(data)
+        elif action == "append":
+            self._append_history_query(data)
         elif action == "delete":
             self._delete_history_entry(data)
             self.action_show_history()
@@ -853,6 +877,10 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             connection_name = data.get("connection_name", "")
             database = data.get("database", "")
             self._run_telescope_query(connection_name, query, database=database)
+        elif action == "append":
+            query = data.get("query", "")
+            if query:
+                self._append_history_query(query)
         elif action == "delete":
             timestamp = data.get("timestamp", "")
             connection_name = data.get("connection_name", "")

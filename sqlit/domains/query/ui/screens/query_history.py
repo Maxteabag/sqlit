@@ -26,6 +26,7 @@ class QueryHistoryScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel", priority=True),
         Binding("q", "cancel", "Cancel"),
         Binding("enter", "select", "Select"),
+        Binding("a", "append", "Append"),
         Binding("d", "delete", "Delete"),
         Binding("asterisk", "toggle_star", "Star"),
         Binding("slash", "open_filter", "Filter"),
@@ -177,7 +178,12 @@ class QueryHistoryScreen(ModalScreen):
         else:
             title = f"Query History - {self.connection_name}"
             empty_message = "No query history for this connection"
-        shortcuts = [("Select", "<enter>"), ("Star", "*"), ("Delete", "D")]
+        shortcuts = [
+            ("Select", "<enter>"),
+            ("Append", "a"),
+            ("Star", "*"),
+            ("Delete", "D"),
+        ]
 
         self._merged_entries = self._merge_entries()
 
@@ -235,6 +241,22 @@ class QueryHistoryScreen(ModalScreen):
             idx = option_list.highlighted
             if idx is not None and idx < len(entries):
                 self.dismiss(self._build_action_result("select", entries[idx]))
+            else:
+                self.dismiss(None)
+        except Exception:
+            self.dismiss(None)
+
+    def action_append(self) -> None:
+        entries = self._get_display_entries()
+        if not entries:
+            self.dismiss(None)
+            return
+
+        try:
+            option_list = self.query_one("#history-list", OptionList)
+            idx = option_list.highlighted
+            if idx is not None and idx < len(entries):
+                self.dismiss(self._build_action_result("append", entries[idx]))
             else:
                 self.dismiss(None)
         except Exception:
