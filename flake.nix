@@ -52,6 +52,7 @@
           SETUPTOOLS_SCM_PRETEND_VERSION = version;
 
           dependencies = [
+            pyPkgs.psycopg2-binary
             pyPkgs.docker
             pyPkgs.keyring
             pyPkgs.pyperclip
