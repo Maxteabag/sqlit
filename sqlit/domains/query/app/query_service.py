@@ -68,9 +68,10 @@ class KeywordQueryAnalyzer:
     def classify(self, query: str) -> QueryKind:
         """Classify query based on keyword of the last statement.
 
-        For multi-statement queries like 'BEGIN; INSERT...; SELECT * FROM t;',
-        we check the last statement to determine if results should be returned.
-        Uses the same splitting logic as multi_statement.split_statements.
+        Enhanced for Teradata:
+        - Supports SEL (Teradata abbreviation for SELECT)
+        - Supports HELP statements
+        - Handles LOCKING ... SELECT patterns (common in Teradata)
         """
         from sqlit.domains.query.editing.comments import (
             is_comment_line,
@@ -87,16 +88,21 @@ class KeywordQueryAnalyzer:
         for stmt in reversed(statements):
             if is_comment_only_statement(stmt):
                 continue
-            # Found a statement with actual SQL - get first non-comment line
+            # Get first non-comment line
             lines = [line.strip() for line in stmt.split("\n") if line.strip()]
             non_comment_lines = [line for line in lines if not is_comment_line(line)]
             if non_comment_lines:
-                first_line = non_comment_lines[0].upper()
-                first_word = first_line.split()[0] if first_line else ""
+                first_line_upper = non_comment_lines[0].upper()
+
+                # Teradata-specific patterns (word-boundary aware)
+                if re.search(r"\b(SELECT|WITH|SHOW|DESCRIBE|EXPLAIN|PRAGMA|SEL|HELP)\b", first_line_upper):
+                    return QueryKind.RETURNS_ROWS
+
+                # Fallback to original first-word check
+                first_word = first_line_upper.split()[0] if first_line_upper else ""
                 return QueryKind.RETURNS_ROWS if first_word in SELECT_KEYWORDS else QueryKind.NON_QUERY
 
         return QueryKind.NON_QUERY
-
 
 class DialectQueryAnalyzer:
     def __init__(self, dialect: Any, fallback: QueryAnalyzer | None = None) -> None:
