@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,25 +17,21 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up uv (Python ${{ matrix.python-version }})
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
-          pip install -e .
+      - name: Sync runtime dependencies
+        run: uv sync --locked --no-dev
 
       - name: Check package builds
-        run: python -m build
+        run: uv build
 
       - name: Verify CLI entry point
-        run: |
-          python -c "from sqlit.cli import main; print('CLI import OK')"
+        run: uv run python -c "from sqlit.cli import main; print('CLI import OK')"
 
   test-unit:
     runs-on: ubuntu-latest
@@ -41,18 +40,15 @@ jobs:
         python-version: ["3.10", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up uv (Python ${{ matrix.python-version }})
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
       - name: Install dependencies
-        run: uv sync --group test --no-dev
+        run: uv sync --locked --group test --no-dev
 
       - name: Run unit tests
         run: |
@@ -77,18 +73,16 @@ jobs:
         python-version: ["3.10", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up uv (Python ${{ matrix.python-version }})
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev
+        run: uv sync --locked --group test --no-dev
 
       - name: Run SQLite integration tests
         run: uv run pytest tests/test_sqlite.py -v --timeout=60
@@ -114,18 +108,16 @@ jobs:
           --health-start-period 30s
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra mssql
+        run: uv sync --locked --group test --no-dev --extra mssql
 
       - name: Wait for SQL Server to be ready
         run: |
@@ -167,18 +159,16 @@ jobs:
           --health-start-period 10s
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra postgres
+        run: uv sync --locked --group test --no-dev --extra postgres
 
       - name: Run PostgreSQL integration tests
         env:
@@ -211,18 +201,16 @@ jobs:
           --health-start-period 30s
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra mysql
+        run: uv sync --locked --group test --no-dev --extra mysql
 
       - name: Run MySQL integration tests
         env:
@@ -254,18 +242,16 @@ jobs:
           --health-start-period 60s
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra oracle
+        run: uv sync --locked --group test --no-dev --extra oracle
 
       - name: Run Oracle integration tests
         env:
@@ -298,23 +284,21 @@ jobs:
           --health-start-period 30s
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
+          enable-cache: true
 
       - name: Install MariaDB Connector/C
         run: |
           sudo apt-get update
           sudo apt-get install -y libmariadb-dev
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra mariadb
+        run: uv sync --locked --group test --no-dev --extra mariadb
 
       - name: Run MariaDB integration tests
         env:
@@ -332,18 +316,16 @@ jobs:
         python-version: ["3.10", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up uv (Python ${{ matrix.python-version }})
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra duckdb
+        run: uv sync --locked --group test --no-dev --extra duckdb
 
       - name: Run DuckDB integration tests
         run: uv run pytest tests/test_duckdb.py -v --timeout=60
@@ -353,18 +335,16 @@ jobs:
     needs: build
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra cockroachdb
+        run: uv sync --locked --group test --no-dev --extra cockroachdb
 
       - name: Start CockroachDB
         run: |
@@ -404,18 +384,16 @@ jobs:
           - 3050:3050
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra firebird
+        run: uv sync --locked --group test --no-dev --extra firebird
 
       - name: Run Firebird integration tests
         env:
@@ -431,18 +409,16 @@ jobs:
     needs: build
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra clickhouse
+        run: uv sync --locked --group test --no-dev --extra clickhouse
 
       - name: Start ClickHouse
         run: |
@@ -474,18 +450,16 @@ jobs:
     needs: build
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra ssh --extra postgres
+        run: uv sync --locked --group test --no-dev --extra ssh --extra postgres
 
       - name: Create Docker network
         run: docker network create ssh-test-net
@@ -556,18 +530,16 @@ jobs:
     needs: build
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group test --no-dev --extra turso
+        run: uv sync --locked --group test --no-dev --extra turso
 
       - name: Start Turso (libsql-server)
         run: |
