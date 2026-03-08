@@ -6,67 +6,38 @@ datetimeoffset values (timezone-aware datetime columns).
 
 from __future__ import annotations
 
-import os
 import pytest
 
-
-MSSQL_HOST = os.environ.get("MSSQL_HOST", "localhost")
-MSSQL_PORT = int(os.environ.get("MSSQL_PORT", "1433"))
-MSSQL_USER = os.environ.get("MSSQL_USER", "sa")
-MSSQL_PASSWORD = os.environ.get("MSSQL_PASSWORD", "YourStrong@Passw0rd")
-MSSQL_DATABASE = os.environ.get("MSSQL_DATABASE", "master")
+from tests.conftest import MSSQL_HOST, MSSQL_PASSWORD, MSSQL_PORT, MSSQL_USER
 
 
 @pytest.fixture
 def mssql_adapter():
     """Get MSSQL adapter instance."""
-    from sqlit.db.adapters.mssql import SQLServerAdapter
+    from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
     return SQLServerAdapter()
 
 
 @pytest.fixture
-def mssql_config():
+def mssql_config(mssql_db):
     """Get MSSQL connection config."""
-    from sqlit.config import ConnectionConfig
+    from tests.helpers import ConnectionConfig
     return ConnectionConfig(
         name="test-mssql-dto",
         db_type="mssql",
         server=MSSQL_HOST,
         port=str(MSSQL_PORT),
-        database=MSSQL_DATABASE,
+        database=mssql_db,
         username=MSSQL_USER,
         password=MSSQL_PASSWORD,
         options={"auth_type": "sql"},
     )
 
 
-def is_mssql_available() -> bool:
-    """Check if SQL Server is available."""
-    import socket
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)
-        result = sock.connect_ex((MSSQL_HOST, MSSQL_PORT))
-        sock.close()
-        return result == 0
-    except Exception:
-        return False
-
-
 @pytest.mark.integration
 @pytest.mark.mssql
 class TestMSSQLDatetimeOffset:
     """Integration tests for datetimeoffset column support."""
-
-    @pytest.fixture(autouse=True)
-    def skip_if_unavailable(self):
-        """Skip tests if SQL Server is not available."""
-        if not is_mssql_available():
-            pytest.skip("SQL Server is not available")
-        try:
-            import mssql_python  # type: ignore[import]
-        except ImportError:
-            pytest.skip("mssql-python is not installed")
 
     def test_query_datetimeoffset_column(self, mssql_adapter, mssql_config):
         """Test that querying a table with datetimeoffset columns works."""

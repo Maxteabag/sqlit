@@ -1,6 +1,5 @@
 """Unit tests for adapter system_databases property."""
 
-import pytest
 
 
 class TestSystemDatabasesProperty:
@@ -8,7 +7,7 @@ class TestSystemDatabasesProperty:
 
     def test_base_adapter_returns_empty(self):
         """Base DatabaseAdapter should return empty frozenset."""
-        from sqlit.db.adapters.base import DatabaseAdapter
+        from sqlit.domains.connections.providers.adapters.base import DatabaseAdapter
 
         # Create a minimal concrete implementation to test the base class
         class ConcreteAdapter(DatabaseAdapter):
@@ -68,7 +67,7 @@ class TestSystemDatabasesProperty:
 
     def test_mssql_system_databases(self):
         """SQL Server adapter should exclude master, tempdb, model, msdb."""
-        from sqlit.db.adapters.mssql import SQLServerAdapter
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
 
         adapter = SQLServerAdapter()
         expected = frozenset({"master", "tempdb", "model", "msdb"})
@@ -76,7 +75,7 @@ class TestSystemDatabasesProperty:
 
     def test_postgresql_system_databases(self):
         """PostgreSQL adapter should exclude template0, template1."""
-        from sqlit.db.adapters.postgresql import PostgreSQLAdapter
+        from sqlit.domains.connections.providers.postgresql.adapter import PostgreSQLAdapter
 
         adapter = PostgreSQLAdapter()
         expected = frozenset({"template0", "template1"})
@@ -84,7 +83,7 @@ class TestSystemDatabasesProperty:
 
     def test_cockroachdb_inherits_postgres_system_databases(self):
         """CockroachDB inherits PostgreSQL's system_databases."""
-        from sqlit.db.adapters.cockroachdb import CockroachDBAdapter
+        from sqlit.domains.connections.providers.cockroachdb.adapter import CockroachDBAdapter
 
         adapter = CockroachDBAdapter()
         expected = frozenset({"template0", "template1"})
@@ -92,7 +91,7 @@ class TestSystemDatabasesProperty:
 
     def test_mysql_system_databases(self):
         """MySQL adapter should exclude mysql, information_schema, performance_schema, sys."""
-        from sqlit.db.adapters.mysql import MySQLAdapter
+        from sqlit.domains.connections.providers.mysql.adapter import MySQLAdapter
 
         adapter = MySQLAdapter()
         expected = frozenset({"mysql", "information_schema", "performance_schema", "sys"})
@@ -100,7 +99,7 @@ class TestSystemDatabasesProperty:
 
     def test_mariadb_inherits_mysql_system_databases(self):
         """MariaDB inherits MySQL's system_databases."""
-        from sqlit.db.adapters.mariadb import MariaDBAdapter
+        from sqlit.domains.connections.providers.mariadb.adapter import MariaDBAdapter
 
         adapter = MariaDBAdapter()
         expected = frozenset({"mysql", "information_schema", "performance_schema", "sys"})
@@ -108,7 +107,7 @@ class TestSystemDatabasesProperty:
 
     def test_clickhouse_system_databases(self):
         """ClickHouse adapter should exclude system, information_schema."""
-        from sqlit.db.adapters.clickhouse import ClickHouseAdapter
+        from sqlit.domains.connections.providers.clickhouse.adapter import ClickHouseAdapter
 
         adapter = ClickHouseAdapter()
         assert "system" in adapter.system_databases
@@ -116,7 +115,7 @@ class TestSystemDatabasesProperty:
 
     def test_snowflake_system_databases(self):
         """Snowflake adapter should exclude SNOWFLAKE metadata database."""
-        from sqlit.db.adapters.snowflake import SnowflakeAdapter
+        from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
 
         adapter = SnowflakeAdapter()
         # Case-insensitive: either SNOWFLAKE or snowflake should be present
@@ -125,7 +124,7 @@ class TestSystemDatabasesProperty:
 
     def test_sqlite_no_system_databases(self):
         """SQLite (single-file) should return empty frozenset."""
-        from sqlit.db.adapters.sqlite import SQLiteAdapter
+        from sqlit.domains.connections.providers.sqlite.adapter import SQLiteAdapter
 
         adapter = SQLiteAdapter()
         assert adapter.system_databases == frozenset()
@@ -134,7 +133,7 @@ class TestSystemDatabasesProperty:
 
     def test_duckdb_no_system_databases(self):
         """DuckDB (single-file) should return empty frozenset."""
-        from sqlit.db.adapters.duckdb import DuckDBAdapter
+        from sqlit.domains.connections.providers.duckdb.adapter import DuckDBAdapter
 
         adapter = DuckDBAdapter()
         assert adapter.system_databases == frozenset()
@@ -142,7 +141,7 @@ class TestSystemDatabasesProperty:
 
     def test_turso_no_system_databases(self):
         """Turso (SQLite-based) should return empty frozenset."""
-        from sqlit.db.adapters.turso import TursoAdapter
+        from sqlit.domains.connections.providers.turso.adapter import TursoAdapter
 
         adapter = TursoAdapter()
         assert adapter.system_databases == frozenset()
@@ -150,7 +149,7 @@ class TestSystemDatabasesProperty:
 
     def test_oracle_no_system_databases(self):
         """Oracle (single-database with schemas) should return empty frozenset."""
-        from sqlit.db.adapters.oracle import OracleAdapter
+        from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
 
         adapter = OracleAdapter()
         assert adapter.system_databases == frozenset()
@@ -162,7 +161,7 @@ class TestSystemDatabasesFiltering:
 
     def test_lowercase_comparison(self):
         """System databases should be compared case-insensitively."""
-        from sqlit.db.adapters.mssql import SQLServerAdapter
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
 
         adapter = SQLServerAdapter()
         system_dbs = {s.lower() for s in adapter.system_databases}
@@ -176,7 +175,7 @@ class TestSystemDatabasesFiltering:
 
     def test_filtering_preserves_user_databases(self):
         """Filtering should keep all non-system databases."""
-        from sqlit.db.adapters.postgresql import PostgreSQLAdapter
+        from sqlit.domains.connections.providers.postgresql.adapter import PostgreSQLAdapter
 
         adapter = PostgreSQLAdapter()
         system_dbs = {s.lower() for s in adapter.system_databases}
@@ -193,7 +192,7 @@ class TestSystemDatabasesFiltering:
 
     def test_empty_system_databases_filters_nothing(self):
         """Empty system_databases should not filter any databases."""
-        from sqlit.db.adapters.sqlite import SQLiteAdapter
+        from sqlit.domains.connections.providers.sqlite.adapter import SQLiteAdapter
 
         adapter = SQLiteAdapter()
         system_dbs = {s.lower() for s in adapter.system_databases}
@@ -209,8 +208,8 @@ class TestSystemDatabasesInterface:
 
     def test_returns_frozenset(self):
         """system_databases should return a frozenset (immutable)."""
-        from sqlit.db.adapters.mssql import SQLServerAdapter
-        from sqlit.db.adapters.postgresql import PostgreSQLAdapter
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
+        from sqlit.domains.connections.providers.postgresql.adapter import PostgreSQLAdapter
 
         for AdapterClass in [SQLServerAdapter, PostgreSQLAdapter]:
             adapter = AdapterClass()
@@ -218,7 +217,7 @@ class TestSystemDatabasesInterface:
 
     def test_property_is_idempotent(self):
         """Multiple calls to system_databases should return same object."""
-        from sqlit.db.adapters.mssql import SQLServerAdapter
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
 
         adapter = SQLServerAdapter()
         first_call = adapter.system_databases

@@ -10,14 +10,20 @@ from dataclasses import dataclass
 
 from rich.markup import escape as escape_markup
 
-from sqlit.ui.mixins.tree import TreeMixin
-from sqlit.ui.tree_nodes import SchemaNode, TableNode
+from sqlit.domains.connections.providers.model import SchemaCapabilities
+from sqlit.domains.explorer.domain.tree_nodes import SchemaNode, TableNode
+from sqlit.domains.explorer.ui.mixins.tree import TreeMixin
 
 
 @dataclass
 class MockColumnInfo:
     name: str
     data_type: str
+
+
+@dataclass
+class MockProvider:
+    capabilities: SchemaCapabilities
 
 
 class MockTreeNode:
@@ -48,9 +54,21 @@ class MockTreeNode:
 
 
 class MockSession:
-    def __init__(self, adapter):
+    def __init__(self, adapter, provider: MockProvider | None = None):
         self.adapter = adapter
         self.connection = object()
+        self.provider = provider or MockProvider(
+            SchemaCapabilities(
+                supports_multiple_databases=False,
+                supports_cross_database_queries=False,
+                supports_stored_procedures=False,
+                supports_indexes=False,
+                supports_triggers=False,
+                supports_sequences=False,
+                default_schema=adapter.default_schema,
+                system_databases=frozenset(),
+            )
+        )
 
 
 class MockAdapter:

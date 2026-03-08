@@ -1,7 +1,5 @@
 """Test autocomplete behavior with different database selection modes."""
 
-import pytest
-from unittest.mock import MagicMock, PropertyMock, patch
 
 
 class TestAutocompleteDatabaseModes:
@@ -14,7 +12,7 @@ class TestAutocompleteDatabaseModes:
 
         After filtering, only 1 database remains -> should use unqualified names.
         """
-        from sqlit.db.adapters.mssql import SQLServerAdapter
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
 
         adapter = SQLServerAdapter()
 
@@ -69,7 +67,7 @@ class TestAutocompleteDatabaseModes:
 
         After filtering, 2 databases remain -> should use fully qualified names.
         """
-        from sqlit.db.adapters.mssql import SQLServerAdapter
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
 
         adapter = SQLServerAdapter()
 
@@ -128,7 +126,7 @@ class TestAutocompleteDatabaseModes:
 
         After filtering, 0 databases remain -> empty autocomplete.
         """
-        from sqlit.db.adapters.mssql import SQLServerAdapter
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
 
         adapter = SQLServerAdapter()
 
@@ -153,7 +151,7 @@ class TestAutocompleteDatabaseModes:
 
         Should use single_db mode with unqualified names for the selected db.
         """
-        from sqlit.db.adapters.mssql import SQLServerAdapter
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
 
         adapter = SQLServerAdapter()
 
@@ -194,10 +192,6 @@ class TestAutocompleteDatabaseModes:
         1. User selects a database -> unqualified names
         2. User unselects (clears) database -> qualified names (if multiple dbs)
         """
-        from sqlit.db.adapters.mssql import SQLServerAdapter
-
-        adapter = SQLServerAdapter()
-
         all_user_dbs = ["AppDb1", "AppDb2"]
 
         # Phase 1: Database selected
@@ -244,7 +238,7 @@ class TestSystemDatabaseFiltering:
 
     def test_mssql_filters_system_databases(self):
         """MSSQL should filter master, tempdb, model, msdb."""
-        from sqlit.db.adapters.mssql import SQLServerAdapter
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
 
         adapter = SQLServerAdapter()
         all_dbs = ["master", "MASTER", "tempdb", "model", "msdb", "UserDb"]
@@ -256,7 +250,7 @@ class TestSystemDatabaseFiltering:
 
     def test_postgres_filters_template_databases(self):
         """PostgreSQL should filter template0, template1."""
-        from sqlit.db.adapters.postgresql import PostgreSQLAdapter
+        from sqlit.domains.connections.providers.postgresql.adapter import PostgreSQLAdapter
 
         adapter = PostgreSQLAdapter()
         all_dbs = ["postgres", "template0", "template1", "myapp"]
@@ -271,7 +265,7 @@ class TestSystemDatabaseFiltering:
 
     def test_mysql_filters_system_databases(self):
         """MySQL should filter mysql, information_schema, performance_schema, sys."""
-        from sqlit.db.adapters.mysql import MySQLAdapter
+        from sqlit.domains.connections.providers.mysql.adapter import MySQLAdapter
 
         adapter = MySQLAdapter()
         all_dbs = ["mysql", "information_schema", "performance_schema", "sys", "myapp"]

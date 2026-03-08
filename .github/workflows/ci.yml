@@ -33,6 +33,17 @@ jobs:
       - name: Verify CLI entry point
         run: uv run python -c "from sqlit.cli import main; print('CLI import OK')"
 
+  nix-flake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v26
+
+      - name: Build flake package
+        run: nix build .#sqlit
+
   test-unit:
     runs-on: ubuntu-latest
     strategy:

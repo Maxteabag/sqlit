@@ -2,15 +2,44 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from dataclasses import dataclass, field
+from unittest.mock import MagicMock
 
 import pytest
-from textual.widgets import Input
+from textual.widgets import Button, Input
 
-from sqlit.config import ConnectionConfig
-from sqlit.ui.screens.password_input import PasswordInputScreen
+from sqlit.domains.connections.providers.model import SchemaCapabilities
+from sqlit.domains.connections.providers.explorer_nodes import DefaultExplorerNodeProvider
+from sqlit.domains.connections.ui.screens.password_input import PasswordInputScreen
+from sqlit.shared.app.runtime import MockConfig, RuntimeConfig
+from tests.helpers import ConnectionConfig
+
+from .mocks import MockConnectionStore, MockSettingsStore, build_test_services
 
 
+@dataclass
+class MockProvider:
+    capabilities: SchemaCapabilities
+    schema_inspector: object | None = None
+    explorer_nodes: object = field(default_factory=DefaultExplorerNodeProvider)
+
+    def post_connect_warnings(self, _config: ConnectionConfig) -> list[str]:
+        return []
+
+
+def _make_provider(default_schema: str = "") -> MockProvider:
+    return MockProvider(
+        capabilities=SchemaCapabilities(
+            supports_multiple_databases=False,
+            supports_cross_database_queries=False,
+            supports_stored_procedures=False,
+            supports_indexes=False,
+            supports_triggers=False,
+            supports_sequences=False,
+            default_schema=default_schema,
+            system_databases=frozenset(),
+        )
+    )
 class TestPasswordInputScreen:
     """Test the PasswordInputScreen modal."""
 
@@ -28,10 +57,11 @@ class TestPasswordInputScreen:
             app.push_screen(screen)
             await pilot.pause()
 
-            # Check that the input field exists and is masked
+            # Check that the input field exists and is masked by default
             input_widget = screen.query_one("#password-input", Input)
             assert input_widget is not None
             assert input_widget.password is True
+            assert screen.query_one("#password-toggle", Button) is not None
 
     @pytest.mark.asyncio
     async def test_password_input_submit_with_enter(self) -> None:
@@ -157,8 +187,8 @@ class TestPasswordInputScreen:
             assert "custom password" in str(description.render())
 
     @pytest.mark.asyncio
-    async def test_password_not_visible_in_input(self) -> None:
-        """Password characters are not visible when typing."""
+    async def test_password_toggle_visibility(self) -> None:
+        """Password visibility can be toggled."""
         from textual.app import App
 
         class TestApp(App):
@@ -174,8 +204,19 @@ class TestPasswordInputScreen:
             input_widget.value = "secret123"
             await pilot.pause()
 
-            # The password property should be True, which masks the input
+            # Password is masked by default
             assert input_widget.password is True
+
+            toggle = screen.query_one("#password-toggle", Button)
+            toggle.press()
+            await pilot.pause()
+            assert input_widget.password is False
+            assert str(toggle.label) == "Hide"
+
+            toggle.press()
+            await pilot.pause()
+            assert input_widget.password is True
+            assert str(toggle.label) == "Show"
 
 
 class TestConnectionPasswordFlow:
@@ -184,11 +225,13 @@ class TestConnectionPasswordFlow:
     @pytest.mark.asyncio
     async def test_connect_with_none_password_shows_prompt(self) -> None:
         """Connecting with None password shows password input screen."""
-        from sqlit.app import SSMSTUI
-        from sqlit.mocks import get_mock_profile
+        from sqlit.domains.connections.app.mocks import get_mock_profile
+        from sqlit.domains.shell.app.main import SSMSTUI
 
         mock_profile = get_mock_profile("empty")
-        app = SSMSTUI(mock_profile=mock_profile)
+        runtime = RuntimeConfig(mock=MockConfig(enabled=True, profile=mock_profile))
+        services = build_test_services(runtime=runtime)
+        app = SSMSTUI(services=services)
 
         async with app.run_test() as pilot:
             # Create a connection with None password (not set)
@@ -210,13 +253,76 @@ class TestConnectionPasswordFlow:
             assert app.screen.connection_name == "test_db"
 
     @pytest.mark.asyncio
+    async def test_connection_picker_escape_closes_password_prompt(self) -> None:
+        """Connection picker password prompt closes on first Escape."""
+        from textual.widgets import OptionList
+
+        from sqlit.domains.connections.ui.screens import ConnectionPickerScreen
+        from sqlit.domains.shell.app.main import SSMSTUI
+
+        connections = [
+            ConnectionConfig(
+                name="prompt_db",
+                db_type="postgresql",
+                server="localhost",
+                port="5432",
+                database="testdb",
+                username="user",
+                password=None,
+            )
+        ]
+        services = build_test_services(
+            connection_store=MockConnectionStore(connections),
+            settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+        )
+        app = SSMSTUI(services=services)
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.action_show_connection_picker()
+            await pilot.pause()
+
+            picker = next(
+                (s for s in app.screen_stack if isinstance(s, ConnectionPickerScreen)),
+                None,
+            )
+            assert picker is not None
+
+            option_list = picker.query_one("#picker-list", OptionList)
+            if option_list.highlighted is None:
+                for index in range(option_list.option_count):
+                    option = option_list.get_option_at_index(index)
+                    if option and not option.disabled:
+                        option_list.highlighted = index
+                        break
+            option_list.focus()
+            await pilot.pause()
+
+            await pilot.press("enter")
+            await pilot.pause()
+
+            prompt_screens = [
+                screen for screen in app.screen_stack if isinstance(screen, PasswordInputScreen)
+            ]
+            assert prompt_screens, "Password prompt should be shown"
+
+            await pilot.press("escape")
+            await pilot.pause()
+
+            prompt_screens = [
+                screen for screen in app.screen_stack if isinstance(screen, PasswordInputScreen)
+            ]
+            assert not prompt_screens, "Password prompt should close on first Escape"
+
+    @pytest.mark.asyncio
     async def test_connect_with_stored_password_no_prompt(self) -> None:
         """Connecting with stored password doesn't show prompt."""
-        from sqlit.app import SSMSTUI
-        from sqlit.mocks import get_mock_profile
+        from sqlit.domains.connections.app.mocks import get_mock_profile
+        from sqlit.domains.shell.app.main import SSMSTUI
 
         mock_profile = get_mock_profile("empty")
-        app = SSMSTUI(mock_profile=mock_profile)
+        runtime = RuntimeConfig(mock=MockConfig(enabled=True, profile=mock_profile))
+        services = build_test_services(runtime=runtime)
+        app = SSMSTUI(services=services)
 
         async with app.run_test() as pilot:
             # Create a connection with stored password
@@ -232,11 +338,11 @@ class TestConnectionPasswordFlow:
             # Mock the session factory
             mock_session = MagicMock()
             mock_session.connection = MagicMock()
-            mock_session.adapter = MagicMock()
+            mock_session.provider = _make_provider()
             mock_session.tunnel = None
             mock_session.config = config
 
-            app._session_factory = lambda c: mock_session
+            services.session_factory = lambda c: mock_session
 
             # Trigger connect
             app.connect_to_server(config)
@@ -249,11 +355,13 @@ class TestConnectionPasswordFlow:
     @pytest.mark.asyncio
     async def test_ssh_password_prompt_before_db_password(self) -> None:
         """SSH password is prompted before database password."""
-        from sqlit.app import SSMSTUI
-        from sqlit.mocks import get_mock_profile
+        from sqlit.domains.connections.app.mocks import get_mock_profile
+        from sqlit.domains.shell.app.main import SSMSTUI
 
         mock_profile = get_mock_profile("empty")
-        app = SSMSTUI(mock_profile=mock_profile)
+        runtime = RuntimeConfig(mock=MockConfig(enabled=True, profile=mock_profile))
+        services = build_test_services(runtime=runtime)
+        app = SSMSTUI(services=services)
 
         async with app.run_test() as pilot:
             # Create a connection with SSH enabled and both passwords None (not set)
@@ -282,11 +390,13 @@ class TestConnectionPasswordFlow:
     @pytest.mark.asyncio
     async def test_cancel_password_prompt_aborts_connection(self) -> None:
         """Cancelling password prompt aborts the connection."""
-        from sqlit.app import SSMSTUI
-        from sqlit.mocks import get_mock_profile
+        from sqlit.domains.connections.app.mocks import get_mock_profile
+        from sqlit.domains.shell.app.main import SSMSTUI
 
         mock_profile = get_mock_profile("empty")
-        app = SSMSTUI(mock_profile=mock_profile)
+        runtime = RuntimeConfig(mock=MockConfig(enabled=True, profile=mock_profile))
+        services = build_test_services(runtime=runtime)
+        app = SSMSTUI(services=services)
 
         async with app.run_test() as pilot:
             # Create a connection with None password (not set)
@@ -316,11 +426,13 @@ class TestConnectionPasswordFlow:
     @pytest.mark.asyncio
     async def test_password_from_prompt_used_for_connection(self) -> None:
         """Password entered in prompt is used for connection."""
-        from sqlit.app import SSMSTUI
-        from sqlit.mocks import get_mock_profile
+        from sqlit.domains.connections.app.mocks import get_mock_profile
+        from sqlit.domains.shell.app.main import SSMSTUI
 
         mock_profile = get_mock_profile("empty")
-        app = SSMSTUI(mock_profile=mock_profile)
+        runtime = RuntimeConfig(mock=MockConfig(enabled=True, profile=mock_profile))
+        services = build_test_services(runtime=runtime)
+        app = SSMSTUI(services=services)
 
         # Track what config was used for connection
         connection_config = None
@@ -330,12 +442,12 @@ class TestConnectionPasswordFlow:
             connection_config = config
             mock_session = MagicMock()
             mock_session.connection = MagicMock()
-            mock_session.adapter = MagicMock()
+            mock_session.provider = _make_provider()
             mock_session.tunnel = None
             mock_session.config = config
             return mock_session
 
-        app._session_factory = mock_session_factory
+        services.session_factory = mock_session_factory
 
         async with app.run_test() as pilot:
             # Create a connection with None password (not set)
@@ -373,11 +485,13 @@ class TestConnectionPasswordFlow:
     @pytest.mark.asyncio
     async def test_file_based_database_no_password_prompt(self) -> None:
         """File-based databases (SQLite) don't prompt for password."""
-        from sqlit.app import SSMSTUI
-        from sqlit.mocks import get_mock_profile
+        from sqlit.domains.connections.app.mocks import get_mock_profile
+        from sqlit.domains.shell.app.main import SSMSTUI
 
         mock_profile = get_mock_profile("sqlite-demo")
-        app = SSMSTUI(mock_profile=mock_profile)
+        runtime = RuntimeConfig(mock=MockConfig(enabled=True, profile=mock_profile))
+        services = build_test_services(runtime=runtime)
+        app = SSMSTUI(services=services)
 
         async with app.run_test() as pilot:
             # Get the SQLite demo connection

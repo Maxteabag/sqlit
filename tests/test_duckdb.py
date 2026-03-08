@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+import pytest
+
 from .test_database_base import BaseDatabaseTestsWithLimit, DatabaseTestConfig
 
 
@@ -128,3 +133,86 @@ class TestDuckDBIntegration(BaseDatabaseTestsWithLimit):
         )
         # Should fail gracefully
         assert result.returncode != 0 or "error" in result.stdout.lower() or "error" in result.stderr.lower()
+
+
+@pytest.mark.parametrize("use_worker", [True, False])
+def test_duckdb_process_worker_no_lock(duckdb_db, use_worker):
+    """Ensure DuckDB queries work with or without the process worker."""
+    if sys.platform.startswith("win"):
+        pytest.skip("DuckDB file-lock behavior differs on Windows")
+
+    from sqlit.domains.connections.app.session import ConnectionSession
+    from sqlit.domains.connections.domain.config import ConnectionConfig, FileEndpoint
+    from sqlit.domains.process_worker.app.process_worker_client import ProcessWorkerClient
+    from sqlit.domains.process_worker.app.support import supports_process_worker
+    from sqlit.domains.query.app.transaction import TransactionExecutor
+
+    config = ConnectionConfig(
+        name="duckdb_lock_test",
+        db_type="duckdb",
+        endpoint=FileEndpoint(path=str(duckdb_db)),
+    )
+
+    session = ConnectionSession.create(config)
+    try:
+        outcome = None
+        use_worker_effective = bool(use_worker and supports_process_worker(session.provider))
+        if use_worker_effective:
+            client = ProcessWorkerClient()
+            try:
+                outcome = client.execute("SELECT 1", config, max_rows=1)
+            finally:
+                client.close()
+        else:
+            executor = TransactionExecutor(config=config, provider=session.provider)
+            try:
+                executor.execute("SELECT 1", max_rows=1)
+            finally:
+                executor.close()
+    finally:
+        session.close()
+
+    if use_worker_effective:
+        assert outcome is not None
+        assert outcome.error is None, f"Unexpected error: {outcome.error}"
+
+
+def test_duckdb_schema_service_repo_file(tmp_path):
+    """Validate explorer schema service against the repo DuckDB fixture."""
+    if sys.platform.startswith("win"):
+        pytest.skip("DuckDB file-lock behavior differs on Windows")
+
+    from sqlit.domains.connections.app.session import ConnectionSession
+    from sqlit.domains.connections.domain.config import ConnectionConfig, FileEndpoint
+    from sqlit.domains.explorer.app.schema_service import ExplorerSchemaService
+    try:
+        import duckdb  # type: ignore
+    except Exception:
+        pytest.skip("duckdb is not installed")
+
+    db_path = Path(tmp_path) / "cats.duckdb"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("CREATE TABLE cats (id INTEGER, name VARCHAR, motto VARCHAR)")
+    conn.execute("INSERT INTO cats VALUES (1, 'Mochi', 'Nap hard, snack harder')")
+    conn.execute("INSERT INTO cats VALUES (2, 'Nimbus', 'Gravity is optional')")
+    conn.close()
+
+    config = ConnectionConfig(
+        name="duckdb_repo_fixture",
+        db_type="duckdb",
+        endpoint=FileEndpoint(path=str(db_path)),
+    )
+
+    session = ConnectionSession.create(config)
+    try:
+        service = ExplorerSchemaService(session=session, object_cache={})
+        tables = service.list_folder_items("tables", None)
+        table_names = {name for kind, _, name in tables if kind == "table"}
+        assert "cats" in table_names
+
+        schema = session.provider.capabilities.default_schema or "main"
+        columns = service.list_columns(None, schema, "cats")
+        column_names = {col.name for col in columns}
+        assert {"id", "name", "motto"}.issubset(column_names)
+    finally:
+        session.close()

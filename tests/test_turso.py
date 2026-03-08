@@ -142,9 +142,9 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
         This simulates what happens when a user clicks to expand the Tables
         folder in the database explorer tree.
         """
-        from sqlit.config import load_connections
-        from sqlit.db.adapters import get_adapter
-        from sqlit.services.session import ConnectionSession
+        from sqlit.domains.connections.app.session import ConnectionSession
+        from sqlit.domains.connections.providers.registry import get_adapter
+        from sqlit.domains.connections.store.connections import load_connections
 
         connections = load_connections()
         config = next((c for c in connections if c.name == turso_connection), None)
@@ -164,9 +164,9 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
         This simulates what happens when a user clicks to expand a table
         in the database explorer tree to see its columns.
         """
-        from sqlit.config import load_connections
-        from sqlit.db.adapters import get_adapter
-        from sqlit.services.session import ConnectionSession
+        from sqlit.domains.connections.app.session import ConnectionSession
+        from sqlit.domains.connections.providers.registry import get_adapter
+        from sqlit.domains.connections.store.connections import load_connections
 
         connections = load_connections()
         config = next((c for c in connections if c.name == turso_connection), None)
@@ -200,9 +200,9 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
         This simulates what happens when a user clicks to expand the Views
         folder in the database explorer tree.
         """
-        from sqlit.config import load_connections
-        from sqlit.db.adapters import get_adapter
-        from sqlit.services.session import ConnectionSession
+        from sqlit.domains.connections.app.session import ConnectionSession
+        from sqlit.domains.connections.providers.registry import get_adapter
+        from sqlit.domains.connections.store.connections import load_connections
 
         connections = load_connections()
         config = next((c for c in connections if c.name == turso_connection), None)
@@ -223,9 +223,9 @@ class TestTursoIntegration(BaseDatabaseTestsWithLimit):
         """
         import uuid
 
-        from sqlit.config import load_connections
-        from sqlit.db.adapters import get_adapter
-        from sqlit.services.session import ConnectionSession
+        from sqlit.domains.connections.app.session import ConnectionSession
+        from sqlit.domains.connections.providers.registry import get_adapter
+        from sqlit.domains.connections.store.connections import load_connections
 
         connections = load_connections()
         config = next((c for c in connections if c.name == turso_connection), None)

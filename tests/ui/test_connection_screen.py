@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from sqlit.config import ConnectionConfig
+from sqlit.domains.connections.domain.config import FileEndpoint
+from tests.helpers import ConnectionConfig
 
 from .conftest import ConnectionScreenTestApp
 
@@ -33,7 +34,8 @@ class TestConnectionScreen:
         assert action == "save"
         assert config.name == "my-sqlite"
         assert config.db_type == "sqlite"
-        assert config.get_option("file_path") == str(db_path)
+        assert isinstance(config.endpoint, FileEndpoint)
+        assert config.endpoint.path == str(db_path)
         assert original_name is None  # New connection has no original name
 
     @pytest.mark.asyncio
@@ -68,7 +70,8 @@ class TestConnectionScreen:
         assert action == "save"
         assert config.name == "new-prod-db"
         assert config.db_type == "sqlite"
-        assert config.get_option("file_path") == str(new_db)
+        assert isinstance(config.endpoint, FileEndpoint)
+        assert config.endpoint.path == str(new_db)
         assert original_name == "prod-db"  # Original name preserved for edit
 
     @pytest.mark.asyncio
@@ -84,7 +87,7 @@ class TestConnectionScreen:
 
     @pytest.mark.asyncio
     async def test_empty_fields_shows_validation_errors(self):
-        app = ConnectionScreenTestApp()
+        app = ConnectionScreenTestApp(prefill_values={"db_type": "mssql"})
 
         async with app.run_test(size=(100, 35)) as pilot:
             screen = app.screen
@@ -140,6 +143,37 @@ class TestConnectionScreen:
 
             assert tabs.active == "tab-general"
 
+    @pytest.mark.asyncio
+    async def test_tls_tab_hidden_for_sqlite(self):
+        app = ConnectionScreenTestApp(prefill_values={"db_type": "sqlite"})
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            screen = app.screen
+            await pilot.pause()
+
+            tls_pane = screen.query_one("#tab-tls")
+            assert tls_pane.disabled is True
+
+    @pytest.mark.asyncio
+    async def test_tls_tab_visible_for_postgresql(self):
+        app = ConnectionScreenTestApp(prefill_values={"db_type": "postgresql"})
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            screen = app.screen
+            await pilot.pause()
+
+            tls_pane = screen.query_one("#tab-tls")
+            assert tls_pane.disabled is False
+
+            tabs = screen.query_one("#connection-tabs")
+            tabs.active = "tab-tls"
+            await pilot.pause()
+
+            tls_mode_container = screen.query_one("#container-tls_mode")
+            tls_ca_container = screen.query_one("#container-tls_ca")
+            assert "hidden" not in tls_mode_container.classes
+            assert "hidden" in tls_ca_container.classes
+
 
 class TestTabNavigation:
     """Tests for Tab key navigation through form fields."""
@@ -173,9 +207,10 @@ class TestTabNavigation:
             assert "conn-name" in field_ids
             assert "dbtype-select" in field_ids
             assert "field-file_path" in field_ids
+            assert "browse-file_path" in field_ids  # Browse button for file picker
 
-            # For SQLite, there should be exactly 3 focusable fields
-            assert len(focusable) == 3, f"Expected 3 focusable fields for SQLite, got {len(focusable)}: {field_ids}"
+            # For SQLite, there should be exactly 4 focusable fields (including browse button)
+            assert len(focusable) == 4, f"Expected 4 focusable fields for SQLite, got {len(focusable)}: {field_ids}"
 
     @pytest.mark.asyncio
     async def test_tab_key_cycles_through_sqlite_fields(self):
@@ -199,6 +234,10 @@ class TestTabNavigation:
             # Tab to file_path
             await pilot.press("tab")
             assert screen.focused.id == "field-file_path"
+
+            # Tab to browse button
+            await pilot.press("tab")
+            assert screen.focused.id == "browse-file_path"
 
             # Tab should cycle back to conn-name (not to tab bar)
             await pilot.press("tab")

@@ -1,0 +1,1 @@
+"""MotherDuck provider package."""

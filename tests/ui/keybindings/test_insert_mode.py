@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import pytest
 
-from sqlit.app import SSMSTUI
-from sqlit.keymap import get_keymap
-from sqlit.widgets import VimMode
+from sqlit.core.keymap import get_keymap
+from sqlit.core.vim import VimMode
+from sqlit.domains.shell.app.main import SSMSTUI
+
+from ..mocks import MockConnectionStore, MockSettingsStore, build_test_services
+
+
+def _make_app() -> SSMSTUI:
+    services = build_test_services(
+        connection_store=MockConnectionStore(),
+        settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+    )
+    return SSMSTUI(services=services)
 
 
 class TestInsertModeKeybindings:
@@ -18,7 +28,7 @@ class TestInsertModeKeybindings:
         keymap = get_keymap()
         insert_key = keymap.action("enter_insert_mode")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_query()
@@ -37,7 +47,7 @@ class TestInsertModeKeybindings:
         keymap = get_keymap()
         exit_key = keymap.action("exit_insert_mode")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_query()
@@ -60,7 +70,7 @@ class TestInsertModeKeybindings:
         keymap = get_keymap()
         focus_explorer_key = keymap.action("focus_explorer")
 
-        app = SSMSTUI()
+        app = _make_app()
 
         async with app.run_test(size=(100, 35)) as pilot:
             app.action_focus_query()

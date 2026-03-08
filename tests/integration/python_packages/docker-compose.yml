@@ -1,0 +1,10 @@
+services:
+  test-debian:
+    build:
+      context: ../../..
+      dockerfile: tests/integration/python_packages/dockerfiles/debian.Dockerfile
+    container_name: sqlit-test-python-driver-install
+    environment:
+      SQLIT_TEST_SCREENSHOTS_DIR: /artifacts
+    volumes:
+      - ./artifacts:/artifacts

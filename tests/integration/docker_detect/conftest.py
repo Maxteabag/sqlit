@@ -1,6 +1,5 @@
 """Pytest configuration for Docker detection integration tests."""
 
-import pytest
 
 
 def pytest_addoption(parser):

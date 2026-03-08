@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from rich.markup import escape as escape_markup
 
-from sqlit.ui.mixins.tree import TreeMixin
-from sqlit.ui.tree_nodes import SchemaNode, TableNode, ViewNode
+from sqlit.domains.explorer.domain.tree_nodes import SchemaNode, TableNode, ViewNode
+from sqlit.domains.explorer.ui.mixins.tree import TreeMixin
 
 
 class MockSession:
@@ -40,19 +40,24 @@ class MockAdapter:
 class MockTreeNode:
     """Mock tree node for testing."""
 
-    def __init__(self, label: str = "", data: tuple = None):
+    def __init__(self, label: str = "", data: tuple = None, parent: "MockTreeNode | None" = None):
         self.label = label
         self.data = data
+        self.parent = parent
         self.children: list[MockTreeNode] = []
         self.allow_expand = False
+        self.is_expanded = False
 
-    def add(self, label: str) -> MockTreeNode:
-        child = MockTreeNode(label)
+    def add(self, label: str) -> "MockTreeNode":
+        child = MockTreeNode(label, parent=self)
         self.children.append(child)
         return child
 
-    def add_leaf(self, label: str) -> MockTreeNode:
+    def add_leaf(self, label: str) -> "MockTreeNode":
         return self.add(label)
+
+    def expand(self) -> None:
+        self.is_expanded = True
 
 
 class TestSchemaGrouping:

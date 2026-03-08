@@ -25,24 +25,24 @@
 ---
 
 ### Connect
-Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, and Athena.
+Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Trino, Presto and Apache Flight SQL.
 
-![Database Providers](demos/demo-providers.gif)
+![Database Providers](docs/demos/demo-providers.gif)
 
 ### Query
 Syntax highlighting. History. Vim-style keybindings.
 
-![Query History](demos/demo-history.gif)
+![Query History](docs/demos/demo-history.gif)
 
 ### Results
-Load millions of rows. Inspect data, filter by content, fuzzy search, no more squinting eyes looking for what you need!
+Load millions of rows. Inspect data, filter by content, fuzzy search.
 
-![Filter results](demos/demo-filter/demo-filter.gif)
+![Filter results](docs/demos/demo-filter/demo-filter.gif)
 
 ### Docker Discovery
 Automatically finds running database containers. Press 'Enter' to connect, sqlit figures out the details for you.
 
-![Docker Discovery](demos/demo-docker-picker.gif)
+![Docker Discovery](docs/demos/demo-docker-picker.gif)
 
 ---
 
@@ -55,6 +55,8 @@ Automatically finds running database containers. Press 'Enter' to connect, sqlit
 **Multi-database support:** PostgreSQL, MySQL, SQLite, SQL Server, and 10+ more
 
 **Docker integration:** Auto-detect running database containers
+
+**Cloud CLI integration:** Easily browse and connect to your external databases through Azure, AWS and GCP CLI's
 
 **SSH tunnels:** Connect to remote databases securely with password or key auth
 
@@ -70,7 +72,7 @@ Automatically finds running database containers. Press 'Enter' to connect, sqlit
 
 **Browse databases:** Tables, views, procedures, indexes, triggers, sequences
 
-**Autocomplete:** Tables, columns, and procedures
+**Autocomplete:** Sophisticated SQL completion engine for tables, columns, and procedures
 
 **CLI mode:** Execute SQL from the command line
 
@@ -82,7 +84,7 @@ Automatically finds running database containers. Press 'Enter' to connect, sqlit
 
 ## Motivation
 
-Throughout my career, the undesputed truth was that SSMS was the only respectable way to access a database. It didn't matter that I wasn't a DBA, or that I didn't need complex performance graphs. I was expected to install a gigabyte-heavy behemoth that took ages to launch all for the mere purpose of running a few queries to update and view a couple of rows.
+Throughout my career, the undesputed truth was that heavy GUI's like SSMS was the only respectable way to access a database. It didn't matter that I wasn't a DBA, or that I didn't need complex performance graphs. I was expected to install a gigabyte-heavy behemoth that took ages to launch all for the mere purpose of running a few queries to update and view a couple of rows.
 
 When I switched to Linux, I was suddenly unable to return to the devil I know, and I asked myself: _how do I access my data now?_
 
@@ -98,11 +100,22 @@ sqlit is for the developer who just wants to query their database with a user fr
 
 ## Installation
 
-| Method | Command |
-| :----- | :------ |
-| pipx *(recommended)* | `pipx install sqlit-tui` |
-| uv | `uv tool install sqlit-tui` |
-| pip | `pip install sqlit-tui` |
+```bash
+# pipx (recommended)
+pipx install sqlit-tui
+
+# uv
+uv tool install sqlit-tui
+
+# pip
+pip install sqlit-tui
+
+# Arch Linux (AUR)
+yay -S sqlit
+
+# Nix (flake)
+nix run github:Maxteabag/sqlit
+```
 
 ## Usage
 
@@ -123,6 +136,9 @@ sqlit --mock=sqlite-demo
 ### CLI
 
 ```bash
+sqlit -c "MyConnection"
+sqlit --connection "MyConnection"
+
 # Run a query
 sqlit query -c "MyConnection" -q "SELECT * FROM Users"
 
@@ -183,6 +199,21 @@ sqlit connections delete "MyConnection"
 | `Ctrl+Q` | Quit |
 | `?` | Help |
 
+### Vim Motions (Query Editor, NORMAL mode)
+
+Use with operators like `y`, `d`, `c` (e.g. `dw`, `y$`).
+
+| Motion | Action |
+|--------|--------|
+| `h` / `j` / `k` / `l` | Move cursor left / down / up / right |
+| `w` / `W` | Next word / WORD |
+| `b` / `B` | Previous word / WORD |
+| `0` / `$` | Line start / end |
+| `gg` / `G` | File start / end |
+| `f{c}` / `F{c}` | Find char forward / backward |
+| `t{c}` / `T{c}` | Till char forward / backward |
+| `%` | Matching bracket |
+
 ### Commands Menu (`<space>`)
 
 | Key | Action |
@@ -197,8 +228,6 @@ sqlit connections delete "MyConnection"
 | `<space>q` | Quit |
 
 Autocomplete triggers automatically in INSERT mode. Use `Tab` to accept.
-
-**💡 Tip:** Type a table name followed by `.` to get column autocompletion.
 
 ---
 
@@ -231,7 +260,7 @@ sqlit is built with [Textual](https://github.com/Textualize/textual) and inspire
 
 ## Contributing
 
-See `CONTRIBUTING.md` for development setup, testing, CI, and CockroachDB quickstart steps.
+See `CONTRIBUTING.md` for development setup, testing, and CI steps.
 
 ### Driver Reference
 
@@ -242,7 +271,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | SQLite                              | *(built-in)*                 | *(built-in)*                                       | *(built-in)*                                       |
 | PostgreSQL / CockroachDB / Supabase | `psycopg2-binary`            | `pipx inject sqlit-tui psycopg2-binary`            | `python -m pip install psycopg2-binary`            |
 | SQL Server                          | `mssql-python`               | `pipx inject sqlit-tui mssql-python`               | `python -m pip install mssql-python`               |
-| MySQL                               | `mysql-connector-python`     | `pipx inject sqlit-tui mysql-connector-python`     | `python -m pip install mysql-connector-python`     |
+| MySQL                               | `PyMySQL`                    | `pipx inject sqlit-tui PyMySQL`                    | `python -m pip install PyMySQL`                    |
 | MariaDB                             | `mariadb`                    | `pipx inject sqlit-tui mariadb`                    | `python -m pip install mariadb`                    |
 | Oracle                              | `oracledb`                   | `pipx inject sqlit-tui oracledb`                   | `python -m pip install oracledb`                   |
 | DuckDB                              | `duckdb`                     | `pipx inject sqlit-tui duckdb`                     | `python -m pip install duckdb`                     |
@@ -252,16 +281,24 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Snowflake                           | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` |
 | Firebird                            | `firebirdsql`                | `pipx inject sqlit-tui firebirdsql`                | `python -m pip install firebirdsql`                |
 | Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   |
+| BigQuery                            | `google-cloud-bigquery`      | `pipx inject sqlit-tui google-cloud-bigquery`      | `python -m pip install google-cloud-bigquery`      |
+| Spanner                             | `google-cloud-spanner`       | `pipx inject sqlit-tui google-cloud-spanner`       | `python -m pip install google-cloud-spanner`       |
+| Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      |
 
 ### SSH Tunnel Support
 
 SSH tunnel functionality requires additional dependencies. Install with the `ssh` extra:
 
-| Method | Command                            |
-| :----- | :--------------------------------- |
-| pipx   | `pipx install 'sqlit-tui[ssh]'`    |
-| uv     | `uv tool install 'sqlit-tui[ssh]'` |
-| pip    | `pip install 'sqlit-tui[ssh]'`     |
+```bash
+# pipx
+pipx install 'sqlit-tui[ssh]'
+
+# uv
+uv tool install 'sqlit-tui[ssh]'
+
+# pip
+pip install 'sqlit-tui[ssh]'
+```
 
 If you try to create an SSH connection without these dependencies, sqlit will detect this and show you the exact command to install them for your environment.
 

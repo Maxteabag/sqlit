@@ -18,21 +18,26 @@ venv/
 .vscode/
 *.swp
 *.swo
+.claude/
 
 # Local caches
 .cache/
+.benchmarks/
+.mypy_cache/
+.pytest_cache/
 .ruff_cache/
 .sqlit/
+.sqlit-config/
 
 # OS
 .DS_Store
 
 # Demo files
-docker-compose.yml
-init.sql
 *.tape
 .tmp/
-demos/drafts/
+docs/demos/drafts/
+infra/docker/docker-compose.yml
+infra/sql/init.sql
 
 # Database files
 *.db
@@ -63,4 +68,5 @@ tests/.env
 
 # Test artifacts
 tests/integration/drivers/artifacts/
+tests/integration/drivers/
 __pycache__/

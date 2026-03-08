@@ -74,8 +74,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Extract version
-        id: version
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Extract version and checksum
+        id: info
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             echo "VERSION=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
@@ -110,8 +116,8 @@ jobs:
 
       - name: Update PKGBUILD
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          CHECKSUM=${{ steps.pypi.outputs.CHECKSUM }}
+          VERSION=${{ steps.info.outputs.VERSION }}
+          CHECKSUM=${{ steps.info.outputs.CHECKSUM }}
 
           cd aur
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
@@ -121,9 +127,9 @@ jobs:
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4
         with:
-          pkgname: python-sqlit-tui
+          pkgname: sqlit
           pkgbuild: ./aur/PKGBUILD
           commit_username: Peter
           commit_email: peter.w.adams96@gmail.com
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to v${{ steps.version.outputs.VERSION }}"
+          commit_message: "Update to v${{ steps.info.outputs.VERSION }}"

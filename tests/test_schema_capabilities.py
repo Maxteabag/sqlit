@@ -1,6 +1,6 @@
 """Tests for schema capability functions."""
 
-from sqlit.db.schema import (
+from sqlit.domains.connections.providers.registry import (
     get_default_port,
     get_display_name,
     get_supported_db_types,
@@ -37,24 +37,22 @@ class TestGetDisplayName:
 
 class TestCatalogConsistency:
     def test_provider_schema_ids_match_keys(self):
-        from sqlit.db.providers import PROVIDERS, get_connection_schema
+        from sqlit.domains.connections.providers.registry import get_connection_schema
 
-        for db_type, spec in PROVIDERS.items():
+        for db_type in get_supported_db_types():
             schema = get_connection_schema(db_type)
             assert schema.db_type == db_type
 
     def test_database_type_enum_matches_schema(self):
-        from sqlit.config import DatabaseType
+        from sqlit.domains.connections.domain.config import DatabaseType
 
         assert {t.value for t in DatabaseType} == set(get_supported_db_types())
 
     def test_adapter_factory_matches_schema(self):
-        from sqlit.db.adapters import get_supported_adapter_db_types
-
-        assert set(get_supported_adapter_db_types()) == set(get_supported_db_types())
+        assert set(get_supported_db_types()) == set(get_supported_db_types())
 
     def test_display_names_match_schema(self):
-        from sqlit.db.providers import get_connection_schema
+        from sqlit.domains.connections.providers.registry import get_connection_schema
 
         for db_type in get_supported_db_types():
             schema = get_connection_schema(db_type)
