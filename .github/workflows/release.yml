@@ -22,7 +22,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - &checkout_step
+        uses: actions/checkout@v6
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -34,7 +35,7 @@ jobs:
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v7
-        with:
+        with: &dist_artifact
           name: dist
           path: dist/
 
@@ -50,9 +51,7 @@ jobs:
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@v8
-        with:
-          name: dist
-          path: dist/
+        with: *dist_artifact
 
       - name: Extract version from tag
         id: version
@@ -72,7 +71,7 @@ jobs:
     if: always() && (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - *checkout_step
 
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
