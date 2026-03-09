@@ -107,6 +107,10 @@ class QueryEditingCursorMixin:
         """Move cursor to previous WORD (B)."""
         self._move_with_motion("B")
 
+    def action_cursor_first_non_blank(self: QueryMixinHost) -> None:
+        """Move cursor to first non-whitespace character (^)."""
+        self._move_with_motion("^")
+
     def action_cursor_line_start(self: QueryMixinHost) -> None:
         """Move cursor to start of line (0)."""
         self._move_with_motion("0")

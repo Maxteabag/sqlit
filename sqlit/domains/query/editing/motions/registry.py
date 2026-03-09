@@ -8,6 +8,7 @@ from .brackets import motion_matching_bracket
 from .lines import (
     motion_current_line,
     motion_first_line,
+    motion_first_non_blank,
     motion_last_line,
     motion_line_end,
     motion_line_start,
@@ -42,6 +43,7 @@ MOTIONS: dict[str, MotionFunc] = {
     "e": motion_word_end,
     "E": motion_WORD_end,
     "0": motion_line_start,
+    "^": motion_first_non_blank,
     "$": motion_line_end,
     "G": motion_last_line,
     "gg": motion_first_line,  # Go to first line

@@ -11,6 +11,7 @@ KEY_DISPLAY_OVERRIDES: dict[str, str] = {
     "question_mark": "?",
     "slash": "/",
     "asterisk": "*",
+    "circumflex_accent": "^",
     "dollar_sign": "$",
     "percent_sign": "%",
     "space": "<space>",
@@ -357,6 +358,7 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("b", "cursor_word_back", "query_normal"),
             ActionKeyDef("B", "cursor_WORD_back", "query_normal"),
             ActionKeyDef("0", "cursor_line_start", "query_normal"),
+            ActionKeyDef("circumflex_accent", "cursor_first_non_blank", "query_normal"),
             ActionKeyDef("dollar_sign", "cursor_line_end", "query_normal"),
             ActionKeyDef("G", "cursor_last_line", "query_normal"),
             ActionKeyDef("percent_sign", "cursor_matching_bracket", "query_normal"),
@@ -364,6 +366,7 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("F", "cursor_find_char_back", "query_normal"),
             ActionKeyDef("t", "cursor_till_char", "query_normal"),
             ActionKeyDef("T", "cursor_till_char_back", "query_normal"),
+            ActionKeyDef("x", "delete_char", "query_normal"),
             ActionKeyDef("a", "append_insert_mode", "query_normal"),
             ActionKeyDef("A", "append_line_end", "query_normal"),
             # Query (insert mode)
