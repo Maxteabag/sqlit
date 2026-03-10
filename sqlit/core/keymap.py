@@ -187,7 +187,7 @@ class DefaultKeymapProvider(KeymapProvider):
     def _build_leader_commands(self) -> list[LeaderCommandDef]:
         return [
             # View
-            LeaderCommandDef("e", "toggle_explorer", "Toggle Explorer", "View"),
+            LeaderCommandDef("E", "toggle_explorer", "Toggle Explorer", "View"),
             LeaderCommandDef("f", "toggle_fullscreen", "Toggle Maximize", "View"),
             # Connection
             LeaderCommandDef("c", "show_connection_picker", "Connect", "Connection"),
@@ -370,8 +370,9 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("escape", "exit_insert_mode", "query_insert"),
             ActionKeyDef("ctrl+enter", "execute_query_insert", "query_insert"),
             ActionKeyDef("tab", "autocomplete_accept", "query_insert"),
+            ActionKeyDef("e", "cursor_word_end", "query_normal"),
             # Navigation
-            ActionKeyDef("e", "focus_explorer", "navigation"),
+            ActionKeyDef("E", "focus_explorer", "navigation"),
             ActionKeyDef("q", "focus_query", "navigation"),
             ActionKeyDef("r", "focus_results", "navigation"),
             # Query (autocomplete)

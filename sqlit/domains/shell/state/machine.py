@@ -164,7 +164,7 @@ class UIStateMachine:
         # NAVIGATION
         # ═══════════════════════════════════════════════════════════════════
         lines.append(section("NAVIGATION"))
-        lines.append(binding("e", "Focus Explorer pane"))
+        lines.append(binding("E", "Focus Explorer pane"))
         lines.append(binding("q", "Focus Query pane"))
         lines.append(binding("r", "Focus Results pane"))
         lines.append(binding(leader_key, "Open command menu"))
@@ -223,6 +223,7 @@ class UIStateMachine:
         lines.append(subsection("Vim Motions:"))
         lines.append(binding("h/j/k/l", "Cursor left/down/up/right"))
         lines.append(binding("w/W", "Word forward"))
+        lines.append(binding("e", "Word end"))
         lines.append(binding("b/B", "Word backward"))
         lines.append(binding("0/$", "Line start/end"))
         lines.append(binding("gg/G", "File start/end"))

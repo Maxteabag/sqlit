@@ -29,6 +29,7 @@ class QueryNormalModeState(State):
         self.allows("cursor_down", help="Move cursor down")
         self.allows("cursor_word_forward", help="Move to next word")
         self.allows("cursor_WORD_forward", help="Move to next WORD")
+        self.allows("cursor_word_end", help="Move to word end")
         self.allows("cursor_word_back", help="Move to previous word")
         self.allows("cursor_WORD_back", help="Move to previous WORD")
         self.allows("cursor_line_start", help="Move to line start")
