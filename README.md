@@ -115,6 +115,11 @@ yay -S sqlit
 
 # Nix (flake)
 nix run github:Maxteabag/sqlit
+
+# Nix with specific optional dependencies
+# See docs/nix-flake.md for detailed configuration options
+nix run github:Maxteabag/sqlit#sqlit-minimal  # SQLite only
+nix run github:Maxteabag/sqlit#sqlit-full     # All dependencies
 ```
 
 ## Usage
