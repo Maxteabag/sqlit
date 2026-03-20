@@ -85,6 +85,7 @@ class ResultSection(Collapsible):
     ResultSection DataTable {
         /* Height is set dynamically based on row count */
         margin-right: 1;
+        scrollbar-gutter: stable;
     }
     """
 
@@ -214,8 +215,11 @@ class StackedResultsContainer(VerticalScroll):
         self, columns: list[str], rows: list[tuple], index: int
     ) -> SqlitDataTable:
         """Build a DataTable for a QueryResult without Arrow conversion."""
-        # Calculate height: 1 for header + number of rows, capped at 15
-        table_height = min(1 + len(rows), 15)
+        # Calculate height: 1 for header + rows + 1 for horizontal scrollbar
+        # The extra line is needed because when the table content is wider
+        # than the viewport, a horizontal scrollbar appears at the bottom
+        # and consumes 1 line of vertical space (fixes #132).
+        table_height = min(2 + len(rows), 16)
 
         table = SqlitDataTable(
             id=f"result-table-{index}",
