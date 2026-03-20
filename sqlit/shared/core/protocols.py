@@ -40,12 +40,13 @@ class HistoryStoreProtocol(Protocol):
     query history.
     """
 
-    def save_query(self, connection_name: str, query: str) -> None:
+    def save_query(self, connection_name: str, query: str, database: str = "") -> None:
         """Save a query to history.
 
         Args:
             connection_name: Name of the connection.
             query: The SQL query string.
+            database: Active database when the query was executed.
         """
         ...
 

@@ -15,16 +15,20 @@ class QueryHistoryEntry:
     query: str
     timestamp: str  # ISO format
     connection_name: str
+    database: str = ""  # Active database when query was executed
     is_starred: bool = False  # Computed at load time, not persisted
     is_starred_only: bool = False  # True if only in starred store, not in history
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return {
+        d: dict = {
             "query": self.query,
             "timestamp": self.timestamp,
             "connection_name": self.connection_name,
         }
+        if self.database:
+            d["database"] = self.database
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> QueryHistoryEntry:
@@ -33,6 +37,7 @@ class QueryHistoryEntry:
             query=data["query"],
             timestamp=data["timestamp"],
             connection_name=data["connection_name"],
+            database=data.get("database", ""),
         )
 
 
@@ -88,7 +93,7 @@ class HistoryStore(JSONFileStore):
         except (KeyError, TypeError):
             return []
 
-    def save_query(self, connection_name: str, query: str) -> None:
+    def save_query(self, connection_name: str, query: str, database: str = "") -> None:
         """Save a query to history.
 
         If the exact query already exists for this connection, updates its timestamp.
@@ -97,6 +102,7 @@ class HistoryStore(JSONFileStore):
         Args:
             connection_name: Name of the connection.
             query: SQL query text.
+            database: Active database when the query was executed.
         """
         all_entries = self._load_all_entries()
         query_stripped = query.strip()
@@ -106,6 +112,8 @@ class HistoryStore(JSONFileStore):
         for entry in all_entries:
             if entry.get("connection_name") == connection_name and entry.get("query", "").strip() == query_stripped:
                 entry["timestamp"] = now
+                if database:
+                    entry["database"] = database
                 break
         else:
             # Add new entry
@@ -113,6 +121,7 @@ class HistoryStore(JSONFileStore):
                 query=query_stripped,
                 timestamp=now,
                 connection_name=connection_name,
+                database=database,
             )
             all_entries.append(new_entry.to_dict())
 

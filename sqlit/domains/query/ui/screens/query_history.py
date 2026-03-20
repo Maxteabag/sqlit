@@ -460,7 +460,9 @@ class QueryHistoryScreen(ModalScreen):
             if action == "delete":
                 payload = {"timestamp": entry.timestamp, "connection_name": entry.connection_name}
             else:
-                payload = {"query": entry.query, "connection_name": entry.connection_name}
+                payload: dict[str, str] = {"query": entry.query, "connection_name": entry.connection_name}
+                if getattr(entry, "database", ""):
+                    payload["database"] = entry.database
             return action, payload
         if action == "delete":
             return action, entry.timestamp
