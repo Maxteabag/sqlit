@@ -134,6 +134,28 @@ class TestNeedsDbPassword:
         assert not needs_db_password(config)
 
 
+    def test_password_command_set_does_not_need_prompt(self) -> None:
+        config = ConnectionConfig(
+            name="test",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password=None,
+            password_command="echo secret",
+        )
+        assert not needs_db_password(config)
+
+    def test_no_password_no_command_needs_prompt(self) -> None:
+        config = ConnectionConfig(
+            name="test",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password=None,
+        )
+        assert needs_db_password(config)
+
+
 class TestNeedsSshPassword:
     """Test needs_ssh_password helper function."""
 
@@ -201,6 +223,34 @@ class TestNeedsSshPassword:
             ssh_password="stored_password",
         )
         assert not needs_ssh_password(config)
+
+
+    def test_ssh_password_command_set_does_not_need_prompt(self) -> None:
+        config = ConnectionConfig(
+            name="test",
+            db_type="postgresql",
+            server="localhost",
+            ssh_enabled=True,
+            ssh_auth_type="password",
+            ssh_host="bastion",
+            ssh_username="user",
+            ssh_password=None,
+            ssh_password_command="echo sshpw",
+        )
+        assert not needs_ssh_password(config)
+
+    def test_ssh_no_password_no_command_needs_prompt(self) -> None:
+        config = ConnectionConfig(
+            name="test",
+            db_type="postgresql",
+            server="localhost",
+            ssh_enabled=True,
+            ssh_auth_type="password",
+            ssh_host="bastion",
+            ssh_username="user",
+            ssh_password=None,
+        )
+        assert needs_ssh_password(config)
 
 
 class TestCliPromptForPassword:
@@ -354,6 +404,82 @@ class TestCliPromptForPassword:
         assert result.password == "new_password"
         # They should be different objects
         assert result is not original
+
+
+class TestPasswordCommandPrompt:
+    """Tests for password_command integration in CLI prompts."""
+
+    @patch("sqlit.domains.connections.cli.prompts.getpass.getpass")
+    @patch("sqlit.domains.connections.cli.prompts.run_password_command", return_value="cmd_password")
+    def test_password_command_resolves_db_password(self, mock_run: MagicMock, mock_getpass: MagicMock) -> None:
+        config = ConnectionConfig(
+            name="mydb",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password=None,
+            password_command="op read op://vault/item/pw",
+        )
+        result = prompt_for_password(config)
+        mock_run.assert_called_once_with("op read op://vault/item/pw")
+        mock_getpass.assert_not_called()
+        assert result.password == "cmd_password"
+
+    @patch("sqlit.domains.connections.cli.prompts.getpass.getpass")
+    @patch("sqlit.domains.connections.cli.prompts.run_password_command", return_value="ssh_cmd_pw")
+    def test_password_command_resolves_ssh_password(self, mock_run: MagicMock, mock_getpass: MagicMock) -> None:
+        config = ConnectionConfig(
+            name="mydb",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password="stored",
+            ssh_enabled=True,
+            ssh_auth_type="password",
+            ssh_host="bastion",
+            ssh_username="sshuser",
+            ssh_password=None,
+            ssh_password_command="echo sshpw",
+        )
+        result = prompt_for_password(config)
+        mock_run.assert_called_once_with("echo sshpw")
+        mock_getpass.assert_not_called()
+        assert result.ssh_password == "ssh_cmd_pw"
+
+    @patch("sqlit.domains.connections.cli.prompts.getpass.getpass", return_value="fallback")
+    @patch("sqlit.domains.connections.cli.prompts.run_password_command")
+    def test_password_command_failure_falls_back_to_getpass(self, mock_run: MagicMock, mock_getpass: MagicMock) -> None:
+        from sqlit.domains.connections.domain.password_command import PasswordCommandError
+
+        mock_run.side_effect = PasswordCommandError("command failed")
+        config = ConnectionConfig(
+            name="mydb",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password=None,
+            password_command="bad-cmd",
+        )
+        result = prompt_for_password(config)
+        mock_run.assert_called_once()
+        mock_getpass.assert_called_once()
+        assert result.password == "fallback"
+
+    @patch("sqlit.domains.connections.cli.prompts.getpass.getpass")
+    @patch("sqlit.domains.connections.cli.prompts.run_password_command")
+    def test_explicit_password_skips_command(self, mock_run: MagicMock, mock_getpass: MagicMock) -> None:
+        config = ConnectionConfig(
+            name="mydb",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password="explicit",
+            password_command="echo should-not-run",
+        )
+        result = prompt_for_password(config)
+        mock_run.assert_not_called()
+        mock_getpass.assert_not_called()
+        assert result.password == "explicit"
 
 
 class TestPasswordPromptIntegration:

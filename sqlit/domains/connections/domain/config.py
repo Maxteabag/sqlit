@@ -100,6 +100,7 @@ class TcpEndpoint:
     database: str = ""
     username: str = ""
     password: str | None = None
+    password_command: str | None = None
     kind: str = "tcp"
 
 
@@ -117,6 +118,7 @@ class TunnelConfig:
     username: str = ""
     auth_type: str = "key"  # key|password
     password: str | None = None
+    password_command: str | None = None
     key_path: str = ""
 
 
@@ -165,6 +167,7 @@ class ConnectionConfig:
                     database=str(endpoint_data.get("database", "")),
                     username=str(endpoint_data.get("username", "")),
                     password=endpoint_data.get("password", None),
+                    password_command=endpoint_data.get("password_command", None),
                 )
         else:
             file_path = payload.pop("file_path", None)
@@ -179,6 +182,7 @@ class ConnectionConfig:
                     database=str(payload.pop("database", "")),
                     username=str(payload.pop("username", "")),
                     password=payload.pop("password", None),
+                    password_command=payload.pop("password_command", None),
                 )
 
         tunnel = None
@@ -193,6 +197,7 @@ class ConnectionConfig:
                     username=str(tunnel_data.get("username", "")),
                     auth_type=str(tunnel_data.get("auth_type", "key")),
                     password=tunnel_data.get("password", None),
+                    password_command=tunnel_data.get("password_command", None),
                     key_path=str(tunnel_data.get("key_path", "")),
                 )
         else:
@@ -202,6 +207,7 @@ class ConnectionConfig:
             ssh_username = str(payload.pop("ssh_username", ""))
             ssh_auth_type = str(payload.pop("ssh_auth_type", "key"))
             ssh_password = payload.pop("ssh_password", None)
+            ssh_password_command = payload.pop("ssh_password_command", None)
             ssh_key_path = str(payload.pop("ssh_key_path", ""))
 
             enabled_flag = str(ssh_enabled).lower() if ssh_enabled is not None else ""
@@ -213,6 +219,7 @@ class ConnectionConfig:
                     username=ssh_username,
                     auth_type=ssh_auth_type or "key",
                     password=ssh_password,
+                    password_command=ssh_password_command,
                     key_path=ssh_key_path,
                 )
 
@@ -281,6 +288,7 @@ class ConnectionConfig:
                     "database": self.endpoint.database,
                     "username": self.endpoint.username,
                     "password": self.endpoint.password,
+                    "password_command": self.endpoint.password_command,
                 }
             )
 
@@ -293,6 +301,7 @@ class ConnectionConfig:
                     "ssh_username": self.tunnel.username,
                     "ssh_auth_type": self.tunnel.auth_type,
                     "ssh_password": self.tunnel.password,
+                    "ssh_password_command": self.tunnel.password_command,
                     "ssh_key_path": self.tunnel.key_path,
                 }
             )
@@ -319,7 +328,7 @@ class ConnectionConfig:
                 "path": self.endpoint.path,
             }
         else:
-            data["endpoint"] = {
+            endpoint_dict: dict[str, Any] = {
                 "kind": "tcp",
                 "host": self.endpoint.host,
                 "port": self.endpoint.port,
@@ -327,9 +336,12 @@ class ConnectionConfig:
                 "username": self.endpoint.username,
                 "password": self.endpoint.password if include_passwords else None,
             }
+            if self.endpoint.password_command:
+                endpoint_dict["password_command"] = self.endpoint.password_command
+            data["endpoint"] = endpoint_dict
 
         if self.tunnel and self.tunnel.enabled:
-            data["tunnel"] = {
+            tunnel_dict: dict[str, Any] = {
                 "enabled": True,
                 "host": self.tunnel.host,
                 "port": self.tunnel.port,
@@ -338,6 +350,9 @@ class ConnectionConfig:
                 "password": self.tunnel.password if include_passwords else None,
                 "key_path": self.tunnel.key_path,
             }
+            if self.tunnel.password_command:
+                tunnel_dict["password_command"] = self.tunnel.password_command
+            data["tunnel"] = tunnel_dict
         else:
             data["tunnel"] = {"enabled": False}
 
