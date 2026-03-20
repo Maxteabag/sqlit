@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,25 +17,23 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - &checkout-step
+        uses: actions/checkout@v6
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - &setup-uv-matrix-no-cache
+        name: Set up uv (Python ${{ matrix.python-version }})
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
-          pip install -e .
+      - name: Sync runtime dependencies
+        run: uv sync --locked --no-dev
 
       - name: Check package builds
-        run: python -m build
+        run: uv build
 
       - name: Verify CLI entry point
-        run: |
-          python -c "from sqlit.cli import main; print('CLI import OK')"
+        run: uv run python -c "from sqlit.cli import main; print('CLI import OK')"
 
   nix-flake:
     runs-on: ubuntu-latest
@@ -47,23 +48,20 @@ jobs:
 
   test-unit:
     runs-on: ubuntu-latest
+    env:
+      UV_EXTRAS: ""
     strategy:
       matrix:
         python-version: ["3.10", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+      - *setup-uv-matrix-no-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev
+      - &install-test-deps
+        name: Install dependencies
+        run: uv sync --locked --group test --no-dev ${{ env.UV_EXTRAS }}
 
       - name: Run unit tests
         run: |
@@ -83,23 +81,23 @@ jobs:
 
   test-sqlite:
     runs-on: ubuntu-latest
+    env:
+      UV_EXTRAS: ""
     strategy:
       matrix:
         python-version: ["3.10", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - &setup-uv-matrix-with-cache
+        name: Set up uv (Python ${{ matrix.python-version }})
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev
+      - *install-test-deps
 
       - name: Run SQLite integration tests
         run: uv run pytest tests/test_sqlite.py -v --timeout=60
@@ -107,6 +105,8 @@ jobs:
   test-mssql:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra mssql
 
     services:
       mssql:
@@ -125,18 +125,16 @@ jobs:
           --health-start-period 30s
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - &setup-uv-py312-with-cache
+        name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
+          enable-cache: true
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra mssql
+      - *install-test-deps
 
       - name: Wait for SQL Server to be ready
         run: |
@@ -160,6 +158,8 @@ jobs:
   test-postgresql:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra postgres
 
     services:
       postgres:
@@ -178,18 +178,11 @@ jobs:
           --health-start-period 10s
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - *setup-uv-py312-with-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra postgres
+      - *install-test-deps
 
       - name: Run PostgreSQL integration tests
         env:
@@ -203,6 +196,8 @@ jobs:
   test-mysql:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra mysql
 
     services:
       mysql:
@@ -222,18 +217,11 @@ jobs:
           --health-start-period 30s
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - *setup-uv-py312-with-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra mysql
+      - *install-test-deps
 
       - name: Run MySQL integration tests
         env:
@@ -247,6 +235,8 @@ jobs:
   test-oracle:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra oracle
 
     services:
       oracle:
@@ -265,18 +255,11 @@ jobs:
           --health-start-period 60s
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - *setup-uv-py312-with-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra oracle
+      - *install-test-deps
 
       - name: Run Oracle integration tests
         env:
@@ -290,6 +273,8 @@ jobs:
   test-mariadb:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra mariadb
 
     services:
       mariadb:
@@ -309,23 +294,16 @@ jobs:
           --health-start-period 30s
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - *setup-uv-py312-with-cache
 
       - name: Install MariaDB Connector/C
         run: |
           sudo apt-get update
           sudo apt-get install -y libmariadb-dev
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra mariadb
+      - *install-test-deps
 
       - name: Run MariaDB integration tests
         env:
@@ -338,23 +316,18 @@ jobs:
 
   test-duckdb:
     runs-on: ubuntu-latest
+    env:
+      UV_EXTRAS: --extra duckdb
     strategy:
       matrix:
         python-version: ["3.10", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+      - *setup-uv-matrix-with-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra duckdb
+      - *install-test-deps
 
       - name: Run DuckDB integration tests
         run: uv run pytest tests/test_duckdb.py -v --timeout=60
@@ -362,20 +335,15 @@ jobs:
   test-cockroachdb:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra cockroachdb
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - *setup-uv-py312-with-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra cockroachdb
+      - *install-test-deps
 
       - name: Start CockroachDB
         run: |
@@ -403,6 +371,8 @@ jobs:
   test-firebird:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra firebird
 
     services:
       firebird:
@@ -415,18 +385,11 @@ jobs:
           - 3050:3050
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - *setup-uv-py312-with-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra firebird
+      - *install-test-deps
 
       - name: Run Firebird integration tests
         env:
@@ -440,20 +403,15 @@ jobs:
   test-clickhouse:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra clickhouse
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - *setup-uv-py312-with-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra clickhouse
+      - *install-test-deps
 
       - name: Start ClickHouse
         run: |
@@ -483,20 +441,15 @@ jobs:
   test-ssh:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra ssh --extra postgres
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - *setup-uv-py312-with-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra ssh --extra postgres
+      - *install-test-deps
 
       - name: Create Docker network
         run: docker network create ssh-test-net
@@ -565,20 +518,15 @@ jobs:
   test-turso:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      UV_EXTRAS: --extra turso
 
     steps:
-      - uses: actions/checkout@v4
+      - *checkout-step
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - *setup-uv-py312-with-cache
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra turso
+      - *install-test-deps
 
       - name: Start Turso (libsql-server)
         run: |

@@ -3,76 +3,75 @@ name: Release and Publish
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.4.2)'
+        description: "Version to release (e.g., 0.4.2)"
         required: true
 
+permissions:
+  contents: read
+
 jobs:
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - &checkout_step
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build package
+        run: uv build --no-sources
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v7
+        with: &dist_artifact
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always dist/*
+
   release:
+    needs: publish
+    if: needs.publish.result == 'success' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v8
+        with: *dist_artifact
 
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.version.outputs.VERSION }}
           generate_release_notes: true
           draft: false
           prerelease: false
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install build tools
-        run: python -m pip install --upgrade build
-
-      - name: Build package
-        run: python -m build
-
-      - name: Upload dist artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - name: Download dist artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+          files: dist/*
 
   aur:
-    needs: [build, publish]
+    needs: publish
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - *checkout_step
 
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
@@ -84,22 +83,34 @@ jobs:
         id: info
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+            echo "VERSION=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
           else
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          fi
-          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-
-          # Get checksum from the built artifact (no need to wait for PyPI)
-          TARBALL="dist/sqlit_tui-${VERSION}.tar.gz"
-          if [ ! -f "$TARBALL" ]; then
-            echo "::error::Tarball not found: $TARBALL"
-            ls -la dist/
+            echo "Could not determine version" >&2
             exit 1
           fi
-          CHECKSUM=$(sha256sum "$TARBALL" | cut -d' ' -f1)
-          echo "CHECKSUM=${CHECKSUM}" >> $GITHUB_OUTPUT
-          echo "Version: ${VERSION}"
+
+      - name: Wait for PyPI and get checksum
+        id: pypi
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          URL="https://files.pythonhosted.org/packages/source/s/sqlit-tui/sqlit_tui-${VERSION}.tar.gz"
+
+          echo "Waiting for package to be available on PyPI..."
+          for i in {1..20}; do
+            HTTP_CODE=$(curl -sI -o /dev/null -w "%{http_code}" "$URL")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Package available on PyPI (attempt $i)"
+              break
+            fi
+            echo "Waiting for PyPI... attempt $i (got HTTP $HTTP_CODE)"
+            sleep 30
+          done
+
+          curl -sL "$URL" -o /tmp/pkg.tar.gz
+          CHECKSUM=$(sha256sum /tmp/pkg.tar.gz | cut -d' ' -f1)
+          echo "CHECKSUM=${CHECKSUM}" >> "$GITHUB_OUTPUT"
           echo "Checksum: ${CHECKSUM}"
 
       - name: Update PKGBUILD
@@ -112,11 +123,8 @@ jobs:
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
           sed -i "s/^sha256sums=.*/sha256sums=('${CHECKSUM}')/" PKGBUILD
 
-          echo "Updated PKGBUILD:"
-          cat PKGBUILD
-
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4
         with:
           pkgname: sqlit
           pkgbuild: ./aur/PKGBUILD
