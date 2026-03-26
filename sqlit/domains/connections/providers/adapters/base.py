@@ -450,6 +450,22 @@ class DatabaseAdapter(ABC):
         pass
 
 
+def _sanitize_cell(value: Any) -> Any:
+    """Convert non-picklable types to picklable equivalents.
+
+    psycopg2 returns memoryview for bytea columns which cannot be pickled
+    through multiprocessing.Pipe, causing the process worker to hang.
+    """
+    if isinstance(value, memoryview):
+        return bytes(value)
+    return value
+
+
+def _sanitize_row(row: Any) -> tuple:
+    """Sanitize a database row so it can be pickled safely."""
+    return tuple(_sanitize_cell(v) for v in row)
+
+
 class CursorBasedAdapter(DatabaseAdapter):
     """Base class for adapters using cursor-based execution (most SQL databases).
 
@@ -471,7 +487,7 @@ class CursorBasedAdapter(DatabaseAdapter):
             else:
                 rows = cursor.fetchall()
                 truncated = False
-            return columns, [tuple(row) for row in rows], truncated
+            return columns, [_sanitize_row(row) for row in rows], truncated
         return [], [], False
 
     def execute_non_query(self, conn: Any, query: str) -> int:
