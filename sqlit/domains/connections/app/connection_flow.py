@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from sqlit.domains.connections.domain.config import ConnectionConfig
+from sqlit.domains.connections.domain.password_command import (
+    PasswordCommandError,
+    run_password_command,
+)
 from sqlit.domains.connections.domain.passwords import needs_db_password, needs_ssh_password
 from sqlit.shared.app import AppServices
 
@@ -49,10 +53,20 @@ class ConnectionFlow:
             password = service.get_password(config.name)
             if password is not None:
                 endpoint.password = password
+            elif endpoint.password_command:
+                try:
+                    endpoint.password = run_password_command(endpoint.password_command)
+                except PasswordCommandError:
+                    pass
         if config.tunnel and config.tunnel.password is None:
             ssh_password = service.get_ssh_password(config.name)
             if ssh_password is not None:
                 config.tunnel.password = ssh_password
+            elif config.tunnel.password_command:
+                try:
+                    config.tunnel.password = run_password_command(config.tunnel.password_command)
+                except PasswordCommandError:
+                    pass
 
     def start(self, config: ConnectionConfig, on_ready: Any) -> None:
         """Start the connection flow, prompting for missing passwords as needed."""

@@ -42,6 +42,7 @@ class _ConnectionConfigFactory:
                     database=str(kwargs.pop("database", "")),
                     username=str(kwargs.pop("username", "")),
                     password=kwargs.pop("password", None),
+                    password_command=kwargs.pop("password_command", None),
                 )
 
         if tunnel is None:
@@ -51,6 +52,7 @@ class _ConnectionConfigFactory:
             ssh_username = str(kwargs.pop("ssh_username", ""))
             ssh_auth_type = str(kwargs.pop("ssh_auth_type", "key"))
             ssh_password = kwargs.pop("ssh_password", None)
+            ssh_password_command = kwargs.pop("ssh_password_command", None)
             ssh_key_path = str(kwargs.pop("ssh_key_path", ""))
 
             enabled_flag = str(ssh_enabled).lower() if ssh_enabled is not None else ""
@@ -62,6 +64,7 @@ class _ConnectionConfigFactory:
                     username=ssh_username,
                     auth_type=ssh_auth_type or "key",
                     password=ssh_password,
+                    password_command=ssh_password_command,
                     key_path=ssh_key_path,
                 )
 

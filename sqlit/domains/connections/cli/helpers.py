@@ -99,7 +99,7 @@ def build_connection_config_from_args(
     }
 
     # Fields where None means "not set" vs "" means "explicitly empty"
-    nullable_fields = {"password", "ssh_password"}
+    nullable_fields = {"password", "ssh_password", "password_command", "ssh_password_command"}
 
     for field in schema.fields:
         value = raw_values.get(field.name, "")
@@ -114,6 +114,14 @@ def build_connection_config_from_args(
             continue
 
         config_values[field.name] = value
+
+    # Pick up password_command / ssh_password_command from CLI args (not schema fields)
+    password_command = getattr(args, "password_command", None)
+    if password_command:
+        config_values["password_command"] = password_command
+    ssh_password_command = getattr(args, "ssh_password_command", None)
+    if ssh_password_command:
+        config_values["ssh_password_command"] = ssh_password_command
 
     if "port" in config_values and not config_values["port"]:
         config_values["port"] = schema.default_port or ""
@@ -134,6 +142,7 @@ def build_connection_config_from_args(
             "database": config_values.pop("database", ""),
             "username": config_values.pop("username", ""),
             "password": config_values.pop("password", None),
+            "password_command": config_values.pop("password_command", None),
         }
     ssh_enabled = config_values.pop("ssh_enabled", False)
     if ssh_enabled:
@@ -144,6 +153,7 @@ def build_connection_config_from_args(
             "username": config_values.pop("ssh_username", ""),
             "auth_type": config_values.pop("ssh_auth_type", "key"),
             "password": config_values.pop("ssh_password", None),
+            "password_command": config_values.pop("ssh_password_command", None),
             "key_path": config_values.pop("ssh_key_path", ""),
         }
     else:
