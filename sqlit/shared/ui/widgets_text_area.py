@@ -200,6 +200,44 @@ class QueryTextArea(TextArea):
         # For all other keys, use default TextArea behavior
         await super()._on_key(event)
 
+    def _is_visual_mode(self) -> bool:
+        """Check if app is in any vim visual mode."""
+        from sqlit.core.vim import VimMode
+        vim_mode = getattr(self.app, "vim_mode", None)
+        return vim_mode in (VimMode.VISUAL, VimMode.VISUAL_LINE)
+
+    def action_cursor_up(self, select: bool = False) -> None:
+        """Override to delegate to app in visual modes."""
+        if self._is_visual_mode():
+            if hasattr(self.app, "action_cursor_up"):
+                self.app.action_cursor_up()
+            return
+        super().action_cursor_up(select)
+
+    def action_cursor_down(self, select: bool = False) -> None:
+        """Override to delegate to app in visual modes."""
+        if self._is_visual_mode():
+            if hasattr(self.app, "action_cursor_down"):
+                self.app.action_cursor_down()
+            return
+        super().action_cursor_down(select)
+
+    def action_cursor_left(self, select: bool = False) -> None:
+        """Override to delegate to app in visual modes."""
+        if self._is_visual_mode():
+            if hasattr(self.app, "action_cursor_left"):
+                self.app.action_cursor_left()
+            return
+        super().action_cursor_left(select)
+
+    def action_cursor_right(self, select: bool = False) -> None:
+        """Override to delegate to app in visual modes."""
+        if self._is_visual_mode():
+            if hasattr(self.app, "action_cursor_right"):
+                self.app.action_cursor_right()
+            return
+        super().action_cursor_right(select)
+
     def _is_text_modifying_key(self, key: str) -> bool:
         """Check if a key might modify text (expects normalized key)."""
         # Single characters, backspace, delete, enter are text-modifying
