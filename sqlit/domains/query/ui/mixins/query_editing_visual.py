@@ -57,11 +57,11 @@ class QueryEditingVisualMixin:
         self._visual_line_anchor_row = None
         self._visual_anchor = anchor
         self.vim_mode = VimMode.VISUAL
-        self._update_visual_selection(cursor=cursor)
+        self._update_query_visual_selection(cursor=cursor)
         self._update_vim_mode_visuals()
         self._update_footer_bindings()
 
-    def _update_visual_selection(
+    def _update_query_visual_selection(
         self: QueryMixinHost, cursor: tuple[int, int] | None = None
     ) -> None:
         """Update selection from anchor to cursor position."""
