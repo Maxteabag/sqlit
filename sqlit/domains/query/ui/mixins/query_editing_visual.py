@@ -87,20 +87,15 @@ class QueryEditingVisualMixin:
         if text:
             self._copy_text(text)
 
-        self._flash_yank_range(start[0], start[1], end[0], end[1])
-
         from sqlit.core.vim import VimMode
-        from textual.widgets.text_area import Selection
 
         self._visual_anchor = None
         self.vim_mode = VimMode.NORMAL
         self.query_input.cursor_location = (start[0], start[1])
 
-        def _clear() -> None:
-            cur = self.query_input.cursor_location
-            self.query_input.selection = Selection(cur, cur)
-
-        self.set_timer(0.15, _clear)
+        # _flash_yank_range sets the selection to the yanked range and
+        # schedules its own 0.15s timer to clear it back to cursor.
+        self._flash_yank_range(start[0], start[1], end[0], end[1])
         self._update_vim_mode_visuals()
         self._update_footer_bindings()
 
@@ -119,9 +114,11 @@ class QueryEditingVisualMixin:
 
     def action_visual_change(self: QueryMixinHost) -> None:
         """Change (delete + insert) the charwise selection."""
-        self._push_undo_state()
-        self._change_selection()
         self._visual_anchor = None
+        self._push_undo_state()
+        # _change_selection calls _enter_insert_mode which handles
+        # vim_mode, visuals, and footer updates.
+        self._change_selection()
 
     def action_visual_execute(self: QueryMixinHost) -> None:
         """Execute the visually selected text."""

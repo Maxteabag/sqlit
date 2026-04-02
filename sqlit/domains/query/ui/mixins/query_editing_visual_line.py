@@ -98,24 +98,18 @@ class QueryEditingVisualLineMixin:
         if result.yanked:
             self._copy_text(result.yanked)
 
-        # Flash the selection then exit
-        end_col = len(lines[end_row]) if end_row < len(lines) else 0
-        self._flash_yank_range(start_row, 0, end_row, end_col)
-
-        # Exit visual line mode (after flash timer starts)
+        # Exit visual line mode before flash
         self._visual_line_anchor_row = None
 
         from sqlit.core.vim import VimMode
-        from textual.widgets.text_area import Selection
 
         self.vim_mode = VimMode.NORMAL
         self.query_input.cursor_location = (start_row, 0)
 
-        def _clear_and_update() -> None:
-            cursor = self.query_input.cursor_location
-            self.query_input.selection = Selection(cursor, cursor)
-
-        self.set_timer(0.15, _clear_and_update)
+        # _flash_yank_range sets the selection to the yanked range and
+        # schedules its own 0.15s timer to clear it back to cursor.
+        end_col = len(lines[end_row]) if end_row < len(lines) else 0
+        self._flash_yank_range(start_row, 0, end_row, end_col)
         self._update_vim_mode_visuals()
         self._update_footer_bindings()
 

@@ -306,7 +306,7 @@ class UIStatusMixin:
                 try:
                     if self.query_input.has_focus:
                         normal_color, insert_color = self._get_mode_colors()
-                        mode_color = normal_color if self.vim_mode == VimMode.NORMAL else insert_color
+                        mode_color = insert_color if self.vim_mode == VimMode.INSERT else normal_color
                 except Exception:
                     mode_color = None
 
