@@ -69,10 +69,13 @@ class MockHistoryStore:
     def load_for_connection(self, connection_name: str) -> list:
         return self.entries.get(connection_name, [])
 
-    def save_query(self, connection_name: str, query: str) -> None:
+    def save_query(self, connection_name: str, query: str, database: str = "") -> None:
         if connection_name not in self.entries:
             self.entries[connection_name] = []
-        self.entries[connection_name].append({"query": query})
+        entry: dict = {"query": query}
+        if database:
+            entry["database"] = database
+        self.entries[connection_name].append(entry)
 
     def delete_entry(self, connection_name: str, timestamp: str) -> bool:
         return False

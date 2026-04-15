@@ -298,8 +298,13 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
     def _save_query_history(self: QueryMixinHost, config: Any, query: str) -> None:
         """Save query history only for saved connections."""
+        database = getattr(self, "_active_database", None) or ""
+        if not database:
+            endpoint = getattr(config, "tcp_endpoint", None)
+            if endpoint:
+                database = getattr(endpoint, "database", "") or ""
         if self._should_save_query_history(config):
-            self._get_history_store().save_query(config.name, query)
+            self._get_history_store().save_query(config.name, query, database=database)
             return
         self._get_unsaved_history_store().save_query(config.name, query)
 
@@ -376,10 +381,14 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             or self.current_config is None
         ):
             return
-        connection_name, query = pending
+        connection_name = pending[0]
+        query = pending[1]
+        database = pending[2] if len(pending) > 2 else ""
         if self.current_config.name != connection_name:
             return
         self._pending_telescope_query = None
+        if database:
+            self._active_database = database
         self._apply_history_query(query)
 
     @property
@@ -842,7 +851,8 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         if action == "select":
             query = data.get("query", "")
             connection_name = data.get("connection_name", "")
-            self._run_telescope_query(connection_name, query)
+            database = data.get("database", "")
+            self._run_telescope_query(connection_name, query, database=database)
         elif action == "delete":
             timestamp = data.get("timestamp", "")
             connection_name = data.get("connection_name", "")
@@ -866,7 +876,9 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             else:
                 self.action_telescope()
 
-    def _run_telescope_query(self: QueryMixinHost, connection_name: str, query: str) -> None:
+    def _run_telescope_query(
+        self: QueryMixinHost, connection_name: str, query: str, *, database: str = ""
+    ) -> None:
         if not query or not connection_name:
             return
 
@@ -875,6 +887,12 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             self.notify(f"Connection '{connection_name}' not found", severity="warning")
             return
 
+        # Resolve the active database from when the query was originally executed.
+        # For old history entries without a database field, try to find one
+        # from other entries for the same connection.
+        if not database:
+            database = self._infer_database_from_history(connection_name)
+
         self._apply_history_query(query)
 
         if (
@@ -882,10 +900,14 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             and self.current_config is not None
             and self.current_config.name == connection_name
         ):
+            if database:
+                self._active_database = database
             self._pending_telescope_query = None
             return
 
-        self._pending_telescope_query = None
+        # Store database in the pending tuple so _maybe_run_pending_telescope_query
+        # can restore it AFTER the connection callback resets _active_database.
+        self._pending_telescope_query = (connection_name, query, database)
         self._connect_like_explorer(connection_name, config)
 
     def _get_telescope_connection_map(self: QueryMixinHost) -> dict[str, Any]:
@@ -925,6 +947,19 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             return
 
         self.connect_to_server(config)
+
+    def _infer_database_from_history(self: QueryMixinHost, connection_name: str) -> str:
+        """Try to find the most recently used database for a connection from history."""
+        try:
+            history_store = self._get_history_store()
+            entries = history_store.load_for_connection(connection_name)
+            for entry in entries:
+                db = getattr(entry, "database", "") or ""
+                if db:
+                    return db
+        except Exception:
+            pass
+        return ""
 
     def _format_telescope_connection_label(self: QueryMixinHost, config: Any) -> str:
         endpoint = getattr(config, "tcp_endpoint", None)
