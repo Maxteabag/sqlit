@@ -24,6 +24,7 @@ from textual.worker import Worker
 
 from sqlit.core.input_context import InputContext
 from sqlit.core.key_router import resolve_action
+from sqlit.core.keymap_manager import KeymapManager
 from sqlit.core.vim import VimMode
 from sqlit.domains.connections.domain.config import ConnectionConfig
 from sqlit.domains.connections.providers.model import DatabaseProvider
@@ -189,6 +190,9 @@ class SSMSTUI(
             self,
             settings_store=self.services.settings_store,
             override_theme=self.services.runtime.theme,
+        )
+        self._keymap_manager = KeymapManager(
+            settings_store=self.services.settings_store,
         )
         self._spinner_index: int = 0
         self._spinner_timer: Timer | None = None

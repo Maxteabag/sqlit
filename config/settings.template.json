@@ -2,6 +2,7 @@
   "_note": "Copy to .sqlit/settings.json (gitignored) and run: sqlit --settings .sqlit/settings.json",
   "theme": "tokyo-night",
   "custom_themes": [],
+  "custom_keymap": "default",
   "expanded_nodes": [],
   "process_worker": true,
   "process_worker_warm_on_idle": true,

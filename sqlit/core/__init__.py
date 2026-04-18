@@ -10,12 +10,14 @@ from .keymap import (
     reset_keymap,
     set_keymap,
 )
+from .keymap_manager import KeymapManager
 from .leader_commands import get_leader_commands
 from .vim import VimMode
 
 __all__ = [
     "ActionKeyDef",
     "InputContext",
+    "KeymapManager",
     "KeymapProvider",
     "LeaderCommandDef",
     "VimMode",
