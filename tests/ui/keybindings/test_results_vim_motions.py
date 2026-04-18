@@ -41,29 +41,37 @@ class TestResultsVimMotions:
     """Vim motions bound to the results view."""
 
     @pytest.mark.asyncio
-    async def test_G_jumps_to_last_row(self) -> None:
+    async def test_G_jumps_to_last_row_preserving_column(self) -> None:
         app = _make_app()
         async with app.run_test(size=(100, 35)) as pilot:
-            columns = ["id", "name"]
-            rows = [(i, f"row-{i}") for i in range(20)]
+            columns = ["id", "name", "email"]
+            rows = [(i, f"row-{i}", f"e{i}@x") for i in range(20)]
             await _populate_results(pilot, app, columns, rows)
             await pilot.pause()
 
-            assert app.results_table.cursor_coordinate.row == 0
+            # Move to column 2 first, then jump to end.
+            await pilot.press("l", "l")
+            await pilot.pause()
+            assert app.results_table.cursor_coordinate.column == 2
 
             await pilot.press("G")
             await pilot.pause()
 
             assert app.results_table.cursor_coordinate.row == len(rows) - 1
+            assert app.results_table.cursor_coordinate.column == 2
 
     @pytest.mark.asyncio
-    async def test_gg_jumps_to_first_row(self) -> None:
+    async def test_gg_jumps_to_first_row_preserving_column(self) -> None:
         app = _make_app()
         async with app.run_test(size=(100, 35)) as pilot:
-            columns = ["id", "name"]
-            rows = [(i, f"row-{i}") for i in range(20)]
+            columns = ["id", "name", "email"]
+            rows = [(i, f"row-{i}", f"e{i}@x") for i in range(20)]
             await _populate_results(pilot, app, columns, rows)
             await pilot.pause()
+
+            await pilot.press("l", "l")
+            await pilot.pause()
+            assert app.results_table.cursor_coordinate.column == 2
 
             await pilot.press("G")
             await pilot.pause()
@@ -74,27 +82,33 @@ class TestResultsVimMotions:
             await pilot.pause()
 
             assert app.results_table.cursor_coordinate.row == 0
+            assert app.results_table.cursor_coordinate.column == 2
 
     @pytest.mark.asyncio
-    async def test_ctrl_d_and_ctrl_u_page(self) -> None:
+    async def test_ctrl_d_and_ctrl_u_page_preserve_column(self) -> None:
         app = _make_app()
         async with app.run_test(size=(100, 20)) as pilot:
-            columns = ["id"]
-            rows = [(i,) for i in range(200)]
+            columns = ["id", "a", "b"]
+            rows = [(i, i * 2, i * 3) for i in range(200)]
             await _populate_results(pilot, app, columns, rows)
             await pilot.pause()
 
+            await pilot.press("l")
+            await pilot.pause()
+            assert app.results_table.cursor_coordinate.column == 1
             start_row = app.results_table.cursor_coordinate.row
 
             await pilot.press("ctrl+d")
             await pilot.pause()
             after_page_down = app.results_table.cursor_coordinate.row
             assert after_page_down > start_row, "ctrl+d should move cursor down by a page"
+            assert app.results_table.cursor_coordinate.column == 1
 
             await pilot.press("ctrl+u")
             await pilot.pause()
             after_page_up = app.results_table.cursor_coordinate.row
             assert after_page_up < after_page_down, "ctrl+u should move cursor up again"
+            assert app.results_table.cursor_coordinate.column == 1
 
     @pytest.mark.asyncio
     async def test_0_and_dollar_move_within_row(self) -> None:
