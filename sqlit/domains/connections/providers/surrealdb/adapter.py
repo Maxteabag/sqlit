@@ -18,6 +18,16 @@ if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
 
 
+def _to_plain(value: Any) -> Any:
+    """Convert SurrealDB SDK types (RecordID, etc.) into something printable."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    cls_name = type(value).__name__
+    if cls_name == "RecordID":
+        return str(value)
+    return value
+
+
 class SurrealDBAdapter(DatabaseAdapter):
     """Adapter for SurrealDB using the official Python SDK.
 
@@ -96,15 +106,12 @@ class SurrealDBAdapter(DatabaseAdapter):
         scheme = "wss" if use_ssl else "ws"
         url = f"{scheme}://{endpoint.host}:{port}/rpc"
 
-        # Create sync connection
+        # Surreal() is blocking in surrealdb>=1.0; opens the socket in __init__
         db = surrealdb_module.Surreal(url)
-        db.connect()
 
-        # Sign in if credentials provided
         if endpoint.username and endpoint.password:
-            db.signin({"user": endpoint.username, "pass": endpoint.password})
+            db.signin({"username": endpoint.username, "password": endpoint.password})
 
-        # Select namespace and database
         namespace = config.get_option("namespace", "test")
         database = endpoint.database or config.get_option("database", "test")
         db.use(namespace, database)
@@ -117,18 +124,15 @@ class SurrealDBAdapter(DatabaseAdapter):
 
     def execute_test_query(self, conn: Any) -> None:
         """Execute a simple query to verify the connection works."""
-        result = conn.query("RETURN 1")
-        if not result:
-            raise Exception("SurrealDB test query returned no result")
+        # query() raises on error; a successful RETURN 1 returns the int 1.
+        conn.query("RETURN 1")
 
     def get_databases(self, conn: Any) -> list[str]:
         """Get list of databases in the current namespace."""
         try:
-            result = conn.query("INFO FOR NS")
-            if result and isinstance(result, list) and result[0]:
-                info = result[0]
-                if isinstance(info, dict) and "databases" in info:
-                    return list(info["databases"].keys())
+            info = conn.query("INFO FOR NS")
+            if isinstance(info, dict) and "databases" in info:
+                return list(info["databases"].keys())
         except Exception:
             pass
         return []
@@ -136,12 +140,9 @@ class SurrealDBAdapter(DatabaseAdapter):
     def get_tables(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of tables in the current database."""
         try:
-            result = conn.query("INFO FOR DB")
-            if result and isinstance(result, list) and result[0]:
-                info = result[0]
-                if isinstance(info, dict) and "tables" in info:
-                    tables = list(info["tables"].keys())
-                    return [("", t) for t in sorted(tables)]
+            info = conn.query("INFO FOR DB")
+            if isinstance(info, dict) and "tables" in info:
+                return [("", t) for t in sorted(info["tables"].keys())]
         except Exception:
             pass
         return []
@@ -161,33 +162,40 @@ class SurrealDBAdapter(DatabaseAdapter):
         columns: list[ColumnInfo] = []
 
         try:
-            # First try to get schema info
-            result = conn.query(f"INFO FOR TABLE {table}")
-            if result and isinstance(result, list) and result[0]:
-                info = result[0]
-                if isinstance(info, dict) and "fields" in info:
-                    for field_name, field_def in info["fields"].items():
-                        # field_def might contain type info
-                        data_type = "any"
-                        if isinstance(field_def, dict) and "type" in field_def:
-                            data_type = str(field_def["type"])
-                        elif isinstance(field_def, str):
-                            # Try to extract type from definition string
-                            data_type = field_def.split()[0] if field_def else "any"
-                        columns.append(ColumnInfo(name=field_name, data_type=data_type))
+            info = conn.query(f"INFO FOR TABLE {table}")
+            if isinstance(info, dict) and "fields" in info and info["fields"]:
+                # SurrealDB's INFO FOR TABLE only lists explicitly-defined
+                # fields, but every record implicitly has an `id`. Surface it
+                # as the primary key column so consumers can detect it.
+                columns.append(
+                    ColumnInfo(name="id", data_type="record", is_primary_key=True)
+                )
+                for field_name, field_def in info["fields"].items():
+                    data_type = "any"
+                    if isinstance(field_def, dict) and "type" in field_def:
+                        data_type = str(field_def["type"])
+                    elif isinstance(field_def, str):
+                        # e.g. "DEFINE FIELD name ON t1 TYPE string PERMISSIONS FULL"
+                        parts = field_def.split()
+                        if "TYPE" in parts:
+                            idx = parts.index("TYPE")
+                            if idx + 1 < len(parts):
+                                data_type = parts[idx + 1]
+                        elif parts:
+                            data_type = parts[0]
+                    columns.append(ColumnInfo(name=field_name, data_type=data_type))
 
-            # If no schema fields, sample data to infer columns
             if not columns:
                 sample = conn.query(f"SELECT * FROM {table} LIMIT 1")
-                if sample and isinstance(sample, list) and sample[0]:
+                if isinstance(sample, list) and sample:
                     first_row = sample[0]
                     if isinstance(first_row, dict):
                         for key in first_row.keys():
-                            if key != "id":  # id is always present
-                                value = first_row[key]
-                                data_type = type(value).__name__ if value is not None else "any"
-                                columns.append(ColumnInfo(name=key, data_type=data_type))
-                        # Add id column first
+                            if key == "id":
+                                continue
+                            value = first_row[key]
+                            data_type = type(value).__name__ if value is not None else "any"
+                            columns.append(ColumnInfo(name=key, data_type=data_type))
                         columns.insert(0, ColumnInfo(name="id", data_type="record"))
         except Exception:
             pass
@@ -201,22 +209,20 @@ class SurrealDBAdapter(DatabaseAdapter):
         """Get list of indexes across all tables."""
         indexes: list[IndexInfo] = []
         try:
-            result = conn.query("INFO FOR DB")
-            if result and isinstance(result, list) and result[0]:
-                info = result[0]
-                if isinstance(info, dict) and "tables" in info:
-                    for table_name in info["tables"].keys():
-                        table_info = conn.query(f"INFO FOR TABLE {table_name}")
-                        if table_info and isinstance(table_info, list) and table_info[0]:
-                            t_info = table_info[0]
-                            if isinstance(t_info, dict) and "indexes" in t_info:
-                                for idx_name, idx_def in t_info["indexes"].items():
-                                    is_unique = "UNIQUE" in str(idx_def).upper() if idx_def else False
-                                    indexes.append(IndexInfo(
-                                        name=idx_name,
-                                        table_name=table_name,
-                                        is_unique=is_unique
-                                    ))
+            info = conn.query("INFO FOR DB")
+            if not (isinstance(info, dict) and "tables" in info):
+                return []
+            for table_name in info["tables"].keys():
+                t_info = conn.query(f"INFO FOR TABLE {table_name}")
+                if not (isinstance(t_info, dict) and "indexes" in t_info):
+                    continue
+                for idx_name, idx_def in t_info["indexes"].items():
+                    is_unique = "UNIQUE" in str(idx_def).upper() if idx_def else False
+                    indexes.append(IndexInfo(
+                        name=idx_name,
+                        table_name=table_name,
+                        is_unique=is_unique,
+                    ))
         except Exception:
             pass
         return indexes
@@ -242,59 +248,47 @@ class SurrealDBAdapter(DatabaseAdapter):
     def execute_query(
         self, conn: Any, query: str, max_rows: int | None = None
     ) -> tuple[list[str], list[tuple], bool]:
-        """Execute a query and return (columns, rows, truncated)."""
-        result = conn.query(query)
+        """Execute a query and return (columns, rows, truncated).
 
-        if not result:
+        surrealdb>=1.0 returns the query result already unwrapped: scalars for
+        RETURN, a dict for INFO, and a list[dict] for SELECT.
+        """
+        data = conn.query(query)
+
+        if data is None:
             return [], [], False
 
-        # SurrealDB returns a list of results (one per statement)
-        # For a single query, we take the first result
-        data = result[0] if isinstance(result, list) else result
-
-        # Handle single value returns (like RETURN 1)
-        if not isinstance(data, (list, dict)):
-            return ["result"], [(data,)], False
-
-        # Handle empty results
-        if isinstance(data, list) and not data:
-            return [], [], False
-
-        # Handle list of records
         if isinstance(data, list):
             if not data:
                 return [], [], False
             first = data[0]
             if isinstance(first, dict):
                 columns = list(first.keys())
-                all_rows = [tuple(row.get(col) for col in columns) for row in data]
-                if max_rows is not None and len(all_rows) > max_rows:
-                    return columns, all_rows[:max_rows], True
-                return columns, all_rows, False
-            # List of non-dict values
-            rows = [(v,) for v in (data[:max_rows] if max_rows else data)]
+                rows = [
+                    tuple(_to_plain(row.get(col)) for col in columns) for row in data
+                ]
+                if max_rows is not None and len(rows) > max_rows:
+                    return columns, rows[:max_rows], True
+                return columns, rows, False
+            rows = [(_to_plain(v),) for v in (data[:max_rows] if max_rows else data)]
             truncated = max_rows is not None and len(data) > max_rows
             return ["value"], rows, truncated
 
-        # Handle single dict
         if isinstance(data, dict):
             columns = list(data.keys())
-            return columns, [tuple(data.values())], False
+            return columns, [tuple(_to_plain(v) for v in data.values())], False
 
-        return [], [], False
+        # Scalar returns (int, str, bool, etc.)
+        return ["result"], [(_to_plain(data),)], False
 
     def execute_non_query(self, conn: Any, query: str) -> int:
         """Execute a non-query statement."""
         result = conn.query(query)
-        # SurrealDB doesn't return row counts in the traditional sense
-        # Return 1 if operation succeeded
-        if result is not None:
-            if isinstance(result, list) and result:
-                data = result[0]
-                if isinstance(data, list):
-                    return len(data)
-            return 1
-        return 0
+        if result is None:
+            return 0
+        if isinstance(result, list):
+            return len(result)
+        return 1
 
     def classify_query(self, query: str) -> bool:
         """Return True if the query is expected to return rows."""
