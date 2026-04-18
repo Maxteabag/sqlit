@@ -9,23 +9,37 @@ on:
       version:
         description: 'Version to release (e.g., 0.4.2)'
         required: true
+      aur_only:
+        description: 'Only update AUR from the specified tag version'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
 
 jobs:
   release:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.aur_only == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          echo "TAG=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+          echo "VERSION=${RELEASE_TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          name: ${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ steps.version.outputs.TAG }}
+          name: ${{ steps.version.outputs.TAG }}
           generate_release_notes: true
           draft: false
           prerelease: false
@@ -34,6 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -53,6 +69,7 @@ jobs:
           path: dist/
 
   publish:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.aur_only == 'true') }}
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
@@ -70,9 +87,12 @@ jobs:
 
   aur:
     needs: [build, publish]
+    if: ${{ always() && needs.build.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
@@ -83,11 +103,7 @@ jobs:
       - name: Extract version and checksum
         id: info
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          fi
+          VERSION="${RELEASE_TAG#v}"
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
           # Get checksum from the built artifact (no need to wait for PyPI)
@@ -116,7 +132,7 @@ jobs:
           cat PKGBUILD
 
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: sqlit
           pkgbuild: ./aur/PKGBUILD
