@@ -103,18 +103,23 @@ class InstallOption:
 def detect_install_method(*, probe: SystemProbeProtocol | None = None) -> str:
     """Detect how sqlit was installed/is running.
 
-    Returns one of: 'pipx', 'uvx', 'uv', 'conda', 'pip', or 'unknown'.
-    'pipx', 'uvx', 'uv' (uv run), and 'conda' are high-confidence detections.
+    Returns one of: 'pipx', 'uv-tool', 'uvx', 'uv', 'conda', 'pip', or 'unknown'.
+    'pipx', 'uv-tool', 'uvx', 'uv' (uv run), and 'conda' are high-confidence
+    detections. 'uv-tool' means `uv tool install` (persistent); 'uvx' means
+    `uvx` / `uv tool run` (ephemeral) — the two require different injection
+    commands, so they must not be conflated.
     """
     probe = probe or SystemProbe()
 
     hint = _install_method_hint(probe)
-    if hint in {"pipx", "uvx", "uv", "conda", "pip", "unknown"}:
+    if hint in {"pipx", "uv-tool", "uvx", "uv", "conda", "pip", "unknown"}:
         return hint
 
     # Check high-confidence detections first (runtime environment)
     if probe.is_pipx():
         return "pipx"
+    if probe.is_uv_tool_install():
+        return "uv-tool"
     if probe.is_uvx():
         return "uvx"
     if probe.is_uv_run():
@@ -146,7 +151,14 @@ def get_install_options(
         "pip": InstallOption("pip", f"pip install {shell_target('pip')}"),
         "pipx": InstallOption("pipx", f"pipx inject sqlit-tui {shell_target('pipx')}"),
         "uv": InstallOption("uv", f"uv pip install {shell_target('uv')}"),
-        "uvx": InstallOption("uvx", f"uvx --with {shell_target('uvx')} sqlit-tui"),
+        "uv-tool": InstallOption(
+            "uv-tool",
+            f"uv tool install --reinstall --with {shell_target('uv-tool')} sqlit-tui",
+        ),
+        "uvx": InstallOption(
+            "uvx",
+            f"uvx --from sqlit-tui --with {shell_target('uvx')} sqlit",
+        ),
         "poetry": InstallOption("poetry", f"poetry add {shell_target('poetry')}"),
         "pdm": InstallOption("pdm", f"pdm add {shell_target('pdm')}"),
         "conda": InstallOption("conda", f"conda install {shell_target('conda')}"),
@@ -157,17 +169,19 @@ def get_install_options(
 
     # Order based on detection - detected method first, then common alternatives
     if detected == "pipx":
-        order = ["pipx", "pip", "uv", "uvx", "poetry", "pdm", "conda"]
+        order = ["pipx", "pip", "uv", "uv-tool", "uvx", "poetry", "pdm", "conda"]
+    elif detected == "uv-tool":
+        order = ["uv-tool", "uv", "pip", "uvx", "pipx", "poetry", "pdm", "conda"]
     elif detected == "uvx":
-        order = ["uvx", "uv", "pip", "pipx", "poetry", "pdm", "conda"]
+        order = ["uvx", "uv-tool", "uv", "pip", "pipx", "poetry", "pdm", "conda"]
     elif detected == "uv":
         # uv run - prefer uv pip install
-        order = ["uv", "pip", "uvx", "pipx", "poetry", "pdm", "conda"]
+        order = ["uv", "pip", "uv-tool", "uvx", "pipx", "poetry", "pdm", "conda"]
     elif detected == "conda":
-        order = ["conda", "pip", "uv", "pipx", "uvx", "poetry", "pdm"]
+        order = ["conda", "pip", "uv", "pipx", "uv-tool", "uvx", "poetry", "pdm"]
     else:
         # Default: pip first
-        order = ["pip", "uv", "pipx", "uvx", "poetry", "pdm", "conda"]
+        order = ["pip", "uv", "pipx", "uv-tool", "uvx", "poetry", "pdm", "conda"]
 
     options = [all_options[key] for key in order]
 

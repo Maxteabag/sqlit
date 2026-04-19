@@ -62,7 +62,7 @@ def _normalize_install_method_hint(value: str | None) -> str | None:
     if not value:
         return None
     normalized = value.strip().lower()
-    if normalized in {"pipx", "pip", "unknown", "uvx", "uv", "conda"}:
+    if normalized in {"pipx", "pip", "unknown", "uv-tool", "uvx", "uv", "conda"}:
         return normalized
     return None
 
