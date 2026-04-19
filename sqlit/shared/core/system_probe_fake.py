@@ -54,6 +54,9 @@ class FakeSystemProbe(SystemProbeProtocol):
     def is_pipx(self) -> bool:
         return self.install_method == "pipx"
 
+    def is_uv_tool_install(self) -> bool:
+        return self.install_method == "uv-tool"
+
     def is_uvx(self) -> bool:
         return self.install_method == "uvx"
 
