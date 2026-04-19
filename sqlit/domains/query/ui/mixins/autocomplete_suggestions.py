@@ -74,13 +74,25 @@ class AutocompleteSuggestionsMixin:
             alias_map = self._build_alias_map(text)
             table_refs = extract_table_refs(text)
             loading: set[str] = getattr(self, "_columns_loading", set())
+            table_metadata = getattr(self, "_table_metadata", {}) or {}
+
+            def needs_column_load(key: str) -> bool:
+                """Return True only if the key names a known table that hasn't
+                been loaded yet. Returning Loading... for an unknown key would
+                wedge forever because the loader skips unknown tables silently.
+                """
+                if key in columns:
+                    return False
+                if key not in table_metadata:
+                    return False
+                return True
 
             for suggestion in suggestions:
                 if suggestion.type == SuggestionType.COLUMN:
                     # Check if any tables need column loading
                     for ref in table_refs:
                         table_key = ref.name.lower()
-                        if table_key not in columns and table_key not in loading:
+                        if needs_column_load(table_key) and table_key not in loading:
                             self._load_columns_for_table(table_key)
                             return ["Loading..."]
                         elif table_key in loading:
@@ -92,7 +104,7 @@ class AutocompleteSuggestionsMixin:
                         scope_lower = scope.lower()
                         table_key = alias_map.get(scope_lower, scope_lower)
 
-                        if table_key not in columns and table_key not in loading:
+                        if needs_column_load(table_key) and table_key not in loading:
                             self._load_columns_for_table(table_key)
                             return ["Loading..."]
                         elif table_key in loading:

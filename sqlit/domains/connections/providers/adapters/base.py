@@ -417,6 +417,22 @@ class DatabaseAdapter(ABC):
         """Quote an identifier (table name, column name, etc.)."""
         pass
 
+    def qualified_name(self, database: str | None, schema: str | None, name: str) -> str:
+        """Build a quoted qualified identifier, skipping empty segments.
+
+        Default handles SQL Server-style `[db].[schema].[name]`, PostgreSQL-
+        style `"schema"."name"`, and single-part `"name"` by omitting any
+        empty/None component. Dialects that want different composition
+        (e.g. MySQL, which has no schemas within databases) can override.
+        """
+        parts: list[str] = []
+        if database:
+            parts.append(self.quote_identifier(database))
+        if schema:
+            parts.append(self.quote_identifier(schema))
+        parts.append(self.quote_identifier(name))
+        return ".".join(parts)
+
     @abstractmethod
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build a SELECT query with limit.
