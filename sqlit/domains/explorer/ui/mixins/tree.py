@@ -22,6 +22,9 @@ if TYPE_CHECKING:
     from sqlit.domains.connections.providers.model import DatabaseProvider
 
 MIN_TIMER_DELAY_S = 0.001
+SELECT_TABLE_MODE_REPLACE = "replace"
+SELECT_TABLE_MODE_APPEND = "append"
+_VALID_SELECT_TABLE_MODES = {SELECT_TABLE_MODE_REPLACE, SELECT_TABLE_MODE_APPEND}
 
 
 class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
@@ -39,6 +42,41 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
     _expanded_state_save_timer: Any | None = None
     _schema_service: Any | None = None
     _schema_service_session: Any | None = None
+
+    def _get_select_table_mode(self: TreeMixinHost) -> str:
+        services = getattr(self, "services", None)
+        settings_store = getattr(services, "settings_store", None)
+        if settings_store is None:
+            return SELECT_TABLE_MODE_REPLACE
+        raw_mode = settings_store.get("select_table_mode", SELECT_TABLE_MODE_REPLACE)
+        mode = str(raw_mode).strip().lower() if raw_mode is not None else SELECT_TABLE_MODE_REPLACE
+        if mode not in _VALID_SELECT_TABLE_MODES:
+            return SELECT_TABLE_MODE_REPLACE
+        return mode
+
+    def _append_generated_query(self: TreeMixinHost, generated_query: str) -> None:
+        current_text = self.query_input.text
+        stripped_current = current_text.rstrip()
+        if not stripped_current:
+            next_text = generated_query
+        else:
+            next_text = f"{stripped_current}\n\n{generated_query}"
+        self.query_input.text = next_text
+        cursor_setter = getattr(self.query_input, "cursor_location", None)
+        if cursor_setter is not None:
+            try:
+                lines = next_text.splitlines() or [""]
+                self.query_input.cursor_location = (len(lines) - 1, len(lines[-1]))
+            except Exception:
+                pass
+
+    def _execute_generated_select(self: TreeMixinHost, mode: str) -> None:
+        if mode == SELECT_TABLE_MODE_APPEND:
+            execute_single = getattr(self, "action_execute_single_statement", None)
+            if callable(execute_single):
+                execute_single()
+                return
+        self.action_execute_query()
 
     def _emit_debug(self: TreeMixinHost, name: str, **data: Any) -> None:
         emit = getattr(self, "emit_debug_event", None)
@@ -335,14 +373,19 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             self._pending_result_table_info = self._last_query_table
             self._prime_last_query_table_columns(data.database, data.schema, data.name)
 
-            self.query_input.text = self.current_provider.dialect.build_select_query(
+            generated_query = self.current_provider.dialect.build_select_query(
                 data.name,
                 100,
                 data.database,
                 data.schema,
             )
+            mode = self._get_select_table_mode()
+            if mode == SELECT_TABLE_MODE_APPEND:
+                self._append_generated_query(generated_query)
+            else:
+                self.query_input.text = generated_query
             self._query_target_database = data.database
-            self.action_execute_query()
+            self._execute_generated_select(mode)
             return
 
         if self._get_node_kind(node) == "index":

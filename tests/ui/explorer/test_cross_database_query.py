@@ -73,6 +73,7 @@ class MockQueryInput:
 
     def __init__(self):
         self.text = ""
+        self.cursor_location = (0, 0)
 
 
 class TestCrossDatabaseQuery:
@@ -308,3 +309,72 @@ class TestSameDatabaseQuery:
         # Target database matches connected database - no override needed
         assert mixin._query_target_database == "norway_culture"
         assert mixin.action_execute_query.called
+
+
+class TestSelectTableMode:
+    """Tests for select_table_mode behavior."""
+
+    @staticmethod
+    def _build_mixin(*, mode: str = "replace", initial_query: str = "") -> TreeMixin:
+        mixin = object.__new__(TreeMixin)
+
+        mixin.current_provider = MagicMock()
+        mixin.current_provider.capabilities = SchemaCapabilities(
+            supports_multiple_databases=True,
+            supports_cross_database_queries=True,
+            supports_stored_procedures=False,
+            supports_indexes=False,
+            supports_triggers=False,
+            supports_sequences=False,
+            default_schema="public",
+            system_databases=frozenset(),
+        )
+        mixin.current_provider.dialect = MockDialect()
+
+        mixin._session = MagicMock()
+        mixin.current_connection = MagicMock()
+        mixin.current_config = MockConfig(database="norway_culture")
+
+        mixin.object_tree = MockTree()
+        mixin.object_tree.cursor_node = MockTreeNode(
+            label="fjords",
+            data=TableNode(database="norway_geography", schema="public", name="fjords"),
+        )
+
+        mixin.query_input = MockQueryInput()
+        mixin.query_input.text = initial_query
+        mixin._get_node_kind = lambda node: "table" if isinstance(node.data, TableNode) else ""
+        mixin._prime_last_query_table_columns = MagicMock()
+        mixin._query_target_database = None
+        mixin.action_execute_query = MagicMock()
+        mixin.action_execute_single_statement = MagicMock()
+
+        mixin.services = MagicMock()
+        mixin.services.settings_store = MagicMock()
+        mixin.services.settings_store.get = MagicMock(return_value=mode)
+        return mixin
+
+    def test_select_table_mode_replace_keeps_default_behavior(self):
+        # Arrange
+        mixin = self._build_mixin(mode="replace", initial_query="SELECT 1;")
+
+        # Act
+        mixin.action_select_table()
+
+        # Assert
+        assert mixin.query_input.text == "SELECT * FROM public.fjords LIMIT 100"
+        mixin.action_execute_query.assert_called_once_with()
+        mixin.action_execute_single_statement.assert_not_called()
+
+    def test_select_table_mode_append_adds_query_and_executes_only_last_statement(self):
+        # Arrange
+        mixin = self._build_mixin(mode="append", initial_query="SELECT 1;")
+
+        # Act
+        mixin.action_select_table()
+
+        # Assert
+        assert mixin.query_input.text == "SELECT 1;\n\nSELECT * FROM public.fjords LIMIT 100"
+        mixin.action_execute_single_statement.assert_called_once_with()
+        mixin.action_execute_query.assert_not_called()
+        assert mixin.query_input.cursor_location == (2, len("SELECT * FROM public.fjords LIMIT 100"))
