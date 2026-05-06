@@ -727,6 +727,13 @@ class SSMSTUI(
                     return
                 self._set_process_worker_auto_shutdown(seconds)
                 return
+            if target in {"select_table_mode", "select_table"}:
+                if not value:
+                    current = self.services.settings_store.get("select_table_mode", "replace")
+                    self.notify(f"select_table_mode is '{current}' (append|replace)", severity="information")
+                    return
+                self._set_select_table_mode(value)
+                return
 
         if dispatch_command(self, cmd, args):
             return
@@ -784,6 +791,7 @@ class SSMSTUI(
             ("Settings", ":set process_worker_warm on|off", "Warm worker on idle", ""),
             ("Settings", ":set process_worker_lazy on|off", "Lazy worker start", ""),
             ("Settings", ":set process_worker_auto_shutdown <seconds>", "Auto-shutdown worker", ""),
+            ("Settings", ":set select_table_mode append|replace", "Table SELECT behavior", "append adds to query, replace overwrites"),
             (
                 "Watchdog",
                 ":wd <ms|off>",
@@ -960,6 +968,22 @@ class SSMSTUI(
             pass
         state = "enabled" if enabled else "disabled"
         self.notify(f"Relative line numbers {state}")
+
+    def _set_select_table_mode(self, mode: str) -> None:
+        """Set how table SELECT queries are inserted into the query editor.
+
+        Args:
+            mode: 'append' to add below existing query, 'replace' to overwrite.
+        """
+        normalized = mode.strip().lower()
+        if normalized not in {"append", "replace"}:
+            self.notify("Usage: :set select_table_mode append|replace", severity="warning")
+            return
+        try:
+            self.services.settings_store.set("select_table_mode", normalized)
+        except Exception:
+            pass
+        self.notify(f"Select table mode set to {normalized}")
 
     def _set_process_worker_warm_on_idle(self, enabled: bool) -> None:
         self.services.runtime.process_worker_warm_on_idle = enabled
