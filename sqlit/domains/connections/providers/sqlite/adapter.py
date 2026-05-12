@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -120,6 +121,27 @@ class SQLiteAdapter(DatabaseAdapter):
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         """SQLite doesn't support sequences - return empty list."""
         return []
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from SQLite using PRAGMA foreign_key_list for each table."""
+        tables = self.get_tables(conn, database)
+        results: list[ForeignKeyInfo] = []
+        for _schema, table_name in tables:
+            cursor = conn.cursor()
+            quoted = self.quote_identifier(table_name)
+            cursor.execute(f"PRAGMA foreign_key_list({quoted})")
+            for row in cursor.fetchall():
+                # row: id, seq, table, from, to, on_update, on_delete, match
+                results.append(
+                    ForeignKeyInfo(
+                        constraint_name=f"fk_{table_name}_{row[3]}",
+                        source_table=table_name,
+                        source_column=row[3],
+                        target_table=row[2],
+                        target_column=row[4],
+                    )
+                )
+        return results
 
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None

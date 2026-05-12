@@ -12,7 +12,7 @@ class TreeOnDatabaseState(State):
     help_category = "Explorer"
 
     def _setup_actions(self) -> None:
-        pass  # Expanding a database now sets it as active automatically
+        self.allows("show_diagram", label="ER Diagram", help="Show ER diagram")
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
@@ -20,6 +20,14 @@ class TreeOnDatabaseState(State):
 
         left.append(DisplayBinding(key="enter", label="Use database", action="toggle_node"))
         seen.add("toggle_node")
+        left.append(
+            DisplayBinding(
+                key=resolve_display_key("show_diagram") or "S",
+                label="Diagram",
+                action="show_diagram",
+            )
+        )
+        seen.add("show_diagram")
         left.append(
             DisplayBinding(
                 key=resolve_display_key("refresh_tree") or "f",

@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from sqlit.domains.connections.app.session import ConnectionSession
-from sqlit.domains.connections.providers.adapters.base import ColumnInfo
+from sqlit.domains.connections.providers.adapters.base import ColumnInfo, ForeignKeyInfo
 from sqlit.domains.connections.providers.model import (
+    ForeignKeyInspector,
     IndexInspector,
     ProcedureInspector,
     SequenceInspector,
@@ -204,5 +205,15 @@ class ExplorerSchemaService:
         db_arg = self._resolve_db_arg(database)
         return self._run_with_retry(
             lambda: inspector.get_sequence_definition(self.session.connection, name, db_arg),
+            database,
+        )
+
+    def list_foreign_keys(self, database: str | None) -> list[ForeignKeyInfo]:
+        inspector = self.session.provider.schema_inspector
+        if not isinstance(inspector, ForeignKeyInspector):
+            return []
+        db_arg = self._resolve_db_arg(database)
+        return self._run_with_retry(
+            lambda: inspector.get_foreign_keys(self.session.connection, db_arg),
             database,
         )

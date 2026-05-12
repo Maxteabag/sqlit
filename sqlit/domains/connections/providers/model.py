@@ -116,6 +116,10 @@ class SequenceInspector(Protocol):
 
 
 @runtime_checkable
+class ForeignKeyInspector(Protocol):
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[Any]: ...
+
+
 @runtime_checkable
 class ProcedureInspector(Protocol):
     def get_procedures(self, conn: Any, database: str | None = None) -> list[Any]: ...

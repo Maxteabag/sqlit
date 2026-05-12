@@ -118,5 +118,8 @@ class UILeaderMixin:
     def action_leader_telescope_filter(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("telescope_filter")
 
+    def action_leader_show_diagram_picker(self: UINavigationMixinHost) -> None:
+        self._execute_leader_command("show_diagram_picker")
+
     def action_leader_quit(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("quit")

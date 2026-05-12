@@ -357,6 +357,111 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             tree_object_info.show_sequence_info(self, data)
             return
 
+    def action_show_diagram(self: TreeMixinHost) -> None:
+        """Show ER diagram for selected table (S key) — single table only."""
+        if not self.current_provider or not self._session:
+            return
+
+        node = self.object_tree.cursor_node
+        if not node or not node.data:
+            return
+
+        data = node.data
+        kind = self._get_node_kind(node)
+
+        if kind in ("table", "view"):
+            self._show_diagram_for_tables(data.database, [data.name])
+        elif kind == "database":
+            self._show_diagram_for_database(data.name)
+        elif kind == "folder" and data.folder_type == "tables":
+            self._show_diagram_for_database(data.database)
+        else:
+            db = None
+            if hasattr(self, "_get_effective_database"):
+                db = self._get_effective_database()
+            self._show_diagram_for_database(db)
+
+    def action_show_diagram_picker(self: TreeMixinHost) -> None:
+        """Show table picker then ER diagram (space+d leader) — always opens picker."""
+        if not self.current_provider or not self._session:
+            return
+        db = None
+        if hasattr(self, "_get_effective_database"):
+            db = self._get_effective_database()
+        self._show_diagram_for_database(db)
+
+    def _show_diagram_for_tables(self: TreeMixinHost, database: str | None, table_names: list[str]) -> None:
+        """Show diagram for specific tables only (no auto-expansion)."""
+        import asyncio
+
+        schema_service = self._get_schema_service()
+        if not schema_service:
+            self.notify("Not connected", severity="error")
+            return
+
+        async def work() -> None:
+            from sqlit.domains.diagram.app.diagram_service import build_diagram_text, fetch_diagram_data
+
+            cols, fks = await asyncio.to_thread(fetch_diagram_data, schema_service, database, table_names)
+            text = build_diagram_text(table_names, cols, fks)
+            label = ", ".join(table_names[:3])
+            if len(table_names) > 3:
+                label += f" +{len(table_names) - 3}"
+
+            from sqlit.domains.diagram.ui.diagram_screen import DiagramScreen
+
+            self.app.push_screen(DiagramScreen(text, title=f"ER Diagram: {label}"))
+
+        self.run_worker(work(), name="diagram-load", exclusive=False)
+
+    def _show_diagram_for_database(self: TreeMixinHost, database: str | None) -> None:
+        """Show table picker then diagram for a database."""
+        import asyncio
+
+        schema_service = self._get_schema_service()
+        if not schema_service:
+            self.notify("Not connected", severity="error")
+            return
+
+        async def work() -> None:
+            tables = await asyncio.to_thread(schema_service.list_folder_items, "tables", database)
+            table_names = [name for _, _schema, name in tables]
+
+            if not table_names:
+                self.notify("No tables found", severity="warning")
+                return
+
+            from sqlit.domains.diagram.ui.table_picker import DiagramTablePicker
+
+            def on_selected(selected: list[str] | None) -> None:
+                if selected:
+                    self._show_diagram_for_selected(database, selected)
+
+            self.app.push_screen(DiagramTablePicker(table_names), on_selected)
+
+        self.run_worker(work(), name="diagram-tables", exclusive=False)
+
+    def _show_diagram_for_selected(self: TreeMixinHost, database: str | None, table_names: list[str]) -> None:
+        """Generate and show diagram for selected tables."""
+        import asyncio
+
+        schema_service = self._get_schema_service()
+        if not schema_service:
+            return
+
+        async def work() -> None:
+            from sqlit.domains.diagram.app.diagram_service import build_diagram_text, fetch_diagram_data
+
+            cols, fks = await asyncio.to_thread(fetch_diagram_data, schema_service, database, table_names)
+            text = build_diagram_text(table_names, cols, fks)
+            title = f"ER Diagram ({len(table_names)} tables)"
+
+            from sqlit.domains.diagram.ui.diagram_screen import DiagramScreen
+
+            self.app.push_screen(DiagramScreen(text, title=title))
+
+        self.run_worker(work(), name="diagram-render", exclusive=False)
+
     def action_use_database(self: TreeMixinHost) -> None:
         """Toggle the selected database as the default for the current connection."""
         node = self.object_tree.cursor_node

@@ -25,6 +25,7 @@ class TreeOnFolderState(State):
             label="Delete",
             help="Delete connection folder",
         )
+        self.allows("show_diagram", label="ER Diagram", help="Show ER diagram")
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
@@ -32,6 +33,17 @@ class TreeOnFolderState(State):
 
         left.append(DisplayBinding(key="enter", label="Expand", action="toggle_node"))
         seen.add("toggle_node")
+
+        if app.tree_node_kind == "folder":
+            left.append(
+                DisplayBinding(
+                    key=resolve_display_key("show_diagram") or "S",
+                    label="Diagram",
+                    action="show_diagram",
+                )
+            )
+            seen.add("show_diagram")
+
         left.append(
             DisplayBinding(
                 key=resolve_display_key("refresh_tree") or "f",

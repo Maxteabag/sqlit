@@ -196,6 +196,7 @@ class DefaultKeymapProvider(KeymapProvider):
             # Actions
             LeaderCommandDef("z", "cancel_operation", "Cancel", "Actions", guard="query_executing"),
             LeaderCommandDef("t", "change_theme", "Change Theme", "Actions"),
+            LeaderCommandDef("d", "show_diagram_picker", "ER Diagram", "Actions", guard="has_connection"),
             LeaderCommandDef("h", "show_help", "Help", "Actions"),
             LeaderCommandDef("space", "telescope", "Telescope", "Actions"),
             LeaderCommandDef("slash", "telescope_filter", "Telescope Search", "Actions"),
@@ -309,6 +310,7 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("v", "exit_tree_visual_mode", "tree_visual", primary=False),
             ActionKeyDef("escape", "clear_connection_selection", "tree"),
             ActionKeyDef("s", "select_table", "tree"),
+            ActionKeyDef("S", "show_diagram", "tree"),
             ActionKeyDef("f", "refresh_tree", "tree"),
             ActionKeyDef("R", "refresh_tree", "tree", primary=False),
             ActionKeyDef("e", "edit_connection", "tree"),

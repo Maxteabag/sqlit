@@ -69,6 +69,19 @@ class SequenceInfo:
     name: str
 
 
+@dataclass
+class ForeignKeyInfo:
+    """Information about a foreign key relationship."""
+
+    constraint_name: str
+    source_table: str
+    source_column: str
+    target_table: str
+    target_column: str
+    source_schema: str = ""
+    target_schema: str = ""
+
+
 # Type alias for table/view info: (schema, name)
 TableInfo = tuple[str, str]
 
@@ -343,6 +356,14 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get list of foreign keys in the database.
+
+        Returns:
+            List of ForeignKeyInfo objects describing FK relationships.
+        """
+        return []
+
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None
     ) -> dict[str, Any]:
@@ -518,6 +539,7 @@ class CursorBasedAdapter(DatabaseAdapter):
 __all__ = [
     "ColumnInfo",
     "DatabaseAdapter",
+    "ForeignKeyInfo",
     "IndexInfo",
     "SequenceInfo",
     "TableInfo",

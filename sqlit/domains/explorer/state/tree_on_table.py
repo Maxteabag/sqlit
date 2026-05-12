@@ -13,6 +13,7 @@ class TreeOnTableState(State):
 
     def _setup_actions(self) -> None:
         self.allows("select_table", label="Select TOP 100", help="Select TOP 100 (table/view)")
+        self.allows("show_diagram", label="ER Diagram", help="Show ER diagram")
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
@@ -28,6 +29,14 @@ class TreeOnTableState(State):
             )
         )
         seen.add("select_table")
+        left.append(
+            DisplayBinding(
+                key=resolve_display_key("show_diagram") or "S",
+                label="Diagram",
+                action="show_diagram",
+            )
+        )
+        seen.add("show_diagram")
         left.append(
             DisplayBinding(
                 key=resolve_display_key("refresh_tree") or "f",
