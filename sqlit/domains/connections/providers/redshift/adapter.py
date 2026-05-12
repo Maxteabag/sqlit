@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -204,6 +205,42 @@ class RedshiftAdapter(CursorBasedAdapter):
             "ORDER BY proname"
         )
         return [row[0] for row in cursor.fetchall()]
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from Redshift."""
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT "
+            "  tc.constraint_name, "
+            "  tc.table_schema AS source_schema, "
+            "  tc.table_name AS source_table, "
+            "  kcu.column_name AS source_column, "
+            "  ccu.table_schema AS target_schema, "
+            "  ccu.table_name AS target_table, "
+            "  ccu.column_name AS target_column "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "  AND tc.table_schema = kcu.table_schema "
+            "JOIN information_schema.constraint_column_usage ccu "
+            "  ON ccu.constraint_name = tc.constraint_name "
+            "  AND ccu.table_schema = tc.table_schema "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' "
+            "AND tc.table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_internal') "
+            "ORDER BY tc.table_name, tc.constraint_name"
+        )
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0],
+                source_schema=row[1],
+                source_table=row[2],
+                source_column=row[3],
+                target_schema=row[4],
+                target_table=row[5],
+                target_column=row[6],
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Redshift doesn't have traditional indexes."""

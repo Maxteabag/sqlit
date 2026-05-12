@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -255,6 +256,41 @@ class SQLServerAdapter(DatabaseAdapter):
             "WHERE ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME"
         )
         return [row[0] for row in cursor.fetchall()]
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from SQL Server."""
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT "
+            "  fk.name, "
+            "  sch1.name, "
+            "  tp.name, "
+            "  cp.name, "
+            "  sch2.name, "
+            "  tr.name, "
+            "  cr.name "
+            "FROM sys.foreign_keys fk "
+            "JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id "
+            "JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id "
+            "JOIN sys.columns cp ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id "
+            "JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id "
+            "JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id "
+            "JOIN sys.schemas sch1 ON tp.schema_id = sch1.schema_id "
+            "JOIN sys.schemas sch2 ON tr.schema_id = sch2.schema_id "
+            "ORDER BY tp.name, fk.name"
+        )
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0],
+                source_schema=row[1],
+                source_table=row[2],
+                source_column=row[3],
+                target_schema=row[4],
+                target_table=row[5],
+                target_column=row[6],
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes from SQL Server."""

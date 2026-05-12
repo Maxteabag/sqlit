@@ -440,6 +440,48 @@ class BaseDatabaseTests(DockerDiscoveryTests, ABC):
                 f"Index should be on test_users table, got {test_index.table_name}"
             )
 
+    def test_get_foreign_keys(self, request):
+        """Test that adapter correctly retrieves foreign keys.
+
+        This tests that get_foreign_keys returns ForeignKeyInfo objects for
+        foreign keys created on the test tables. The test fixture should create
+        a test_orders table with a FK from user_id to test_users(id).
+        """
+        from sqlit.domains.connections.app.session import ConnectionSession
+        from sqlit.domains.connections.providers.adapters.base import ForeignKeyInfo
+        from sqlit.domains.connections.providers.registry import get_adapter
+        from sqlit.domains.connections.store.connections import load_connections
+
+        connection_name = request.getfixturevalue(self.config.connection_fixture)
+        connections = load_connections()
+        config = next((c for c in connections if c.name == connection_name), None)
+        assert config is not None, f"Connection {connection_name} not found"
+
+        with ConnectionSession.create(config, get_adapter) as session:
+            foreign_keys = session.adapter.get_foreign_keys(
+                session.connection,
+                database=config.database if session.adapter.supports_multiple_databases else None,
+            )
+
+            assert isinstance(foreign_keys, list), "get_foreign_keys should return a list"
+            for fk in foreign_keys:
+                assert isinstance(fk, ForeignKeyInfo), f"Expected ForeignKeyInfo, got {type(fk)}"
+
+            test_fk = next(
+                (fk for fk in foreign_keys if "user_id" in fk.source_column.lower()),
+                None,
+            )
+            assert test_fk is not None, (
+                f"FK on user_id not found. "
+                f"Found FKs: {[(fk.source_table, fk.source_column) for fk in foreign_keys]}"
+            )
+            assert "test_orders" in test_fk.source_table.lower(), (
+                f"FK source should be test_orders, got {test_fk.source_table}"
+            )
+            assert "test_users" in test_fk.target_table.lower(), (
+                f"FK target should be test_users, got {test_fk.target_table}"
+            )
+
     def test_get_triggers(self, request):
         """Test that adapter correctly retrieves triggers.
 

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -217,6 +218,37 @@ class MariaDBAdapter(MySQLBaseAdapter):
                 "ORDER BY routine_name"
             )
         return [row[0] for row in cursor.fetchall()]
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from MariaDB (uses ? placeholders)."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT constraint_name, table_name, column_name, "
+                "referenced_table_name, referenced_column_name "
+                "FROM information_schema.key_column_usage "
+                "WHERE table_schema = ? AND referenced_table_name IS NOT NULL "
+                "ORDER BY table_name, constraint_name",
+                (database,),
+            )
+        else:
+            cursor.execute(
+                "SELECT constraint_name, table_name, column_name, "
+                "referenced_table_name, referenced_column_name "
+                "FROM information_schema.key_column_usage "
+                "WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL "
+                "ORDER BY table_name, constraint_name"
+            )
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0],
+                source_table=row[1],
+                source_column=row[2],
+                target_table=row[3],
+                target_column=row[4],
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes from MariaDB (uses ? placeholders)."""

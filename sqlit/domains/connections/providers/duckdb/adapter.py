@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -152,6 +153,45 @@ class DuckDBAdapter(DatabaseAdapter):
         )
         return [
             IndexInfo(name=row[0], table_name=row[1], is_unique=row[2])
+            for row in result.fetchall()
+        ]
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from DuckDB."""
+        result = conn.execute(
+            "SELECT "
+            "  tc.constraint_name, "
+            "  tc.table_schema AS source_schema, "
+            "  tc.table_name AS source_table, "
+            "  kcu.column_name AS source_column, "
+            "  kcu2.table_schema AS target_schema, "
+            "  kcu2.table_name AS target_table, "
+            "  kcu2.column_name AS target_column "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "  AND tc.table_schema = kcu.table_schema "
+            "JOIN information_schema.referential_constraints rc "
+            "  ON tc.constraint_name = rc.constraint_name "
+            "  AND tc.constraint_schema = rc.constraint_schema "
+            "JOIN information_schema.key_column_usage kcu2 "
+            "  ON rc.unique_constraint_name = kcu2.constraint_name "
+            "  AND rc.unique_constraint_schema = kcu2.constraint_schema "
+            "  AND kcu.ordinal_position = kcu2.ordinal_position "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' "
+            "AND tc.table_schema NOT IN ('pg_catalog', 'information_schema') "
+            "ORDER BY tc.table_name, tc.constraint_name"
+        )
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0],
+                source_schema=row[1],
+                source_table=row[2],
+                source_column=row[3],
+                target_schema=row[4],
+                target_table=row[5],
+                target_column=row[6],
+            )
             for row in result.fetchall()
         ]
 

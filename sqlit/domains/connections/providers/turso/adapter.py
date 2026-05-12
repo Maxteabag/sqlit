@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -131,6 +132,25 @@ class TursoAdapter(DatabaseAdapter):
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Turso doesn't support stored procedures - return empty list."""
         return []
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from Turso using PRAGMA foreign_key_list."""
+        tables = self.get_tables(conn, database)
+        results: list[ForeignKeyInfo] = []
+        for _schema, table_name in tables:
+            quoted = self.quote_identifier(table_name)
+            rows = conn.execute(f"PRAGMA foreign_key_list({quoted})").fetchall()
+            for row in rows:
+                results.append(
+                    ForeignKeyInfo(
+                        constraint_name=f"fk_{table_name}_{row[3]}",
+                        source_table=table_name,
+                        source_column=row[3],
+                        target_table=row[2],
+                        target_column=row[4],
+                    )
+                )
+        return results
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes from Turso (SQLite-compatible)."""

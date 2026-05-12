@@ -54,6 +54,7 @@ def postgres_db(postgres_server_ready: bool) -> str:
         conn.autocommit = True
         cursor = conn.cursor()
 
+        cursor.execute("DROP TABLE IF EXISTS test_orders CASCADE")
         cursor.execute("DROP TABLE IF EXISTS test_users CASCADE")
         cursor.execute("DROP TABLE IF EXISTS test_products CASCADE")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")
@@ -78,6 +79,15 @@ def postgres_db(postgres_server_ready: bool) -> str:
         cursor.execute("""
             CREATE VIEW test_user_emails AS
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
+        """)
+
+        cursor.execute("""
+            CREATE TABLE test_orders (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                CONSTRAINT fk_orders_user_id FOREIGN KEY (user_id) REFERENCES test_users(id)
+            )
         """)
 
         # Create test index for integration tests
@@ -132,6 +142,7 @@ def postgres_db(postgres_server_ready: bool) -> str:
         )
         conn.autocommit = True
         cursor = conn.cursor()
+        cursor.execute("DROP TABLE IF EXISTS test_orders CASCADE")
         cursor.execute("DROP TABLE IF EXISTS test_users CASCADE")
         cursor.execute("DROP TABLE IF EXISTS test_products CASCADE")
         cursor.execute("DROP VIEW IF EXISTS test_user_emails")

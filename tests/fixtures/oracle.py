@@ -86,6 +86,15 @@ def oracle_db(oracle_server_ready: bool) -> str:
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
+        cursor.execute("""
+            CREATE TABLE test_orders (
+                id NUMBER PRIMARY KEY,
+                user_id NUMBER NOT NULL,
+                amount NUMBER(10,2) NOT NULL,
+                CONSTRAINT fk_orders_user_id FOREIGN KEY (user_id) REFERENCES test_users(id)
+            )
+        """)
+
         cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
 
         cursor.execute("""
@@ -141,6 +150,7 @@ def oracle_db(oracle_server_ready: bool) -> str:
 
         for stmt in [
             "DROP VIEW test_user_emails",
+            "DROP TABLE test_orders CASCADE CONSTRAINTS",
             "DROP TABLE test_users CASCADE CONSTRAINTS",
             "DROP TABLE test_products CASCADE CONSTRAINTS",
             "DROP SEQUENCE test_sequence",

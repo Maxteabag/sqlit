@@ -86,6 +86,15 @@ def firebird_db(firebird_server_ready: bool) -> str:
             SELECT id, name, email FROM test_users WHERE email IS NOT NULL
         """)
 
+        cursor.execute("""
+            RECREATE TABLE test_orders (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                CONSTRAINT fk_orders_user_id FOREIGN KEY (user_id) REFERENCES test_users(id)
+            )
+        """)
+
         cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
 
         cursor.execute("""
@@ -135,6 +144,7 @@ def firebird_db(firebird_server_ready: bool) -> str:
     try:
         for cleanup in [
             "DROP VIEW test_user_emails",
+            "DROP TABLE test_orders",
             "DROP TABLE test_users",
             "DROP TABLE test_products",
             "DROP TRIGGER trg_test_users_audit",

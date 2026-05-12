@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -142,6 +143,30 @@ class HanaAdapter(CursorBasedAdapter):
             "ORDER BY procedure_name"
         )
         return [row[0] for row in cursor.fetchall()]
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from SAP HANA."""
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT constraint_name, schema_name, table_name, column_name, "
+            "referenced_schema_name, referenced_table_name, referenced_column_name "
+            "FROM sys.referential_constraints "
+            "WHERE schema_name NOT LIKE '_SYS%' "
+            "AND schema_name NOT IN ('SYS', 'SYSTEM') "
+            "ORDER BY table_name, constraint_name"
+        )
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0],
+                source_schema=row[1],
+                source_table=row[2],
+                source_column=row[3],
+                target_schema=row[4],
+                target_table=row[5],
+                target_column=row[6],
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         cursor = conn.cursor()

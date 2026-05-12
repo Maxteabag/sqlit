@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -260,6 +261,36 @@ class SpannerAdapter(CursorBasedAdapter):
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Spanner doesn't support stored procedures."""
         return []
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from Spanner INFORMATION_SCHEMA."""
+        query = """
+            SELECT tc.CONSTRAINT_NAME, tc.TABLE_NAME,
+                   kcu.COLUMN_NAME,
+                   ccu.TABLE_NAME, ccu.COLUMN_NAME
+            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+            JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+              ON tc.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+              ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ccu
+              ON rc.UNIQUE_CONSTRAINT_NAME = ccu.CONSTRAINT_NAME
+              AND kcu.ORDINAL_POSITION = ccu.ORDINAL_POSITION
+            WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
+              AND tc.TABLE_SCHEMA = ''
+            ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME
+        """
+        rows = self._execute_readonly(conn, query)
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0],
+                source_table=row[1],
+                source_column=row[2],
+                target_table=row[3],
+                target_column=row[4],
+            )
+            for row in rows
+        ]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get list of indexes from INFORMATION_SCHEMA."""

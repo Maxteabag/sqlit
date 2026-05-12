@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -165,6 +166,31 @@ class FirebirdAdapter(CursorBasedAdapter):
             "is_unique": is_unique,
             "definition": " ".join(definition_parts),
         }
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from Firebird."""
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT rc.rdb$constraint_name, rc.rdb$relation_name, sg.rdb$field_name, "
+            "rfc.rdb$relation_name, sg2.rdb$field_name "
+            "FROM rdb$relation_constraints rc "
+            "JOIN rdb$ref_constraints ref ON rc.rdb$constraint_name = ref.rdb$constraint_name "
+            "JOIN rdb$relation_constraints rfc ON ref.rdb$const_name_uq = rfc.rdb$constraint_name "
+            "JOIN rdb$index_segments sg ON rc.rdb$index_name = sg.rdb$index_name "
+            "JOIN rdb$index_segments sg2 ON rfc.rdb$index_name = sg2.rdb$index_name "
+            "AND sg.rdb$field_position = sg2.rdb$field_position "
+            "WHERE rc.rdb$constraint_type = 'FOREIGN KEY'"
+        )
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0].rstrip(),
+                source_table=row[1].rstrip(),
+                source_column=row[2].rstrip(),
+                target_table=row[3].rstrip(),
+                target_column=row[4].rstrip(),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         cursor = conn.cursor()

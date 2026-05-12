@@ -45,6 +45,15 @@ def sqlite_db(sqlite_db_path: Path) -> Path:
         SELECT id, name, email FROM test_users WHERE email IS NOT NULL
     """)
 
+    cursor.execute("""
+        CREATE TABLE test_orders (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            CONSTRAINT fk_orders_user_id FOREIGN KEY (user_id) REFERENCES test_users(id)
+        )
+    """)
+
     # Create test index for integration tests
     cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
 

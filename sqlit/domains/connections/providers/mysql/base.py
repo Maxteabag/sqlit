@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -147,6 +148,37 @@ class MySQLBaseAdapter(CursorBasedAdapter):
         if database:
             return f"SELECT * FROM `{database}`.`{table}` LIMIT {limit}"
         return f"SELECT * FROM `{table}` LIMIT {limit}"
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from MySQL."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT constraint_name, table_name, column_name, "
+                "referenced_table_name, referenced_column_name "
+                "FROM information_schema.key_column_usage "
+                "WHERE table_schema = %s AND referenced_table_name IS NOT NULL "
+                "ORDER BY table_name, constraint_name",
+                (database,),
+            )
+        else:
+            cursor.execute(
+                "SELECT constraint_name, table_name, column_name, "
+                "referenced_table_name, referenced_column_name "
+                "FROM information_schema.key_column_usage "
+                "WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL "
+                "ORDER BY table_name, constraint_name"
+            )
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0],
+                source_table=row[1],
+                source_column=row[2],
+                target_table=row[3],
+                target_column=row[4],
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes from MySQL/MariaDB."""

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -150,6 +151,34 @@ class Db2Adapter(CursorBasedAdapter):
             "ORDER BY procname"
         )
         return [row[0] for row in cursor.fetchall()]
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from DB2."""
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT r.constname, r.tabschema, r.tabname, fk.colname, "
+            "r.reftabschema, r.reftabname, pk.colname "
+            "FROM syscat.references r "
+            "JOIN syscat.keycoluse fk ON r.constname = fk.constname "
+            "AND r.tabschema = fk.tabschema AND r.tabname = fk.tabname "
+            "JOIN syscat.keycoluse pk ON r.refkeyname = pk.constname "
+            "AND r.reftabschema = pk.tabschema AND r.reftabname = pk.tabname "
+            "AND fk.colseq = pk.colseq "
+            "WHERE r.tabschema NOT LIKE 'SYS%' "
+            "ORDER BY r.tabname, r.constname"
+        )
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0],
+                source_schema=row[1],
+                source_table=row[2],
+                source_column=row[3],
+                target_schema=row[4],
+                target_table=row[5],
+                target_column=row[6],
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         cursor = conn.cursor()

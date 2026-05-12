@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     TableInfo,
     TriggerInfo,
@@ -208,6 +209,40 @@ class TeradataAdapter(CursorBasedAdapter):
                 "ORDER BY TableName"
             )
         return [row[0] for row in cursor.fetchall()]
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from Teradata."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "lock row for access "
+                "SELECT IndexName, ChildTable, ChildKeyColumn, "
+                "ParentTable, ParentKeyColumn, ChildDB, ParentDB "
+                "FROM DBC.All_RI_ChildrenV "
+                "WHERE ChildDB = ? "
+                "ORDER BY ChildTable, IndexName",
+                (database,),
+            )
+        else:
+            cursor.execute(
+                "lock row for access "
+                "SELECT IndexName, ChildTable, ChildKeyColumn, "
+                "ParentTable, ParentKeyColumn, ChildDB, ParentDB "
+                "FROM DBC.All_RI_ChildrenV "
+                "ORDER BY ChildTable, IndexName"
+            )
+        return [
+            ForeignKeyInfo(
+                constraint_name=row[0],
+                source_table=row[1],
+                source_column=row[2],
+                target_table=row[3],
+                target_column=row[4],
+                source_schema=row[5],
+                target_schema=row[6],
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         cursor = conn.cursor()

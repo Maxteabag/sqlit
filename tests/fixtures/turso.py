@@ -86,6 +86,7 @@ def _setup_turso_test_tables(client) -> None:
     client.execute("DROP TRIGGER IF EXISTS trg_test_users_audit")
     client.execute("DROP INDEX IF EXISTS idx_test_users_email")
     client.execute("DROP VIEW IF EXISTS test_user_emails")
+    client.execute("DROP TABLE IF EXISTS test_orders")
     client.execute("DROP TABLE IF EXISTS test_users")
     client.execute("DROP TABLE IF EXISTS test_products")
 
@@ -104,6 +105,15 @@ def _setup_turso_test_tables(client) -> None:
             name TEXT NOT NULL,
             price REAL NOT NULL,
             stock INTEGER DEFAULT 0
+        )
+    """)
+
+    client.execute("""
+        CREATE TABLE test_orders (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            CONSTRAINT fk_orders_user_id FOREIGN KEY (user_id) REFERENCES test_users(id)
         )
     """)
 
@@ -149,6 +159,7 @@ def _cleanup_turso_test_tables(client) -> None:
     client.execute("DROP TRIGGER IF EXISTS trg_test_users_audit")
     client.execute("DROP INDEX IF EXISTS idx_test_users_email")
     client.execute("DROP VIEW IF EXISTS test_user_emails")
+    client.execute("DROP TABLE IF EXISTS test_orders")
     client.execute("DROP TABLE IF EXISTS test_users")
     client.execute("DROP TABLE IF EXISTS test_products")
     client.commit()

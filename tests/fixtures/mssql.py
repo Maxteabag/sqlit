@@ -104,6 +104,15 @@ def mssql_db(mssql_server_ready: bool) -> str:
             END
         """)
 
+        cursor.execute("""
+            CREATE TABLE test_orders (
+                id INT PRIMARY KEY,
+                user_id INT NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                CONSTRAINT fk_orders_user_id FOREIGN KEY (user_id) REFERENCES test_users(id)
+            )
+        """)
+
         # Create test index for integration tests
         cursor.execute("CREATE INDEX idx_test_users_email ON test_users(email)")
 

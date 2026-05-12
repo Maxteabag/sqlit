@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -164,6 +165,34 @@ class OracleAdapter(DatabaseAdapter):
                 "SELECT object_name FROM user_procedures " "WHERE object_type = 'PROCEDURE' ORDER BY object_name"
             )
             return [row[0] for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+
+    def get_foreign_keys(self, conn: Any, database: str | None = None) -> list[ForeignKeyInfo]:
+        """Get foreign keys from Oracle."""
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT c.constraint_name, c.table_name, cc.column_name, "
+                "r.table_name, rc.column_name "
+                "FROM user_constraints c "
+                "JOIN user_cons_columns cc ON c.constraint_name = cc.constraint_name "
+                "JOIN user_constraints r ON c.r_constraint_name = r.constraint_name "
+                "JOIN user_cons_columns rc ON r.constraint_name = rc.constraint_name "
+                "AND cc.position = rc.position "
+                "WHERE c.constraint_type = 'R' "
+                "ORDER BY c.table_name, c.constraint_name"
+            )
+            return [
+                ForeignKeyInfo(
+                    constraint_name=row[0],
+                    source_table=row[1],
+                    source_column=row[2],
+                    target_table=row[3],
+                    target_column=row[4],
+                )
+                for row in cursor.fetchall()
+            ]
         finally:
             cursor.close()
 
