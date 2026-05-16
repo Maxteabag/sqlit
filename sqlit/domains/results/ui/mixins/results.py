@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlit.shared.ui.protocols import ResultsMixinHost
@@ -19,6 +20,12 @@ class ResultsMixin:
     _tooltip_cell_coord: tuple[int, int] | None = None
     _tooltip_showing: bool = False
     _tooltip_timer: Any | None = None
+    _results_visual_anchor_row: int | None = None
+    _results_visual_selected_rows: set[int] = set()
+    _DELETE_QUERY_RE = re.compile(
+        r"^\s*DELETE\s+FROM\s+(?P<table>.+?)\s+WHERE\s+(?P<where>.+?)\s*;\s*$",
+        re.IGNORECASE | re.DOTALL,
+    )
 
     def _schedule_results_timer(self: ResultsMixinHost, delay_s: float, callback: Any) -> Any | None:
         set_timer = getattr(self, "set_timer", None)
@@ -269,6 +276,61 @@ class ResultsMixin:
             return
 
         self._show_cell_tooltip(table, cursor_coord, value)
+
+    def action_enter_results_visual_mode(self: ResultsMixinHost) -> None:
+        """Enter/exit results visual mode and mark rows."""
+        table, _columns, _rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+        if self._results_visual_anchor_row is None:
+            try:
+                anchor_row = table.cursor_coordinate.row
+            except Exception:
+                anchor_row = table.cursor_row
+            try:
+                table.add_class("results-visual-active")
+            except Exception:
+                pass
+            self._results_visual_anchor_row = anchor_row
+            self._results_visual_selected_rows = {anchor_row}
+            self._apply_results_visual_highlight(table)
+            self.notify("Results visual mode: j/k markieren, v beendet, D erstellt DELETE")
+            return
+        self.action_exit_results_visual_mode()
+
+    def action_exit_results_visual_mode(self: ResultsMixinHost) -> None:
+        """Exit results visual mode and clear marked rows."""
+        table, _columns, _rows, _stacked = self._get_active_results_context()
+        if table:
+            try:
+                table.remove_class("results-visual-active")
+            except Exception:
+                pass
+            self._results_visual_selected_rows.clear()
+            self._apply_results_visual_highlight(table)
+        self._results_visual_anchor_row = None
+        self.notify("Results visual mode beendet")
+
+    def _update_results_visual_selection(self: ResultsMixinHost, current_row: int) -> None:
+        anchor = self._results_visual_anchor_row
+        if anchor is None:
+            return
+        start = min(anchor, current_row)
+        end = max(anchor, current_row)
+        self._results_visual_selected_rows = set(range(start, end + 1))
+        table, _columns, _rows, _stacked = self._get_active_results_context()
+        if table:
+            self._apply_results_visual_highlight(table)
+
+    def _apply_results_visual_highlight(self: ResultsMixinHost, table: SqlitDataTable) -> None:
+        """Apply/remove custom visual row highlight without changing cursor behavior."""
+        try:
+            table.visual_selected_rows = set(self._results_visual_selected_rows)
+            table.visual_selection_style = "on #5b1f24"
+            table.refresh()
+        except Exception:
+            pass
 
     def action_view_cell_full(self: ResultsMixinHost) -> None:
         """View the full value of the selected cell inline."""
@@ -654,12 +716,22 @@ class ResultsMixin:
         table, _columns, _rows, _stacked = self._get_active_results_context()
         if table and table.has_focus:
             table.action_cursor_down()
+            if self._results_visual_anchor_row is not None:
+                try:
+                    self._update_results_visual_selection(table.cursor_coordinate.row)
+                except Exception:
+                    pass
 
     def action_results_cursor_up(self: ResultsMixinHost) -> None:
         """Move results cursor up (vim k)."""
         table, _columns, _rows, _stacked = self._get_active_results_context()
         if table and table.has_focus:
             table.action_cursor_up()
+            if self._results_visual_anchor_row is not None:
+                try:
+                    self._update_results_visual_selection(table.cursor_coordinate.row)
+                except Exception:
+                    pass
 
     def action_results_cursor_right(self: ResultsMixinHost) -> None:
         """Move results cursor right (vim l)."""
@@ -778,74 +850,9 @@ class ResultsMixin:
 
     def action_delete_row(self: ResultsMixinHost) -> None:
         """Generate a DELETE query for the selected row and enter insert mode."""
-        table, columns, _rows, _stacked = self._get_active_results_context()
-        if not table or table.row_count <= 0:
-            self.notify("No results", severity="warning")
+        query, _table_name, _where_clause = self._build_delete_query_for_active_row()
+        if not query:
             return
-
-        if not columns:
-            self.notify("No column info", severity="warning")
-            return
-
-        try:
-            cursor_row, _cursor_col = table.cursor_coordinate
-            row_values = table.get_row_at(cursor_row)
-        except Exception:
-            return
-
-        # Format value for SQL
-        def sql_value(v: object) -> str:
-            if v is None:
-                return "NULL"
-            if isinstance(v, bool):
-                return "TRUE" if v else "FALSE"
-            if isinstance(v, int | float):
-                return str(v)
-            # String - escape single quotes
-            return "'" + str(v).replace("'", "''") + "'"
-
-        # Get table name and primary key columns
-        table_name = "<table>"
-        pk_column_names: set[str] = set()
-        table_info = self._get_active_results_table_info(table, _stacked)
-        if table_info:
-            table_name = table_info.get("name", table_name)
-            # Get PK columns from column info
-            for col in table_info.get("columns", []):
-                if col.is_primary_key:
-                    pk_column_names.add(self._normalize_column_name(col.name))
-
-        # Build WHERE clause - prefer PK columns, fall back to all columns
-        where_parts = []
-        for i, col in enumerate(columns):
-            if i < len(row_values):
-                # If we have PK info, only use PK columns; otherwise use all columns
-                if pk_column_names and self._normalize_column_name(col) not in pk_column_names:
-                    continue
-                val = row_values[i]
-                if val is None:
-                    where_parts.append(f"{col} IS NULL")
-                else:
-                    where_parts.append(f"{col} = {sql_value(val)}")
-
-        # If no where parts (no PKs matched result columns), fall back to all columns
-        if not where_parts:
-            for i, col in enumerate(columns):
-                if i < len(row_values):
-                    val = row_values[i]
-                    if val is None:
-                        where_parts.append(f"{col} IS NULL")
-                    else:
-                        where_parts.append(f"{col} = {sql_value(val)}")
-
-        if not where_parts:
-            self.notify("No row values", severity="warning")
-            return
-
-        where_clause = " AND ".join(where_parts)
-
-        # Generate DELETE query for the row
-        query = f"DELETE FROM {table_name} WHERE {where_clause};"
 
         # Set query and switch to insert mode
         self._suppress_autocomplete_once = True
@@ -857,6 +864,131 @@ class ResultsMixin:
         # Focus query editor but keep NORMAL mode (no INSERT for deletes)
         self.action_focus_query()
         self._update_footer_bindings()
+
+    def action_append_delete_row(self: ResultsMixinHost) -> None:
+        """Append selected row to existing DELETE WHERE via OR, or add a new DELETE."""
+        query, table_name, where_clause = self._build_delete_query_for_active_row()
+        if not query or not table_name or not where_clause:
+            return
+
+        if self._results_visual_anchor_row is not None and self._results_visual_selected_rows:
+            table, columns, _rows, _stacked = self._get_active_results_context()
+            if not table or not columns:
+                return
+            table_info = self._get_active_results_table_info(table, _stacked)
+            pk_column_names: set[str] = set()
+            if table_info:
+                for col in table_info.get("columns", []):
+                    if col.is_primary_key:
+                        pk_column_names.add(self._normalize_column_name(col.name))
+            where_clauses: list[str] = []
+            for row_idx in sorted(self._results_visual_selected_rows):
+                if row_idx < 0 or row_idx >= table.row_count:
+                    continue
+                try:
+                    row_values = tuple(table.get_row_at(row_idx))
+                except Exception:
+                    continue
+                row_where = self._build_where_clause_for_row(columns, row_values, pk_column_names)
+                if row_where:
+                    where_clauses.append(f"({row_where})")
+            if not where_clauses:
+                self.notify("Keine markierten Zeilen", severity="warning")
+                return
+            where_clause = " OR ".join(where_clauses)
+            query = f"DELETE FROM {table_name} WHERE {where_clause};"
+
+        existing = self.query_input.text.strip()
+        if not existing:
+            next_query = query
+        else:
+            match = self._DELETE_QUERY_RE.match(existing)
+            if match and self._normalize_sql_identifier(match.group("table")) == self._normalize_sql_identifier(table_name):
+                existing_where = match.group("where").strip()
+                next_query = f"DELETE FROM {table_name} WHERE ({existing_where}) OR ({where_clause});"
+            else:
+                separator = "\n\n" if not existing.endswith(";") else "\n"
+                next_query = f"{existing}{separator}{query}"
+
+        self._suppress_autocomplete_once = True
+        self.query_input.text = next_query
+        lines = next_query.split("\n")
+        self.query_input.cursor_location = (len(lines) - 1, len(lines[-1]) if lines else 0)
+        self.action_focus_query()
+        self._update_footer_bindings()
+
+    def _normalize_sql_identifier(self: ResultsMixinHost, identifier: str) -> str:
+        return " ".join(identifier.split()).strip().lower()
+
+    def _sql_value(self: ResultsMixinHost, value: object) -> str:
+        if value is None:
+            return "NULL"
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, int | float):
+            return str(value)
+        return "'" + str(value).replace("'", "''") + "'"
+
+    def _build_where_clause_for_row(
+        self: ResultsMixinHost,
+        columns: list[str],
+        row_values: tuple[Any, ...],
+        pk_column_names: set[str],
+    ) -> str:
+        where_parts: list[str] = []
+        for i, col in enumerate(columns):
+            if i >= len(row_values):
+                continue
+            if pk_column_names and self._normalize_column_name(col) not in pk_column_names:
+                continue
+            val = row_values[i]
+            if val is None:
+                where_parts.append(f"{col} IS NULL")
+            else:
+                where_parts.append(f"{col} = {self._sql_value(val)}")
+
+        if not where_parts:
+            for i, col in enumerate(columns):
+                if i >= len(row_values):
+                    continue
+                val = row_values[i]
+                if val is None:
+                    where_parts.append(f"{col} IS NULL")
+                else:
+                    where_parts.append(f"{col} = {self._sql_value(val)}")
+
+        return " AND ".join(where_parts)
+
+    def _build_delete_query_for_active_row(self: ResultsMixinHost) -> tuple[str | None, str | None, str | None]:
+        table, columns, _rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return None, None, None
+        if not columns:
+            self.notify("No column info", severity="warning")
+            return None, None, None
+
+        try:
+            cursor_row, _cursor_col = table.cursor_coordinate
+            row_values = table.get_row_at(cursor_row)
+        except Exception:
+            return None, None, None
+
+        table_name = "<table>"
+        pk_column_names: set[str] = set()
+        table_info = self._get_active_results_table_info(table, _stacked)
+        if table_info:
+            table_name = table_info.get("name", table_name)
+            for col in table_info.get("columns", []):
+                if col.is_primary_key:
+                    pk_column_names.add(self._normalize_column_name(col.name))
+
+        where_clause = self._build_where_clause_for_row(columns, tuple(row_values), pk_column_names)
+        if not where_clause:
+            self.notify("No row values", severity="warning")
+            return None, None, None
+
+        return f"DELETE FROM {table_name} WHERE {where_clause};", table_name, where_clause
 
     def action_edit_cell(self: ResultsMixinHost) -> None:
         """Generate an UPDATE query for the selected cell and enter insert mode."""

@@ -27,6 +27,35 @@
         background: $success 30%;
     }
 
+    /* Dezent rote Markierung für Results-Visual-Mode (mehrere Zeilen markieren) */
+    DataTable.results-visual-active > .datatable--selectrange,
+    SqlitDataTable.results-visual-active > .datatable--selectrange,
+    #results-area DataTable.results-visual-active:focus > .datatable--selectrange,
+    #results-area SqlitDataTable.results-visual-active:focus > .datatable--selectrange {
+        background: $error 18%;
+        color: $text;
+    }
+
+    DataTable.results-visual-active > .datatable--cursor,
+    SqlitDataTable.results-visual-active > .datatable--cursor,
+    #results-area DataTable.results-visual-active:focus > .datatable--cursor,
+    #results-area SqlitDataTable.results-visual-active:focus > .datatable--cursor {
+        background: $error 22%;
+        color: $text;
+    }
+
+    DataTable.results-visual-active > .datatable--fixed-cursor,
+    DataTable.results-visual-active > .datatable--header-cursor,
+    SqlitDataTable.results-visual-active > .datatable--fixed-cursor,
+    SqlitDataTable.results-visual-active > .datatable--header-cursor,
+    #results-area DataTable.results-visual-active:focus > .datatable--fixed-cursor,
+    #results-area DataTable.results-visual-active:focus > .datatable--header-cursor,
+    #results-area SqlitDataTable.results-visual-active:focus > .datatable--fixed-cursor,
+    #results-area SqlitDataTable.results-visual-active:focus > .datatable--header-cursor {
+        background: $error 22%;
+        color: $text;
+    }
+
     DataTable.flash-all {
         border: solid $success 30%;
     }

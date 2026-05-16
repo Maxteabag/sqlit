@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from sqlit.domains.connections.providers.adapters.base import ColumnInfo
 from sqlit.domains.shell.app.main import SSMSTUI
 
 from ..mocks import MockConnectionStore, MockSettingsStore, build_test_services
@@ -197,3 +198,74 @@ class TestResultsVimMotions:
 
             assert not isinstance(app.screen, ColumnPickerScreen)
             assert app.results_table.cursor_coordinate.column == 1
+
+
+class TestResultsDeleteGeneration:
+    @pytest.mark.asyncio
+    async def test_d_generates_delete_for_current_row(self) -> None:
+        app = _make_app()
+        async with app.run_test(size=(100, 35)) as pilot:
+            columns = ["id", "name"]
+            rows = [(1, "Alice"), (2, "Bob")]
+            await _populate_results(pilot, app, columns, rows)
+            await pilot.pause()
+
+            app.results_table.result_table_info = {
+                "name": "users",
+                "columns": [ColumnInfo("id", "INTEGER", is_primary_key=True), ColumnInfo("name", "TEXT")],
+            }
+
+            await pilot.press("d")
+            await pilot.pause()
+
+            assert app.query_input.text == "DELETE FROM users WHERE id = 1;"
+
+    @pytest.mark.asyncio
+    async def test_D_appends_delete_condition_with_or(self) -> None:
+        app = _make_app()
+        async with app.run_test(size=(100, 35)) as pilot:
+            columns = ["id", "name"]
+            rows = [(1, "Alice"), (2, "Bob")]
+            await _populate_results(pilot, app, columns, rows)
+            await pilot.pause()
+
+            app.results_table.result_table_info = {
+                "name": "users",
+                "columns": [ColumnInfo("id", "INTEGER", is_primary_key=True), ColumnInfo("name", "TEXT")],
+            }
+
+            await pilot.press("d")
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.press("j")
+            await pilot.pause()
+            await pilot.press("D")
+            await pilot.pause()
+
+            assert app.query_input.text == "DELETE FROM users WHERE (id = 1) OR (id = 2);"
+
+    @pytest.mark.asyncio
+    async def test_visual_v_and_D_build_delete_for_marked_rows(self) -> None:
+        app = _make_app()
+        async with app.run_test(size=(100, 35)) as pilot:
+            columns = ["id", "name"]
+            rows = [(1, "Alice"), (2, "Bob"), (3, "Cara")]
+            await _populate_results(pilot, app, columns, rows)
+            await pilot.pause()
+
+            app.results_table.result_table_info = {
+                "name": "users",
+                "columns": [ColumnInfo("id", "INTEGER", is_primary_key=True), ColumnInfo("name", "TEXT")],
+            }
+
+            await pilot.press("v")
+            await pilot.pause()
+            await pilot.press("j")
+            await pilot.pause()
+            await pilot.press("j")
+            await pilot.pause()
+            await pilot.press("D")
+            await pilot.pause()
+
+            assert app.query_input.text == "DELETE FROM users WHERE (id = 1) OR (id = 2) OR (id = 3);"

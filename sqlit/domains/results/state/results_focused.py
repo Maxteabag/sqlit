@@ -15,10 +15,25 @@ class ResultsFocusedState(State):
         def has_results(app: InputContext) -> bool:
             return app.has_results
 
-        self.allows("view_cell", has_results, key="v", label="View cell", help="Preview cell (tooltip)")
+        self.allows(
+            "enter_results_visual_mode",
+            has_results,
+            key="v",
+            label="Visual rows",
+            help="Mark rows for batch delete",
+        )
+        self.allows("exit_results_visual_mode", has_results, key="escape", help="Exit visual rows")
+        self.allows("view_cell", has_results, key="p", label="Preview cell", help="Preview cell (tooltip)")
         self.allows("view_cell_full", has_results, key="V", label="View full", help="View full cell value")
         self.allows("edit_cell", has_results, key="u", label="Update cell", help="Update cell (generate UPDATE)")
         self.allows("delete_row", has_results, key="d", label="Delete row", help="Delete row (generate DELETE)")
+        self.allows(
+            "append_delete_row",
+            has_results,
+            key="D",
+            label="Append delete",
+            help="Append row to DELETE query (OR)",
+        )
         self.allows("results_yank_leader_key", has_results, key="y", label="Copy", help="Copy menu (cell/row/all)")
         self.allows("clear_results", has_results, key="x", label="Clear", help="Clear results")
         self.allows("results_filter", has_results, key="slash", label="Filter", help="Filter rows")
@@ -53,7 +68,7 @@ class ResultsFocusedState(State):
         if is_error:
             left.append(
                 DisplayBinding(
-                    key=resolve_display_key("view_cell") or "v",
+                    key=resolve_display_key("view_cell") or "p",
                     label="View error",
                     action="view_cell",
                 )
@@ -68,7 +83,14 @@ class ResultsFocusedState(State):
         else:
             left.append(
                 DisplayBinding(
-                    key=resolve_display_key("view_cell") or "v",
+                    key=resolve_display_key("enter_results_visual_mode") or "v",
+                    label="Visual",
+                    action="enter_results_visual_mode",
+                )
+            )
+            left.append(
+                DisplayBinding(
+                    key=resolve_display_key("view_cell") or "p",
                     label="Preview",
                     action="view_cell",
                 )
@@ -134,6 +156,8 @@ class ResultsFocusedState(State):
         seen.update(
             [
                 "view_cell",
+                "enter_results_visual_mode",
+                "exit_results_visual_mode",
                 "view_cell_full",
                 "delete_row",
                 "results_yank_leader_key",

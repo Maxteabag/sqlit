@@ -10,6 +10,7 @@ from rich.align import Align
 from rich.errors import MarkupError
 from rich.markup import escape
 from rich.protocol import is_renderable
+from rich.styled import Styled
 from rich.text import Text
 from textual.coordinate import Coordinate
 
@@ -27,6 +28,8 @@ class SqlitDataTable(FastDataTable):
 
     # Track if a manual tooltip is being shown (via 'v' key)
     _manual_tooltip_active: bool = False
+    visual_selected_rows: set[int] = set()
+    visual_selection_style: str | None = None
 
     def _set_tooltip_from_cell_at(self, coordinate: Any) -> None:
         """Override to disable hover tooltips entirely."""
@@ -66,7 +69,11 @@ class SqlitDataTable(FastDataTable):
 
         datum = self.get_cell_at(Coordinate(row=row_index, column=column_index))
         column = self.ordered_columns[column_index]
-        return self._format_cell(datum, column)
+        renderable = self._format_cell(datum, column)
+        if row_index in getattr(self, "visual_selected_rows", set()):
+            style = getattr(self, "visual_selection_style", None) or "on #5b1f24"
+            return Styled(renderable, style)
+        return renderable
 
     def _format_cell(self, obj: object, col: Any | None) -> Any:
         if obj is None:
