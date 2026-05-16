@@ -26,6 +26,14 @@ class ResultsMixin:
         r"^\s*DELETE\s+FROM\s+(?P<table>.+?)\s+WHERE\s+(?P<where>.+?)\s*;\s*$",
         re.IGNORECASE | re.DOTALL,
     )
+    _PK_IN_RE = re.compile(
+        r"^\s*(?P<col>[A-Za-z_][A-Za-z0-9_\.\"`\[\]]*)\s+IN\s*\((?P<vals>.+)\)\s*$",
+        re.IGNORECASE | re.DOTALL,
+    )
+    _PK_EQ_RE = re.compile(
+        r"^\s*(?P<col>[A-Za-z_][A-Za-z0-9_\.\"`\[\]]*)\s*=\s*(?P<val>.+?)\s*$",
+        re.IGNORECASE | re.DOTALL,
+    )
 
     def _schedule_results_timer(self: ResultsMixinHost, delay_s: float, callback: Any) -> Any | None:
         set_timer = getattr(self, "set_timer", None)
@@ -871,6 +879,8 @@ class ResultsMixin:
         if not query or not table_name or not where_clause:
             return
 
+        selected_pk_col: str | None = None
+        selected_pk_values_sql: list[str] = []
         if self._results_visual_anchor_row is not None and self._results_visual_selected_rows:
             table, columns, _rows, _stacked = self._get_active_results_context()
             if not table or not columns:
@@ -881,7 +891,9 @@ class ResultsMixin:
                 for col in table_info.get("columns", []):
                     if col.is_primary_key:
                         pk_column_names.add(self._normalize_column_name(col.name))
+            selected_pk_col = self._find_single_pk_column_in_results(columns, table_info)
             where_clauses: list[str] = []
+            selected_pk_values_raw: list[object] = []
             for row_idx in sorted(self._results_visual_selected_rows):
                 if row_idx < 0 or row_idx >= table.row_count:
                     continue
@@ -889,13 +901,32 @@ class ResultsMixin:
                     row_values = tuple(table.get_row_at(row_idx))
                 except Exception:
                     continue
+                if selected_pk_col is not None:
+                    try:
+                        pk_idx = columns.index(selected_pk_col)
+                        if pk_idx < len(row_values):
+                            pk_value = row_values[pk_idx]
+                            if pk_value is not None:
+                                selected_pk_values_raw.append(pk_value)
+                    except Exception:
+                        pass
                 row_where = self._build_where_clause_for_row(columns, row_values, pk_column_names)
                 if row_where:
                     where_clauses.append(f"({row_where})")
             if not where_clauses:
                 self.notify("Keine markierten Zeilen", severity="warning")
                 return
-            where_clause = " OR ".join(where_clauses)
+            if selected_pk_col is not None and selected_pk_values_raw:
+                seen: set[str] = set()
+                for val in selected_pk_values_raw:
+                    sql_val = self._sql_value(val)
+                    if sql_val in seen:
+                        continue
+                    seen.add(sql_val)
+                    selected_pk_values_sql.append(sql_val)
+                where_clause = f"{selected_pk_col} IN ({', '.join(selected_pk_values_sql)})"
+            else:
+                where_clause = " OR ".join(where_clauses)
             query = f"DELETE FROM {table_name} WHERE {where_clause};"
 
         existing = self.query_input.text.strip()
@@ -905,10 +936,21 @@ class ResultsMixin:
             match = self._DELETE_QUERY_RE.match(existing)
             if match and self._normalize_sql_identifier(match.group("table")) == self._normalize_sql_identifier(table_name):
                 existing_where = match.group("where").strip()
-                next_query = f"DELETE FROM {table_name} WHERE ({existing_where}) OR ({where_clause});"
+                if selected_pk_col is not None and selected_pk_values_sql:
+                    existing_vals = self._extract_pk_values_from_where(existing_where, selected_pk_col) or []
+                    merged: list[str] = []
+                    seen: set[str] = set()
+                    for val in [*existing_vals, *selected_pk_values_sql]:
+                        if val in seen:
+                            continue
+                        seen.add(val)
+                        merged.append(val)
+                    next_query = f"DELETE FROM {table_name} WHERE {selected_pk_col} IN ({', '.join(merged)});"
+                else:
+                    next_query = f"DELETE FROM {table_name} WHERE ({existing_where}) OR ({where_clause});"
             else:
-                separator = "\n\n" if not existing.endswith(";") else "\n"
-                next_query = f"{existing}{separator}{query}"
+                # Replace unrelated SQL (e.g. previous SELECT) with the generated DELETE.
+                next_query = query
 
         self._suppress_autocomplete_once = True
         self.query_input.text = next_query
@@ -958,6 +1000,49 @@ class ResultsMixin:
                     where_parts.append(f"{col} = {self._sql_value(val)}")
 
         return " AND ".join(where_parts)
+
+    def _find_single_pk_column_in_results(
+        self: ResultsMixinHost,
+        columns: list[str],
+        table_info: dict[str, Any] | None,
+    ) -> str | None:
+        if not table_info:
+            return None
+        pk_names = [
+            self._normalize_column_name(col.name)
+            for col in table_info.get("columns", [])
+            if getattr(col, "is_primary_key", False)
+        ]
+        if len(pk_names) != 1:
+            return None
+        pk_name = pk_names[0]
+        for col in columns:
+            if self._normalize_column_name(col) == pk_name:
+                return col
+        return None
+
+    def _extract_pk_values_from_where(self: ResultsMixinHost, where: str, pk_col: str) -> list[str] | None:
+        target = self._normalize_column_name(pk_col)
+        normalized = where.strip()
+        if normalized.startswith("(") and normalized.endswith(")"):
+            normalized = normalized[1:-1].strip()
+
+        m_in = self._PK_IN_RE.match(normalized)
+        if m_in and self._normalize_column_name(m_in.group("col")) == target:
+            return [part.strip() for part in m_in.group("vals").split(",") if part.strip()]
+
+        values: list[str] = []
+        for part in re.split(r"\)\s+OR\s+\(|\s+OR\s+", normalized, flags=re.IGNORECASE):
+            piece = part.strip().strip("()").strip()
+            if not piece:
+                continue
+            m_eq = self._PK_EQ_RE.match(piece)
+            if not m_eq:
+                return None
+            if self._normalize_column_name(m_eq.group("col")) != target:
+                return None
+            values.append(m_eq.group("val").strip())
+        return values if values else None
 
     def _build_delete_query_for_active_row(self: ResultsMixinHost) -> tuple[str | None, str | None, str | None]:
         table, columns, _rows, _stacked = self._get_active_results_context()
