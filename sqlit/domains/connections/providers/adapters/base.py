@@ -492,6 +492,19 @@ class CursorBasedAdapter(DatabaseAdapter):
         """Execute a query using cursor-based approach with optional row limit."""
         cursor = conn.cursor()
         cursor.execute(query)
+        # Multi-statement queries (e.g. "BEGIN; INSERT; SELECT") produce
+        # several result sets on drivers that expose them — psycopg v3
+        # leaves the cursor positioned on the first set (the BEGIN, which
+        # has no columns), so advance to the last one. psycopg2 and other
+        # drivers either don't implement nextset() or return None for
+        # single-statement queries; either way this loop terminates.
+        while True:
+            try:
+                more = cursor.nextset()
+            except Exception:
+                more = None
+            if not more:
+                break
         if cursor.description:
             columns = [col[0] for col in cursor.description]
             if max_rows is not None:
@@ -511,7 +524,14 @@ class CursorBasedAdapter(DatabaseAdapter):
         cursor = conn.cursor()
         cursor.execute(query)
         rowcount = int(cursor.rowcount)
-        conn.commit()
+        # When the connection is in autocommit mode, an explicit conn.commit()
+        # has driver-dependent semantics: psycopg2 makes it a no-op, but
+        # psycopg v3 actively ends any open transaction. Calling commit()
+        # here would unconditionally close out an explicit BEGIN before the
+        # caller's INSERT/ROLLBACK gets a chance to run. Skipping it when
+        # autocommit is on preserves the intent in both worlds.
+        if not getattr(conn, "autocommit", False):
+            conn.commit()
         return rowcount
 
 

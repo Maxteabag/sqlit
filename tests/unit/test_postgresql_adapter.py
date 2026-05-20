@@ -48,8 +48,8 @@ def test_postgresql_uses_custom_port_when_server_left_blank() -> None:
     psycopg2.connect so the connection actually reaches the docker
     container.
     """
-    mock_psycopg2 = MagicMock()
-    with patch.dict("sys.modules", {"psycopg2": mock_psycopg2}):
+    mock_psycopg = MagicMock()
+    with patch.dict("sys.modules", {"psycopg": mock_psycopg}):
         from sqlit.domains.connections.providers.postgresql.adapter import PostgreSQLAdapter
 
         adapter = PostgreSQLAdapter()
@@ -65,9 +65,9 @@ def test_postgresql_uses_custom_port_when_server_left_blank() -> None:
 
         adapter.connect(config)
 
-        kwargs = mock_psycopg2.connect.call_args.kwargs
+        kwargs = mock_psycopg.connect.call_args.kwargs
         assert kwargs.get("port") == 5433, (
-            "port=5433 must reach psycopg2.connect, but the adapter "
+            "port=5433 must reach psycopg.connect, but the adapter "
             f"silently drops it when server is blank. kwargs={kwargs!r}"
         )
         assert kwargs.get("host") == "localhost", (

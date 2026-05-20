@@ -300,6 +300,11 @@ class TestMultiStatementQueryClassification:
         assert len(result.columns) > 0
         assert result.row_count > 0
 
+        # The query opened a transaction (BEGIN) but never closed it. Close
+        # the executor so its persistent connection rolls back, otherwise
+        # the DROP TABLE below blocks waiting for the lock.
+        reset_tui_executor()
+
         # Cleanup
         conn = adapter.connect(config)
         try:
@@ -509,13 +514,19 @@ class TestTransactionExecutor:
             initial_count = result.rows[0][0]
 
             # This should fail on the second INSERT (NULL not allowed)
-            # and rollback the first INSERT too
+            # and rollback the first INSERT too. atomic_execute reports
+            # the failure via a MultiStatementResult with completed=False
+            # rather than raising.
+            from sqlit.domains.query.app.multi_statement import MultiStatementResult
+
             query = """
             INSERT INTO atomic_test (name) VALUES ('row1');
             INSERT INTO atomic_test (name) VALUES (NULL);
             """
-            with pytest.raises(Exception):
-                executor.atomic_execute(query)
+            atomic_result = executor.atomic_execute(query)
+            assert isinstance(atomic_result, MultiStatementResult)
+            assert atomic_result.completed is False
+            assert atomic_result.error_index is not None
 
             # Count should be unchanged (both inserts rolled back)
             result = executor.execute("SELECT COUNT(*) FROM atomic_test")
@@ -556,6 +567,8 @@ class TestTransactionExecutor:
 
         executor = TransactionExecutor(config, provider)
         try:
+            from sqlit.domains.query.app.multi_statement import MultiStatementResult
+
             query = """
             INSERT INTO atomic_test (name) VALUES ('row1');
             INSERT INTO atomic_test (name) VALUES ('row2');
@@ -563,9 +576,14 @@ class TestTransactionExecutor:
             """
             result = executor.atomic_execute(query)
 
-            # Should return the SELECT result
-            assert isinstance(result, QueryResult)
-            assert result.row_count == 2
+            # Multi-statement atomic_execute returns a MultiStatementResult
+            # carrying each statement's outcome. The SELECT lands as the
+            # last entry and exposes the rows.
+            assert isinstance(result, MultiStatementResult)
+            assert result.completed is True
+            select_result = result.results[-1].result
+            assert isinstance(select_result, QueryResult)
+            assert select_result.row_count == 2
         finally:
             executor.close()
             conn = adapter.connect(config)
