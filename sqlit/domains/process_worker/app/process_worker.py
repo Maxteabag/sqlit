@@ -2,13 +2,38 @@
 
 from __future__ import annotations
 
+import faulthandler
+import os
 import pickle
+import sys
+import tempfile
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from multiprocessing.connection import Connection
+from pathlib import Path
 from typing import Any
+
+
+def _open_worker_log() -> Any | None:
+    """Open the worker log file, honoring SQLIT_WORKER_LOG when set.
+
+    The parent process may attach this worker to a Textual-managed pipe;
+    libpq notice writes or unexpected stderr output would then SIGPIPE the
+    child. Redirecting both streams to a real file avoids that and gives a
+    place to land C-level fault tracebacks for future diagnosis.
+    """
+    override = os.environ.get("SQLIT_WORKER_LOG")
+    if override:
+        path = Path(override).expanduser()
+    else:
+        path = Path(tempfile.gettempdir()) / "sqlit-worker.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path.open("a", buffering=1)
+    except OSError:
+        return None
 
 from sqlit.domains.connections.domain.config import ConnectionConfig
 from sqlit.domains.connections.providers.catalog import get_provider
@@ -493,6 +518,14 @@ class _WorkerState:
 
 def run_process_worker(conn: Connection) -> None:
     """Process entrypoint for query execution."""
+    log_file = _open_worker_log()
+    if log_file is not None:
+        sys.stdout = log_file
+        sys.stderr = log_file
+        try:
+            faulthandler.enable(file=log_file)
+        except (RuntimeError, ValueError):
+            pass
     state = _WorkerState(conn=conn)
     try:
         while True:

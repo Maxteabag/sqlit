@@ -63,6 +63,14 @@ class ProcessWorkerClient:
             raise error
         if os.name != "posix" or sys.platform.startswith("win"):
             raise error
+        # macOS (especially Tahoe 26+) aborts in the child whenever a forked
+        # process touches CoreFoundation / Security.framework / os_log —
+        # which happens inside psycopg, getaddrinfo, and many other stdlib
+        # paths. Forking here causes hard segfaults (issue #189), so we
+        # surface the spawn failure and let the caller fall back to
+        # in-process execution.
+        if sys.platform == "darwin":
+            raise error
         try:
             self._start_with_context(get_context("fork"))
         except Exception:
