@@ -94,8 +94,8 @@ class TreeFilterMixin:
         node = self._tree_filter_matches[self._tree_filter_match_index]
         # Expand ancestors to make node visible
         self._expand_ancestors(node)
-        # Select the node
-        self.object_tree.select_node(node)
+        # Move cursor to node
+        self.object_tree.move_cursor(node)
 
     def _expand_ancestors(self: TreeFilterMixinHost, node: Any) -> None:
         """Expand all ancestor nodes to make a node visible."""
