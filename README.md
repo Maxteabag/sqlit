@@ -279,7 +279,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Database                            | Driver package               | `pipx`                                             | `pip` / venv                                       |
 | :---------------------------------- | :--------------------------- | :------------------------------------------------- | :------------------------------------------------- |
 | SQLite                              | *(built-in)*                 | *(built-in)*                                       | *(built-in)*                                       |
-| PostgreSQL / CockroachDB / Supabase | `psycopg2-binary`            | `pipx inject sqlit-tui psycopg2-binary`            | `python -m pip install psycopg2-binary`            |
+| PostgreSQL / CockroachDB / Supabase | `psycopg[binary]`            | `pipx inject sqlit-tui 'psycopg[binary]'`          | `python -m pip install 'psycopg[binary]'`          |
 | SQL Server                          | `mssql-python`               | `pipx inject sqlit-tui mssql-python`               | `python -m pip install mssql-python`               |
 | MySQL                               | `PyMySQL`                    | `pipx inject sqlit-tui PyMySQL`                    | `python -m pip install PyMySQL`                    |
 | MariaDB                             | `PyMySQL`                    | `pipx inject sqlit-tui PyMySQL`                    | `python -m pip install PyMySQL`                    |

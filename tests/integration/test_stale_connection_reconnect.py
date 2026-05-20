@@ -496,15 +496,15 @@ async def _kill_connection(spec: ProviderSpec, connection_id: int) -> None:
 
     if spec.key == "postgres":
         try:
-            import psycopg2
+            import psycopg
         except ImportError:
-            pytest.skip("psycopg2 is not installed")
+            pytest.skip("psycopg is not installed")
 
         def work() -> None:
-            conn = psycopg2.connect(
+            conn = psycopg.connect(
                 host=spec.host,
                 port=spec.port,
-                database=spec.database,
+                dbname=spec.database,
                 user=spec.username,
                 password=spec.password,
                 connect_timeout=10,
