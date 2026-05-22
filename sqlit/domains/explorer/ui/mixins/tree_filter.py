@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from rich.markup import escape as escape_markup
@@ -11,6 +12,49 @@ from sqlit.shared.ui.protocols import TreeFilterMixinHost
 
 if TYPE_CHECKING:
     pass
+
+
+@dataclass
+class _NodeSnapshot:
+    """Frozen capture of one tree node's state, used to restore the tree
+    between filter keystrokes without calling refresh_tree.
+
+    Calling refresh_tree drops lazy-loaded children (e.g. tables under a
+    database in multi-DB browse mode) because the re-expand triggers an
+    async reload that doesn't complete before the next filter pass — see
+    issue #141.
+    """
+
+    label: Any
+    data: Any
+    allow_expand: bool
+    is_expanded: bool
+    children: list["_NodeSnapshot"] = field(default_factory=list)
+
+
+def _snapshot_node(node: Any) -> _NodeSnapshot:
+    return _NodeSnapshot(
+        label=node.label,
+        data=node.data,
+        allow_expand=getattr(node, "allow_expand", False),
+        is_expanded=getattr(node, "is_expanded", False),
+        children=[_snapshot_node(c) for c in node.children],
+    )
+
+
+def _restore_node_under(parent: Any, snap: _NodeSnapshot) -> None:
+    child = parent.add(snap.label, data=snap.data)
+    try:
+        child.allow_expand = snap.allow_expand
+    except Exception:
+        pass
+    if snap.is_expanded:
+        try:
+            child.expand()
+        except Exception:
+            pass
+    for grandchild in snap.children:
+        _restore_node_under(child, grandchild)
 
 
 class TreeFilterMixin:
@@ -24,6 +68,7 @@ class TreeFilterMixin:
     _tree_filter_matches: list[Any] = []
     _tree_filter_match_index: int = 0
     _tree_original_labels: dict[int, str] = {}
+    _tree_snapshot: list[_NodeSnapshot] | None = None
 
     def action_tree_filter(self: TreeFilterMixinHost) -> None:
         """Open the tree filter."""
@@ -38,6 +83,12 @@ class TreeFilterMixin:
         self._tree_filter_matches = []
         self._tree_filter_match_index = 0
         self._tree_original_labels = {}
+        # Freeze the currently loaded tree (incl. lazy-loaded children)
+        # so we can restore it between keystrokes without calling
+        # refresh_tree, which would lose async-loaded folder contents.
+        self._tree_snapshot = [
+            _snapshot_node(c) for c in self.object_tree.root.children
+        ]
 
         self.tree_filter_input.show()
         self._update_tree_filter()
@@ -52,7 +103,8 @@ class TreeFilterMixin:
         self._tree_filter_typing = False
         self.tree_filter_input.hide()
         self._restore_tree_labels()
-        self._show_all_tree_nodes()
+        self._restore_tree_from_snapshot()
+        self._tree_snapshot = None
         self._update_footer_bindings()
 
     def action_tree_filter_accept(self: TreeFilterMixinHost) -> None:
@@ -182,11 +234,12 @@ class TreeFilterMixin:
         self._tree_filter_fuzzy = raw_text.startswith("~")
         self._tree_filter_query = raw_text[1:] if self._tree_filter_fuzzy else raw_text
 
-        # Rebuild the full tree first so each filter pass searches every node,
-        # not just the survivors of the previous (narrower) filter. Without this,
-        # backspacing from a no-match query like "tt" back to "t" would leave the
-        # tree empty because the "t"-matching nodes were physically removed.
-        self._show_all_tree_nodes()
+        # Restore from the snapshot taken when the filter opened, so each
+        # filter pass searches every node (not just the survivors of the
+        # previous narrower filter — see PR #211 for the backspace case)
+        # while preserving lazy-loaded children that refresh_tree would
+        # have dropped (issue #141).
+        self._restore_tree_from_snapshot()
         self._tree_original_labels = {}
 
         total = self._count_all_nodes()
@@ -325,7 +378,27 @@ class TreeFilterMixin:
 
     def _show_all_tree_nodes(self: TreeFilterMixinHost) -> None:
         """Rebuild the tree to restore all nodes after filtering."""
-        self.refresh_tree()
+        if self._tree_snapshot is not None:
+            self._restore_tree_from_snapshot()
+        else:
+            # Fallback for paths that aren't inside an open filter session.
+            self.refresh_tree()
+
+    def _restore_tree_from_snapshot(self: TreeFilterMixinHost) -> None:
+        """Rebuild the root's children from the snapshot taken at filter open."""
+        snapshot = self._tree_snapshot
+        if snapshot is None:
+            return
+        root = self.object_tree.root
+        # Clear existing children (works for both Textual TreeNode and the
+        # test mock — both implement child.remove()).
+        for child in list(root.children):
+            try:
+                child.remove()
+            except Exception:
+                pass
+        for snap in snapshot:
+            _restore_node_under(root, snap)
 
     def _restore_tree_labels(self: TreeFilterMixinHost) -> None:
         """Restore original labels for all modified nodes."""
