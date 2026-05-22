@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.adapters.base import (
@@ -12,6 +13,11 @@ from sqlit.domains.connections.providers.adapters.base import (
     TableInfo,
     TriggerInfo,
     resolve_file_path,
+)
+from sqlit.domains.connections.providers.duckdb.data_files import (
+    get_read_function,
+    sidecar_path_for,
+    table_name_for,
 )
 
 if TYPE_CHECKING:
@@ -85,7 +91,44 @@ class DuckDBAdapter(DatabaseAdapter):
         duckdb_any: Any = duckdb
         connect_args: dict[str, Any] = {}
         connect_args.update(config.extra_options)
+
+        read_fn = get_read_function(file_path)
+        if read_fn is not None:
+            return self._connect_data_file(
+                duckdb_any, file_path, read_fn, connect_args
+            )
+
         return duckdb_any.connect(str(file_path), **connect_args)
+
+    def _connect_data_file(
+        self,
+        duckdb_any: Any,
+        file_path: Path,
+        read_fn: str,
+        connect_args: dict[str, Any],
+    ) -> Any:
+        """Connect to a per-process sidecar `.duckdb` backed by a data file.
+
+        On first connect within a sqlit process the source file is loaded
+        into a real table so the user can run UPDATE/INSERT/DELETE against
+        it. Subsequent connects in the same process reuse the sidecar so
+        in-session edits persist across query Runs. The sidecar lives under
+        a PID-scoped temp dir; a new process gets a fresh load from source.
+        Writing back to the source is explicit: `COPY <table> TO '<path>'`.
+        """
+        sidecar = sidecar_path_for(file_path)
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        needs_load = not sidecar.exists()
+
+        conn = duckdb_any.connect(str(sidecar), **connect_args)
+        if needs_load:
+            table = table_name_for(file_path)
+            path_literal = str(file_path).replace("'", "''")
+            conn.execute(
+                f'CREATE TABLE "{table}" AS '
+                f"SELECT * FROM {read_fn}('{path_literal}')"
+            )
+        return conn
 
     def get_databases(self, conn: Any) -> list[str]:
         """DuckDB doesn't support multiple databases - return empty list."""
