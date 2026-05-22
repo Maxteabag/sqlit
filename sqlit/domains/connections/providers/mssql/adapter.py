@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import struct
 from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.adapters.base import (
@@ -20,6 +21,22 @@ from sqlit.domains.connections.providers.tls import (
 
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import AuthType, ConnectionConfig
+
+# ODBC connection attribute that lets us hand SQL Server a pre-acquired
+# Entra access token instead of having the driver acquire one itself.
+SQL_COPT_SS_ACCESS_TOKEN = 1256
+
+
+def _build_access_token_struct(token: str) -> bytes:
+    """Pack a JWT into the layout SQL_COPT_SS_ACCESS_TOKEN expects.
+
+    SQL Server's ODBC driver wants a 4-byte little-endian length prefix
+    followed by the token encoded as UTF-16-LE bytes. Same layout the
+    mssql-python driver builds internally; we just produce it ourselves
+    so we can skip the driver's redundant token acquisition.
+    """
+    token_bytes = token.encode("UTF-16-LE")
+    return struct.pack(f"<I{len(token_bytes)}s", len(token_bytes), token_bytes)
 
 
 class AzureAdAuthError(Exception):
@@ -166,11 +183,15 @@ class SQLServerAdapter(DatabaseAdapter):
         except Exception:
             pass
 
-    def _build_connection_string(self, config: ConnectionConfig) -> str:
+    def _build_connection_string(self, config: ConnectionConfig, *, attach_token: bool = False) -> str:
         """Build mssql-python connection string from config.
 
         Args:
             config: Connection configuration.
+            attach_token: True when we'll be supplying SQL_COPT_SS_ACCESS_TOKEN
+                ourselves. In that case omit the `Authentication=` directive —
+                the two paths conflict, and the directive would make the driver
+                spawn `az` to acquire its own token, defeating the optimization.
 
         Returns:
             semicolon-delimited key=value connection string.
@@ -200,6 +221,9 @@ class SQLServerAdapter(DatabaseAdapter):
 
         auth = self.get_auth_type(config)
 
+        if attach_token and auth == AuthType.AD_DEFAULT:
+            return base
+
         if auth == AuthType.WINDOWS:
             return base + "Trusted_Connection=yes;"
         elif auth == AuthType.SQL_SERVER:
@@ -225,39 +249,56 @@ class SQLServerAdapter(DatabaseAdapter):
             package_name=self.install_package,
         )
 
-        self._preflight_azure_credentials(config)
+        token = self._preflight_azure_credentials(config)
 
-        conn_str = self._build_connection_string(config)
+        conn_str = self._build_connection_string(config, attach_token=token is not None)
         # Append extra_options to connection string
         for key, value in config.extra_options.items():
             conn_str += f"{key}={value};"
-        conn = mssql_python.connect(conn_str)
+
+        attrs_before: dict[int, bytes] | None = None
+        if token is not None:
+            attrs_before = {SQL_COPT_SS_ACCESS_TOKEN: _build_access_token_struct(token)}
+
+        conn = mssql_python.connect(conn_str, attrs_before=attrs_before)
         # Enable autocommit to allow DDL statements like CREATE DATABASE
         conn.autocommit = True
         return conn
 
-    def _preflight_azure_credentials(self, config: ConnectionConfig) -> None:
-        """Try to acquire a SQL Entra token before opening the SQL connection.
+    def _preflight_azure_credentials(self, config: ConnectionConfig) -> str | None:
+        """Acquire a SQL Entra token and return it for direct ODBC attach.
 
-        Without this, an expired/missing `az login` session surfaces as the
-        ODBC driver's generic "Login failed for user ''" — the real cause
-        ("Please run 'az login'") is buried in stderr. Acquiring the token
-        ourselves lets us raise an actionable AzureAdAuthError.
+        Returning the JWT lets `connect()` hand it to the driver via
+        SQL_COPT_SS_ACCESS_TOKEN, eliminating the duplicate token acquisition
+        the driver would otherwise do when it sees `Authentication=...` in the
+        connection string. Returns None if azure-identity isn't installed or
+        the config isn't ad_default — falls back to driver-side auth.
 
-        Silently no-ops if azure-identity isn't installed (the driver still
-        handles auth — we just lose the nicer error message).
+        A persistent file cache (~5 minute refresh-before-expiry buffer)
+        avoids spawning `az account get-access-token` on every invocation,
+        which dominates cold-start cost for one-shot `sqlit query` runs.
+
+        Failures surface as AzureAdAuthError with an actionable hint
+        ("Please run 'az login'", etc.) instead of the driver's generic
+        "Login failed for user ''".
         """
         import logging
 
         from sqlit.domains.connections.domain.config import AuthType
 
         if self.get_auth_type(config) != AuthType.AD_DEFAULT:
-            return
+            return None
         try:
             from azure.core.exceptions import ClientAuthenticationError
             from azure.identity import DefaultAzureCredential
         except ImportError:
-            return
+            return None
+
+        from . import token_cache
+
+        cached = token_cache.load()
+        if cached is not None:
+            return cached.token
 
         # azure-identity logs the full credential-chain dump to stderr at
         # WARNING level on failure. Our own error already names the actionable
@@ -266,11 +307,21 @@ class SQLServerAdapter(DatabaseAdapter):
         prior_level = azure_logger.level
         azure_logger.setLevel(logging.ERROR)
         try:
-            DefaultAzureCredential().get_token("https://database.windows.net/.default")
+            access_token = DefaultAzureCredential().get_token(
+                "https://database.windows.net/.default"
+            )
         except ClientAuthenticationError as exc:
             raise AzureAdAuthError(_format_azure_ad_hint(exc)) from exc
         finally:
             azure_logger.setLevel(prior_level)
+
+        try:
+            token_cache.save(access_token.token, access_token.expires_on)
+        except OSError:
+            # Cache write failures are non-fatal — we still have the token.
+            pass
+
+        return access_token.token
 
     def get_databases(self, conn: Any) -> list[str]:
         """Get list of databases from SQL Server."""
