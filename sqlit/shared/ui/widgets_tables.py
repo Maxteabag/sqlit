@@ -100,8 +100,11 @@ class SqlitDataTable(FastDataTable):
         if isinstance(obj, timedelta):
             return str(obj)
 
+        if isinstance(obj, (bytes, bytearray, memoryview)):
+            return f"<BLOB {len(bytes(obj))} bytes>"
+
         if not is_renderable(obj):
-            return str(obj)
+            return escape(str(obj))
 
         return obj
 
