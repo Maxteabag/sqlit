@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -38,7 +39,7 @@ def wait_for_port(host: str, port: int, timeout: float = 60.0) -> bool:
 
 def run_cli(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     """Run sqlit CLI command and return result."""
-    cmd = ["python", "-m", "sqlit.cli"] + list(args)
+    cmd = [sys.executable, "-m", "sqlit.cli"] + list(args)
     result = subprocess.run(
         cmd,
         capture_output=True,
