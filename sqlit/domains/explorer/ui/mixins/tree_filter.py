@@ -178,13 +178,20 @@ class TreeFilterMixin:
     def _update_tree_filter(self: TreeFilterMixinHost) -> None:
         """Update the tree based on current filter text."""
         self._restore_tree_labels()
-        total = self._count_all_nodes()
         raw_text = self._tree_filter_text
         self._tree_filter_fuzzy = raw_text.startswith("~")
         self._tree_filter_query = raw_text[1:] if self._tree_filter_fuzzy else raw_text
 
+        # Rebuild the full tree first so each filter pass searches every node,
+        # not just the survivors of the previous (narrower) filter. Without this,
+        # backspacing from a no-match query like "tt" back to "t" would leave the
+        # tree empty because the "t"-matching nodes were physically removed.
+        self._show_all_tree_nodes()
+        self._tree_original_labels = {}
+
+        total = self._count_all_nodes()
+
         if not self._tree_filter_query:
-            self._show_all_tree_nodes()
             self._tree_filter_matches = []
             self.tree_filter_input.set_filter("", 0, total)
             return
