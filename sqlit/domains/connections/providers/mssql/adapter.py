@@ -22,6 +22,52 @@ if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import AuthType, ConnectionConfig
 
 
+class AzureAdAuthError(Exception):
+    """Raised when the Azure AD credential chain cannot produce a SQL token.
+
+    Surfaces the actionable hint (e.g. "run 'az login'") that would otherwise
+    be buried in the ODBC driver's generic "Login failed for user ''" error.
+    """
+
+
+def _format_azure_ad_hint(exc: Exception) -> str:
+    """Build a short, actionable error message from a credential-chain failure.
+
+    Picks out the most useful sub-error (typically the AzureCliCredential
+    line saying "Please run 'az login'") and prepends a one-line hint.
+    Falls back to the full message if no specific line stands out.
+    """
+    text = str(exc)
+    primary = _first_actionable_line(text)
+    hint = "Run 'az login' (or set AZURE_CLIENT_ID/SECRET/TENANT environment variables)."
+    if primary:
+        return f"Azure AD authentication failed.\n  {primary}\n{hint}"
+    return f"Azure AD authentication failed.\n{hint}\n\nDetails:\n{text}"
+
+
+def _first_actionable_line(text: str) -> str:
+    """Return the most actionable line from the credential-chain dump.
+
+    Walks the needles in priority order — "Please run 'az login'" beats
+    everything else because it tells the user exactly what to do. Lower-signal
+    lines like "Environment variables are not fully configured" are passive
+    and don't make this list; if no high-signal needle matches, the caller
+    falls back to dumping the full chain.
+    """
+    needles = (
+        "Please run 'az login'",
+        "Please run `az login`",
+        "azd auth login",
+        "Az.Account module",
+    )
+    lines = text.splitlines()
+    for needle in needles:
+        for line in lines:
+            if needle in line:
+                return line.strip()
+    return ""
+
+
 class SQLServerAdapter(DatabaseAdapter):
     """Adapter for Microsoft SQL Server using the mssql-python driver."""
 
@@ -179,6 +225,8 @@ class SQLServerAdapter(DatabaseAdapter):
             package_name=self.install_package,
         )
 
+        self._preflight_azure_credentials(config)
+
         conn_str = self._build_connection_string(config)
         # Append extra_options to connection string
         for key, value in config.extra_options.items():
@@ -187,6 +235,42 @@ class SQLServerAdapter(DatabaseAdapter):
         # Enable autocommit to allow DDL statements like CREATE DATABASE
         conn.autocommit = True
         return conn
+
+    def _preflight_azure_credentials(self, config: ConnectionConfig) -> None:
+        """Try to acquire a SQL Entra token before opening the SQL connection.
+
+        Without this, an expired/missing `az login` session surfaces as the
+        ODBC driver's generic "Login failed for user ''" — the real cause
+        ("Please run 'az login'") is buried in stderr. Acquiring the token
+        ourselves lets us raise an actionable AzureAdAuthError.
+
+        Silently no-ops if azure-identity isn't installed (the driver still
+        handles auth — we just lose the nicer error message).
+        """
+        import logging
+
+        from sqlit.domains.connections.domain.config import AuthType
+
+        if self.get_auth_type(config) != AuthType.AD_DEFAULT:
+            return
+        try:
+            from azure.core.exceptions import ClientAuthenticationError
+            from azure.identity import DefaultAzureCredential
+        except ImportError:
+            return
+
+        # azure-identity logs the full credential-chain dump to stderr at
+        # WARNING level on failure. Our own error already names the actionable
+        # cause, so silence the library's noise for the duration of this call.
+        azure_logger = logging.getLogger("azure.identity")
+        prior_level = azure_logger.level
+        azure_logger.setLevel(logging.ERROR)
+        try:
+            DefaultAzureCredential().get_token("https://database.windows.net/.default")
+        except ClientAuthenticationError as exc:
+            raise AzureAdAuthError(_format_azure_ad_hint(exc)) from exc
+        finally:
+            azure_logger.setLevel(prior_level)
 
     def get_databases(self, conn: Any) -> list[str]:
         """Get list of databases from SQL Server."""

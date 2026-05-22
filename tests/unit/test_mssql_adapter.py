@@ -235,3 +235,115 @@ class TestMSSQLAdapterQueries:
         assert result[0].is_primary_key is True
         assert result[1].name == "name"
         assert result[1].is_primary_key is False
+
+
+class TestMSSQLAdapterAzureAdPreflight:
+    """Pre-flight Entra-token check for ad_default auth converts the
+    DefaultAzureCredential chain failure into an actionable AzureAdAuthError
+    *before* the ODBC driver gets to emit its generic "Login failed for user ''".
+    """
+
+    @pytest.fixture
+    def ad_default_config(self):
+        """Minimal ConnectionConfig stub with auth_type=ad_default."""
+        from sqlit.domains.connections.domain.config import (
+            ConnectionConfig,
+            TcpEndpoint,
+        )
+
+        endpoint = TcpEndpoint(host="example.database.windows.net", port="1433", database="mydb")
+        return ConnectionConfig(
+            name="t",
+            db_type="mssql",
+            endpoint=endpoint,
+            options={"auth_type": "ad_default"},
+        )
+
+    def test_preflight_surfaces_az_login_hint_on_credential_failure(self, ad_default_config):
+        """When DefaultAzureCredential.get_token raises, we raise AzureAdAuthError
+        with the actionable 'Please run az login' line and a one-line hint."""
+        from sqlit.domains.connections.providers.mssql.adapter import (
+            AzureAdAuthError,
+            SQLServerAdapter,
+        )
+
+        chain_message = (
+            "DefaultAzureCredential failed to retrieve a token from the included credentials.\n"
+            "Attempted credentials:\n"
+            "\tEnvironmentCredential: EnvironmentCredential authentication unavailable.\n"
+            "\tAzureCliCredential: Please run 'az login' to set up an account\n"
+            "\tAzurePowerShellCredential: Az.Account module >= 2.2.0 is not installed\n"
+        )
+
+        fake_azure_core = MagicMock()
+        fake_azure_core_exceptions = MagicMock()
+
+        class _ClientAuthError(Exception):
+            pass
+
+        fake_azure_core_exceptions.ClientAuthenticationError = _ClientAuthError
+
+        fake_azure_identity = MagicMock()
+        fake_credential = MagicMock()
+        fake_credential.get_token.side_effect = _ClientAuthError(chain_message)
+        fake_azure_identity.DefaultAzureCredential.return_value = fake_credential
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "azure": MagicMock(),
+                "azure.core": fake_azure_core,
+                "azure.core.exceptions": fake_azure_core_exceptions,
+                "azure.identity": fake_azure_identity,
+            },
+        ):
+            adapter = SQLServerAdapter()
+            with pytest.raises(AzureAdAuthError) as exc_info:
+                adapter._preflight_azure_credentials(ad_default_config)
+
+        message = str(exc_info.value)
+        assert "Please run 'az login'" in message
+        assert "Azure AD authentication failed" in message
+        # The verbose chain dump should NOT be included when we extracted a
+        # specific actionable line — keep the error tight, like sqlcmd does.
+        assert "DefaultAzureCredential failed to retrieve" not in message
+
+    def test_preflight_noop_when_azure_identity_missing(self, ad_default_config):
+        """If azure-identity is not installed, we silently skip and let the
+        ODBC driver handle auth (preserving the existing behavior)."""
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
+
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _block_azure(name, *args, **kwargs):
+            if name.startswith("azure."):
+                raise ImportError(f"No module named {name!r}")
+            return real_import(name, *args, **kwargs)
+
+        adapter = SQLServerAdapter()
+        with patch("builtins.__import__", side_effect=_block_azure):
+            # Should not raise
+            adapter._preflight_azure_credentials(ad_default_config)
+
+    def test_preflight_skipped_for_non_ad_default_auth(self):
+        """Pre-flight only runs for ad_default; sql/ad_password etc. must be
+        untouched even if azure-identity would fail."""
+        from sqlit.domains.connections.domain.config import (
+            ConnectionConfig,
+            TcpEndpoint,
+        )
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
+
+        endpoint = TcpEndpoint(host="h", port="1433", database="d", username="u", password="p")
+        config = ConnectionConfig(
+            name="t",
+            db_type="mssql",
+            endpoint=endpoint,
+            options={"auth_type": "sql"},
+        )
+
+        adapter = SQLServerAdapter()
+        # Even if azure-identity would explode, this never touches it.
+        adapter._preflight_azure_credentials(config)
