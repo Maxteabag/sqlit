@@ -17,6 +17,7 @@ def _get_snowflake_auth_options() -> tuple[SelectOption, ...]:
         SelectOption("externalbrowser", "SSO (Browser)"),
         SelectOption("snowflake_jwt", "Key Pair (JWT)"),
         SelectOption("oauth", "OAuth Token"),
+        SelectOption("PROGRAMMATIC_ACCESS_TOKEN", "Programmatic Access Token"),
     )
 
 
@@ -26,6 +27,8 @@ _AUTH_NEEDS_PASSWORD = {"default"}
 _AUTH_NEEDS_PRIVATE_KEY = {"snowflake_jwt"}
 # Auth types that need OAuth token
 _AUTH_NEEDS_OAUTH = {"oauth"}
+# Auth types that need Programmatic Access Token
+_AUTH_NEEDS_PAT = {"PROGRAMMATIC_ACCESS_TOKEN"}
 
 
 SCHEMA = ConnectionSchema(
@@ -80,6 +83,14 @@ SCHEMA = ConnectionSchema(
             placeholder="OAuth access token",
             required=False,
             visible_when=lambda v: v.get("authenticator") in _AUTH_NEEDS_OAUTH,
+        ),
+        SchemaField(
+            name="pat_token",
+            label="PAT",
+            field_type=FieldType.PASSWORD,
+            placeholder="PROGRAMMATIC_ACCESS_TOKEN",
+            required=False,
+            visible_when=lambda v: v.get("authenticator") in _AUTH_NEEDS_PAT,
         ),
         _database_field(),
         SchemaField(
