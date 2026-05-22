@@ -14,7 +14,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from sqlit.domains.explorer.domain.tree_nodes import ConnectionNode
+from sqlit.domains.explorer.domain.tree_nodes import (
+    ConnectionNode,
+    DatabaseNode,
+    FolderNode,
+    TableNode,
+)
 from sqlit.domains.explorer.ui.mixins.tree_filter import TreeFilterMixin
 
 
@@ -237,3 +242,145 @@ class TestTreeFilterSearch:
 
         visible = _visible_node_names(host)
         assert set(visible) == set(self.CONNECTION_NAMES)
+
+
+class _MultiDbFilterHost(TreeFilterMixin):
+    """Filter host that models multi-database 'browse all' mode.
+
+    The tree starts shaped like a real session after the user has expanded
+    into one database's Tables folder:
+
+        connection
+        └── Databases
+            ├── CS         (expanded — tables already loaded)
+            │   └── Tables
+            │       ├── cs_user
+            │       ├── cs_session
+            │       └── cs_ticket
+            └── Sales      (collapsed — lazy-loaded if expanded)
+
+    `refresh_tree` here mirrors the real `refresh_tree_incremental`: it
+    rebuilds the connection + Databases + database nodes synchronously,
+    but the contents of the Tables folder are reloaded asynchronously and
+    are *not* present when refresh_tree returns. This is what produces
+    issue #141 — opening the filter calls refresh_tree, the lazy-loaded
+    tables vanish, and the subsequent filter search finds nothing.
+    """
+
+    def __init__(
+        self,
+        connection_name: str,
+        databases: list[str],
+        tables_by_db: dict[str, list[str]],
+    ):
+        self._connection_name = connection_name
+        self._databases = databases
+        self._tables_by_db = tables_by_db
+        self.object_tree = MockTree()
+        self.tree_filter_input = MockFilterInput()
+        self._populate(include_lazy_children=True)
+
+    def _populate(self, *, include_lazy_children: bool) -> None:
+        self.object_tree.root.children = []
+        config = MagicMock()
+        config.name = self._connection_name
+        conn_node = object.__new__(ConnectionNode)
+        object.__setattr__(conn_node, "config", config)
+        conn = self.object_tree.root.add(self._connection_name, data=conn_node)
+        conn.allow_expand = True
+        conn.is_expanded = True
+
+        dbs_folder = conn.add("Databases", data=FolderNode(folder_type="databases"))
+        dbs_folder.allow_expand = True
+        dbs_folder.is_expanded = True
+
+        for db_name in self._databases:
+            db_node = dbs_folder.add(db_name, data=DatabaseNode(name=db_name))
+            db_node.allow_expand = True
+            if db_name not in self._tables_by_db:
+                continue
+            db_node.is_expanded = True
+            tables_folder = db_node.add(
+                "Tables",
+                data=FolderNode(folder_type="tables", database=db_name),
+            )
+            tables_folder.allow_expand = True
+            tables_folder.is_expanded = True
+
+            # Real refresh_tree only restores the shell here. The Tables
+            # folder gets re-expanded asynchronously and its children
+            # don't materialize before _update_tree_filter runs.
+            if include_lazy_children:
+                for table in self._tables_by_db[db_name]:
+                    leaf = tables_folder.add(
+                        table,
+                        data=TableNode(database=db_name, schema="", name=table),
+                    )
+                    leaf.allow_expand = True
+
+    def refresh_tree(self) -> None:
+        # Match the real behavior: shell only, lazy children absent.
+        self._populate(include_lazy_children=False)
+
+    def _update_footer_bindings(self) -> None:
+        pass
+
+    def _activate_tree_node(self, _node) -> None:
+        pass
+
+
+class TestMultiDbFilterIssue141:
+    """Regression tests for issue #141.
+
+    When sqlit is connected in multi-database 'browse all' mode and the
+    user has expanded into a database's Tables folder, opening `/` and
+    typing a substring of a table name should find that table. It
+    currently returns zero matches because `_update_tree_filter` calls
+    `refresh_tree`, which tears down the tree and re-expands lazy folders
+    asynchronously — the search runs before the tables are reloaded.
+    """
+
+    def _open_filter(self, host: _MultiDbFilterHost) -> None:
+        TreeFilterMixin.action_tree_filter(host)  # type: ignore[arg-type]
+
+    def _type(self, host: _MultiDbFilterHost, text: str) -> None:
+        for ch in text:
+            host._tree_filter_text += ch
+            TreeFilterMixin._update_tree_filter(host)  # type: ignore[arg-type]
+
+    def _matched_names(self, host: _MultiDbFilterHost) -> list[str]:
+        names: list[str] = []
+        for node in host._tree_filter_matches:
+            data = node.data
+            if data is not None and hasattr(data, "get_label_text"):
+                names.append(data.get_label_text())
+        return sorted(names)
+
+    def test_filter_finds_lazy_loaded_tables_in_multi_db_mode(self):
+        host = _MultiDbFilterHost(
+            connection_name="prod",
+            databases=["CS", "Sales"],
+            tables_by_db={"CS": ["cs_user", "cs_session", "cs_ticket"]},
+        )
+
+        # Sanity check: before we open the filter, the tables are present.
+        cs_node = host.object_tree.root.children[0].children[0].children[0]
+        tables_folder = cs_node.children[0]
+        assert sorted(c.label for c in tables_folder.children) == [
+            "cs_session",
+            "cs_ticket",
+            "cs_user",
+        ]
+
+        self._open_filter(host)
+        self._type(host, "cs")
+
+        matched = self._matched_names(host)
+        # "cs" matches the CS database node itself plus its tables.
+        # Issue #141: without the fix, only "CS" would be in the list
+        # because refresh_tree had wiped the lazy-loaded table nodes.
+        assert "cs_user" in matched
+        assert "cs_session" in matched
+        assert "cs_ticket" in matched, (
+            f"Issue #141: filter must find lazy-loaded tables; got {matched}"
+        )
