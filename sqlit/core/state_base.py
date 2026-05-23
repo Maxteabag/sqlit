@@ -130,7 +130,10 @@ class State(ABC):
             help_key=help_key or key,
             help_description=help,
         )
-        if key and label:
+        # A label means the author wants this in the footer. The display
+        # key can be omitted here and resolved at render time via the
+        # global keymap (see ActionSpec.get_display_binding).
+        if label:
             if right:
                 self._right_bindings.append(action_name)
             else:
