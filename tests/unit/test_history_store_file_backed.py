@@ -10,6 +10,7 @@ import pytest
 from sqlit.domains.query.store.history import (
     HistoryStore,
     _connection_dir_name,
+    _database_dir_name,
 )
 
 
@@ -18,9 +19,20 @@ def store(tmp_path: Path) -> HistoryStore:
     return HistoryStore(base_dir=tmp_path / "queries")
 
 
-def _read_file_text(store: HistoryStore, connection: str) -> list[str]:
+def _all_files_for(store: HistoryStore, connection: str) -> list[Path]:
+    """List every .sql file for a connection across all db subdirs."""
     conn_dir = store.base_dir / _connection_dir_name(connection)
-    return [p.read_text(encoding="utf-8") for p in sorted(conn_dir.glob("*.sql"))]
+    if not conn_dir.is_dir():
+        return []
+    files = [p for p in conn_dir.glob("*.sql") if p.is_file()]
+    for child in conn_dir.iterdir():
+        if child.is_dir():
+            files.extend(p for p in child.glob("*.sql") if p.is_file())
+    return sorted(files)
+
+
+def _read_file_text(store: HistoryStore, connection: str) -> list[str]:
+    return [p.read_text(encoding="utf-8") for p in _all_files_for(store, connection)]
 
 
 class TestRoundTrip:
@@ -60,7 +72,6 @@ class TestDedup:
     def test_same_query_updates_in_place(self, store: HistoryStore) -> None:
         store.save_query("c", "SELECT 1")
         first_ts = store.load_for_connection("c")[0].timestamp
-        # Force a different timestamp on the second save.
         import time
         time.sleep(0.01)
         store.save_query("c", "SELECT 1")
@@ -79,20 +90,45 @@ class TestDedup:
         store.save_query("c", "  SELECT 1  ")
         assert len(store.load_for_connection("c")) == 1
 
+    def test_dedup_across_db_subdirs(self, store: HistoryStore) -> None:
+        """Same query on different DBs of the same connection — last write wins."""
+        store.save_query("c", "SELECT 1", database="db_a")
+        store.save_query("c", "SELECT 1", database="db_b")
+        # Single file total (the second save deletes the first).
+        assert len(_all_files_for(store, "c")) == 1
+        entries = store.load_for_connection("c")
+        assert len(entries) == 1
+        assert entries[0].database == "db_b"
+
+
+class TestPathLayout:
+    def test_database_becomes_subdir(self, store: HistoryStore) -> None:
+        store.save_query("postgres-prod", "SELECT 1", database="myapp")
+        conn_dir = store.base_dir / _connection_dir_name("postgres-prod")
+        db_dir = conn_dir / _database_dir_name("myapp")
+        assert db_dir.is_dir()
+        assert any(db_dir.glob("*.sql"))
+        # Nothing directly under the connection dir.
+        assert not any(p.is_file() for p in conn_dir.glob("*.sql"))
+
+    def test_no_database_keeps_files_flat(self, store: HistoryStore) -> None:
+        store.save_query("local-sqlite", "SELECT 1")
+        conn_dir = store.base_dir / _connection_dir_name("local-sqlite")
+        assert any(conn_dir.glob("*.sql"))
+        # No subdirs created when database is empty.
+        assert not any(child.is_dir() for child in conn_dir.iterdir())
+
 
 class TestHeaderFormat:
-    def test_header_contains_expected_fields(self, store: HistoryStore) -> None:
+    def test_header_carries_only_marker_and_connection(self, store: HistoryStore) -> None:
         store.save_query("postgres-prod", "SELECT 1", database="myapp")
         text = _read_file_text(store, "postgres-prod")[0]
         assert "-- sqlit:history" in text
         assert "-- connection: postgres-prod" in text
-        assert "-- database: myapp" in text
-        assert "-- ran:" in text
-
-    def test_database_omitted_when_empty(self, store: HistoryStore) -> None:
-        store.save_query("c", "SELECT 1")
-        text = _read_file_text(store, "c")[0]
+        # database is now structural (in the path), not in the header.
         assert "-- database:" not in text
+        # timestamp is in the filename, not the header.
+        assert "-- ran:" not in text
 
     def test_query_body_preserved_verbatim(self, store: HistoryStore) -> None:
         body = "-- user's own comment\nSELECT 1\nFROM users"
@@ -110,7 +146,6 @@ class TestConnectionDirNaming:
     def test_two_similar_names_get_distinct_dirs(self) -> None:
         a = _connection_dir_name("a/b")
         b = _connection_dir_name("a_b")
-        # Sanitization alone would collide; hash suffix saves us.
         assert a != b
 
     def test_unicode_name_is_handled(self, store: HistoryStore) -> None:
@@ -126,10 +161,8 @@ class TestFilenameOrdering:
         for i in range(5):
             store.save_query("c", f"SELECT {i}")
             time.sleep(0.005)
-        conn_dir = store.base_dir / _connection_dir_name("c")
-        names = sorted(p.name for p in conn_dir.glob("*.sql"))
-        # Last (lex-max) name must be the most recent (SELECT 4).
-        last_text = (conn_dir / names[-1]).read_text(encoding="utf-8")
+        names = sorted(p.name for p in _all_files_for(store, "c"))
+        last_text = next(p for p in _all_files_for(store, "c") if p.name == names[-1]).read_text()
         assert "SELECT 4" in last_text
 
 
@@ -145,23 +178,30 @@ class TestDeleteAndClear:
 
     def test_clear_for_connection(self, store: HistoryStore) -> None:
         store.save_query("c", "SELECT 1")
-        store.save_query("c", "SELECT 2")
+        store.save_query("c", "SELECT 2", database="db_a")
         assert store.clear_for_connection("c") == 2
         assert store.load_for_connection("c") == []
 
+    def test_clear_drops_empty_db_subdirs(self, store: HistoryStore) -> None:
+        store.save_query("c", "SELECT 1", database="db_a")
+        store.clear_for_connection("c")
+        conn_dir = store.base_dir / _connection_dir_name("c")
+        assert not conn_dir.exists()
+
 
 class TestEviction:
-    def test_max_entries_enforced(
+    def test_max_entries_enforced_across_databases(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Eviction is per-connection, summing across all database subdirs."""
         monkeypatch.setattr(HistoryStore, "MAX_ENTRIES_PER_CONNECTION", 3)
         s = HistoryStore(base_dir=tmp_path / "queries")
         import time
+        # Alternate databases — oldest two should still be the ones evicted.
         for i in range(5):
-            s.save_query("c", f"SELECT {i}")
+            s.save_query("c", f"SELECT {i}", database="db_a" if i % 2 else "db_b")
             time.sleep(0.005)
         entries = s.load_for_connection("c")
-        # Oldest two (SELECT 0, SELECT 1) should have been evicted.
         assert len(entries) == 3
         assert {e.query for e in entries} == {"SELECT 2", "SELECT 3", "SELECT 4"}
 
@@ -193,14 +233,18 @@ class TestLegacyMigration:
         entries = store.load_for_connection("old")
         assert [e.query for e in entries] == ["SELECT 2", "SELECT 1"]
         assert entries[0].database == "myapp"
+        # Database-bearing entry now lives in a db subdir.
+        old_dir = config / "queries" / _connection_dir_name("old")
+        myapp_dir = old_dir / _database_dir_name("myapp")
+        assert any(myapp_dir.glob("*.sql"))
+        # No-database entry stays flat.
+        assert any(p.is_file() for p in old_dir.glob("*.sql"))
 
-        # JSON has been renamed so we don't re-import on next launch.
         assert not legacy.exists()
         assert (config / "query_history.json.migrated").exists()
 
     def test_migration_handles_missing_file(self, tmp_path: Path) -> None:
         store = HistoryStore(base_dir=tmp_path / "queries")
-        # Should not crash on first load.
         assert store.load_all() == []
 
     def test_migration_handles_malformed_file(self, tmp_path: Path) -> None:
@@ -209,15 +253,76 @@ class TestLegacyMigration:
         (config / "query_history.json").write_text("not valid json")
         store = HistoryStore(base_dir=config / "queries")
         assert store.load_all() == []
-        # Malformed file is left alone (not renamed).
         assert (config / "query_history.json").exists()
+
+
+class TestV1ToV2LayoutMigration:
+    """Files written under the v1 layout (flat under conn dir, database
+    in the header) should be moved into v2 (db subdir, trimmed header)."""
+
+    def test_migrates_v1_files_with_database_to_subdir(self, tmp_path: Path) -> None:
+        config = tmp_path / "config"
+        queries = config / "queries"
+        conn_dir = queries / _connection_dir_name("postgres-prod")
+        conn_dir.mkdir(parents=True)
+        v1_text = (
+            "-- sqlit:history\n"
+            "-- connection: postgres-prod\n"
+            "-- database: myapp\n"
+            "-- ran: 2025-12-01T10:00:00\n"
+            "\n"
+            "SELECT * FROM users\n"
+        )
+        (conn_dir / "2025-12-01T10-00-00_deadbeef.sql").write_text(v1_text)
+
+        store = HistoryStore(base_dir=queries)
+        entries = store.load_for_connection("postgres-prod")
+        assert len(entries) == 1
+        assert entries[0].database == "myapp"
+
+        # File should now live in the db subdir, not flat.
+        flat = list(conn_dir.glob("*.sql"))
+        assert not [p for p in flat if p.is_file()]
+        db_dir = conn_dir / _database_dir_name("myapp")
+        assert any(db_dir.glob("*.sql"))
+
+        # Header is trimmed — no ran/database lines.
+        migrated_text = next(db_dir.glob("*.sql")).read_text(encoding="utf-8")
+        assert "-- database:" not in migrated_text
+        assert "-- ran:" not in migrated_text
+        assert "-- connection: postgres-prod" in migrated_text
+
+    def test_migrates_v1_files_without_database_just_trims_header(
+        self, tmp_path: Path
+    ) -> None:
+        config = tmp_path / "config"
+        queries = config / "queries"
+        conn_dir = queries / _connection_dir_name("local-sqlite")
+        conn_dir.mkdir(parents=True)
+        v1_text = (
+            "-- sqlit:history\n"
+            "-- connection: local-sqlite\n"
+            "-- ran: 2025-12-01T10:00:00\n"
+            "\n"
+            "SELECT 1\n"
+        )
+        (conn_dir / "2025-12-01T10-00-00_deadbeef.sql").write_text(v1_text)
+
+        store = HistoryStore(base_dir=queries)
+        entries = store.load_for_connection("local-sqlite")
+        assert len(entries) == 1
+        assert entries[0].database == ""
+
+        # Stays flat under the connection dir; header trimmed.
+        files = [p for p in conn_dir.glob("*.sql") if p.is_file()]
+        assert len(files) == 1
+        assert "-- ran:" not in files[0].read_text(encoding="utf-8")
 
 
 class TestFallbackParsing:
     def test_file_without_header_uses_filename_timestamp(
         self, store: HistoryStore
     ) -> None:
-        # User dropped a raw .sql file into the connection dir.
         conn_dir = store.base_dir / _connection_dir_name("c")
         conn_dir.mkdir(parents=True)
         (conn_dir / "2026-05-23T14-30-15_deadbeef.sql").write_text(
