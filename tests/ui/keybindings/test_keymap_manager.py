@@ -177,23 +177,78 @@ class TestStrictness:
         assert manager.load_error is not None
         assert "Unknown leader action" in manager.load_error
 
-    def test_empty_key_string(self, tmp_path: Path):
+    def test_empty_string_in_list_is_rejected(self, tmp_path: Path):
         manager = _load(
             tmp_path,
-            "empty",
-            {"keymap": {"action_keys": {"tree": {"refresh_tree": ""}}}},
+            "empty-in-list",
+            {"keymap": {"action_keys": {"tree": {"refresh_tree": ["f", ""]}}}},
         )
         assert manager.load_error is not None
-        assert "key must be a non-empty string" in manager.load_error
+        assert "every entry must be a non-empty string" in manager.load_error
 
-    def test_empty_key_list(self, tmp_path: Path):
+
+class TestUnbind:
+    """null / "" / [] removes a default binding without adding a replacement."""
+
+    def test_null_unbinds_default(self, tmp_path: Path):
+        # Default: 'u' → undo in query_normal. User sets it to null.
+        _load(
+            tmp_path,
+            "unbind-null",
+            {"keymap": {"action_keys": {"query_normal": {"undo": None}}}},
+        )
+        keymap = get_keymap()
+        # No key in query_normal triggers undo anymore.
+        assert not any(
+            ak.action == "undo" and ak.context == "query_normal"
+            for ak in keymap.get_action_keys()
+        )
+
+    def test_unbind_resolves_user_vs_default_conflict(self, tmp_path: Path):
+        # User wants 'u' for enter_insert_mode. Without unbinding undo this
+        # collides with the default 'u' → undo. With it, the user's binding
+        # works cleanly.
         manager = _load(
             tmp_path,
-            "empty-list",
-            {"keymap": {"action_keys": {"tree": {"refresh_tree": []}}}},
+            "unbind-resolves",
+            {
+                "keymap": {
+                    "action_keys": {
+                        "query_normal": {
+                            "enter_insert_mode": "u",
+                            "undo": None,
+                        }
+                    }
+                }
+            },
         )
-        assert manager.load_error is not None
-        assert "key list must contain at least one key" in manager.load_error
+        assert manager.load_error is None
+        keymap = get_keymap()
+        assert keymap.action("enter_insert_mode") == "u"
+        assert not any(ak.action == "undo" and ak.context == "query_normal"
+                       for ak in keymap.get_action_keys())
+
+    def test_empty_string_also_unbinds(self, tmp_path: Path):
+        _load(
+            tmp_path,
+            "unbind-empty",
+            {"keymap": {"action_keys": {"query_normal": {"undo": ""}}}},
+        )
+        assert not any(
+            ak.action == "undo" and ak.context == "query_normal"
+            for ak in get_keymap().get_action_keys()
+        )
+
+    def test_leader_null_unbinds(self, tmp_path: Path):
+        _load(
+            tmp_path,
+            "unbind-leader",
+            {"keymap": {"leader_commands": {"leader": {"toggle_explorer": None}}}},
+        )
+        assert not any(
+            c.action == "toggle_explorer" and c.menu == "leader"
+            for c in get_keymap().get_leader_commands()
+        )
 
 
 class TestConflicts:

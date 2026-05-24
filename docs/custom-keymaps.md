@@ -49,7 +49,16 @@ Values can be a single key string, or a list to provide aliases (the first entry
 }
 ```
 
-A single string *replaces every default key* for that action in that state. A list lets you control the full set of keys explicitly.
+A single string *replaces every default key* for that action in that state. A list lets you control the full set of keys explicitly. **Set the value to `null` to unbind a default entirely** — useful when you want to claim a key that already has a default action:
+
+```json
+"query_normal": {
+  "enter_insert_mode": "u",
+  "undo": null
+}
+```
+
+Here `u` enters insert mode and the default `u → undo` binding is removed (no key triggers undo in `query_normal` anymore). Without the `undo: null`, the loader would reject the keymap because two actions would be claiming `u`.
 
 ## What you can change — and what you cannot
 

@@ -139,15 +139,19 @@ class KeymapManager:
         base_action = defaults.get_action_keys()
         base_leader = defaults.get_leader_commands()
 
-        user_action_overrides = self._parse_action_overrides(
+        user_action_overrides, action_unbinds = self._parse_action_overrides(
             keymap_data.get("action_keys", {}), base_action
         )
-        user_leader_overrides = self._parse_leader_overrides(
+        user_leader_overrides, leader_unbinds = self._parse_leader_overrides(
             keymap_data.get("leader_commands", {}), base_leader
         )
 
-        merged_action = self._merge_action_keys(base_action, user_action_overrides)
-        merged_leader = self._merge_leader_commands(base_leader, user_leader_overrides)
+        merged_action = self._merge_action_keys(
+            base_action, user_action_overrides, action_unbinds
+        )
+        merged_leader = self._merge_leader_commands(
+            base_leader, user_leader_overrides, leader_unbinds
+        )
 
         self._detect_conflicts(
             merged_leader,
@@ -161,24 +165,30 @@ class KeymapManager:
     # ------------------------------------------------------------------ parsing
 
     @staticmethod
-    def _normalize_key_list(value: Any, where: str) -> list[str]:
+    def _normalize_key_list(value: Any, where: str) -> list[str] | None:
+        """Return the user's key list, or None to mean "unbind this action".
+
+        Accepts `null`, `""`, and `[]` as unbind sentinels.
+        """
+        if value is None:
+            return None
         if isinstance(value, str):
             if not value:
-                raise ValueError(f"{where}: key must be a non-empty string.")
+                return None
             return [value]
         if isinstance(value, list):
             if not value:
-                raise ValueError(f"{where}: key list must contain at least one key.")
+                return None
             for k in value:
                 if not isinstance(k, str) or not k:
                     raise ValueError(f"{where}: every entry must be a non-empty string.")
             return list(value)
-        raise ValueError(f"{where}: expected a string or list of strings.")
+        raise ValueError(f"{where}: expected a string, list of strings, or null to unbind.")
 
     @staticmethod
     def _parse_action_overrides(
         data: Any, base: list[ActionKeyDef]
-    ) -> list[ActionKeyDef]:
+    ) -> tuple[list[ActionKeyDef], set[tuple[str, str | None]]]:
         if not isinstance(data, dict):
             raise ValueError('"action_keys" must be a JSON object keyed by state name.')
 
@@ -196,6 +206,7 @@ class KeymapManager:
             actions_in_state[ak.context].add(ak.action)
 
         out: list[ActionKeyDef] = []
+        unbinds: set[tuple[str, str | None]] = set()
         for state, mapping in data.items():
             if not isinstance(state, str) or not state:
                 raise ValueError('action_keys keys must be non-empty state names.')
@@ -220,6 +231,9 @@ class KeymapManager:
                 key_list = KeymapManager._normalize_key_list(
                     keys, where=f'action_keys."{state}"."{action}"'
                 )
+                if key_list is None:
+                    unbinds.add((action, state))
+                    continue
                 for i, key in enumerate(key_list):
                     out.append(
                         ActionKeyDef(
@@ -232,12 +246,12 @@ class KeymapManager:
                             priority=template.priority,
                         )
                     )
-        return out
+        return out, unbinds
 
     @staticmethod
     def _parse_leader_overrides(
         data: Any, base: list[LeaderCommandDef]
-    ) -> list[LeaderCommandDef]:
+    ) -> tuple[list[LeaderCommandDef], set[tuple[str, str]]]:
         if not isinstance(data, dict):
             raise ValueError('"leader_commands" must be a JSON object keyed by menu name.')
 
@@ -249,6 +263,7 @@ class KeymapManager:
             actions_in_menu[cmd.menu].add(cmd.action)
 
         out: list[LeaderCommandDef] = []
+        unbinds: set[tuple[str, str]] = set()
         for menu, mapping in data.items():
             if not isinstance(menu, str) or not menu:
                 raise ValueError('leader_commands keys must be non-empty menu names.')
@@ -270,10 +285,14 @@ class KeymapManager:
                         f"Unknown leader action {action!r} in menu {menu!r}.{hint}"
                     )
 
-                # Leader commands are 1:1 — exactly one key per (action, menu).
-                if not isinstance(key, str) or not key:
+                # null / "" unbinds the default for this (action, menu).
+                if key is None or key == "":
+                    unbinds.add((action, menu))
+                    continue
+
+                if not isinstance(key, str):
                     raise ValueError(
-                        f'leader_commands."{menu}"."{action}": expected a non-empty key string.'
+                        f'leader_commands."{menu}"."{action}": expected a key string or null.'
                     )
 
                 out.append(
@@ -286,25 +305,30 @@ class KeymapManager:
                         menu=menu,
                     )
                 )
-        return out
+        return out, unbinds
 
     # ------------------------------------------------------------------- merge
 
     @staticmethod
     def _merge_action_keys(
-        base: list[ActionKeyDef], user: list[ActionKeyDef]
+        base: list[ActionKeyDef],
+        user: list[ActionKeyDef],
+        unbinds: set[tuple[str, str | None]],
     ) -> list[ActionKeyDef]:
         # User overrides specify the COMPLETE key list for each (action, state)
         # they touch — drop every default with that identity, then append.
-        overridden = {(u.action, u.context) for u in user}
+        # Unbinds drop the defaults without adding anything.
+        overridden = {(u.action, u.context) for u in user} | unbinds
         kept = [ak for ak in base if (ak.action, ak.context) not in overridden]
         return kept + user
 
     @staticmethod
     def _merge_leader_commands(
-        base: list[LeaderCommandDef], user: list[LeaderCommandDef]
+        base: list[LeaderCommandDef],
+        user: list[LeaderCommandDef],
+        unbinds: set[tuple[str, str]],
     ) -> list[LeaderCommandDef]:
-        overridden = {(u.action, u.menu) for u in user}
+        overridden = {(u.action, u.menu) for u in user} | unbinds
         kept = [cmd for cmd in base if (cmd.action, cmd.menu) not in overridden]
         return kept + user
 
@@ -355,5 +379,6 @@ class KeymapManager:
             lines = "\n  - ".join(conflicts)
             raise ValueError(
                 f"Conflicting keybindings detected ({len(conflicts)}):\n  - {lines}\n"
-                f"Resolve by removing or rebinding the conflicting entries in your keymap."
+                f'Pick a different key, or unbind a colliding action by setting '
+                f'its key to null (e.g. "undo": null).'
             )
