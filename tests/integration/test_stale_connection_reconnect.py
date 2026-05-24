@@ -444,12 +444,12 @@ async def _kill_connection(spec: ProviderSpec, connection_id: int) -> None:
 
     if spec.key == "mariadb":
         try:
-            import mariadb
+            import pymysql
         except ImportError:
-            pytest.skip("mariadb is not installed")
+            pytest.skip("PyMySQL is not installed")
 
         def work() -> None:
-            conn = mariadb.connect(
+            conn = pymysql.connect(
                 host=spec.host,
                 port=int(spec.port),
                 database=spec.database,

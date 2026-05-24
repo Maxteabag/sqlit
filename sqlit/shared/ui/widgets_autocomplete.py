@@ -10,37 +10,40 @@ from textual.widgets import Static
 
 class AutocompleteDropdown(VerticalScroll):
     """Dropdown widget for SQL autocomplete suggestions with scrollbar."""
-
-    DEFAULT_CSS = """
-    AutocompleteDropdown {
+    MIN_WIDTH = 25
+    MAX_WIDTH = 80
+    MAX_HEIGHT = 12
+    VERTICAL_SCROLLBAR_SIZE = 1
+    DEFAULT_CSS = f"""
+    AutocompleteDropdown {{
         layer: autocomplete;
         width: auto;
-        min-width: 25;
-        max-width: 80;
+        min-width: {MIN_WIDTH};
+        max-width: {MAX_WIDTH};
         height: auto;
-        max-height: 12;
+        max-height: {MAX_HEIGHT};
         background: $surface;
         border: round $border;
         padding: 0;
         display: none;
-        scrollbar-size: 1 1;
+        scrollbar-size: {VERTICAL_SCROLLBAR_SIZE} 1;
         constrain: inside inside;
-    }
+    }}
 
-    AutocompleteDropdown.visible {
+    AutocompleteDropdown.visible {{
         display: block;
-    }
+    }}
 
-    AutocompleteDropdown .autocomplete-item {
+    AutocompleteDropdown .autocomplete-item {{
         width: 100%;
         height: 1;
         padding: 0 1;
-    }
+    }}
 
-    AutocompleteDropdown .autocomplete-item.selected {
+    AutocompleteDropdown .autocomplete-item.selected {{
         background: $primary;
         color: $background;
-    }
+    }}
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -62,6 +65,7 @@ class AutocompleteDropdown(VerticalScroll):
 
         self.selected_index = 0
         self._rebuild()
+        self._update_width()
         # Reset scroll to top
         self.scroll_to(y=0, animate=False)
 
@@ -124,3 +128,14 @@ class AutocompleteDropdown(VerticalScroll):
     def is_visible(self) -> bool:
         """Check if dropdown is visible."""
         return "visible" in self.classes
+
+    def _update_width(self) -> None:
+        """Update the width of the dropdown based on filtered items."""
+
+        width = self.MIN_WIDTH
+        if self.filtered_items:
+            padding = 6  # 2 border + 2 padding chars + 2 css padding
+            scrollbar = self.VERTICAL_SCROLLBAR_SIZE if len(self.filtered_items) > self.MAX_HEIGHT else 0
+            width = max(len(item) for item in self.filtered_items) + padding + scrollbar
+
+        self.styles.width = max(self.MIN_WIDTH, min(width, self.MAX_WIDTH))

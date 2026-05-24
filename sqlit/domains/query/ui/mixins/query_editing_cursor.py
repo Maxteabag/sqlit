@@ -20,7 +20,14 @@ class QueryEditingCursorMixin:
         count = self._get_and_clear_count() or 1
 
         text = self.query_input.text
-        row, col = self.query_input.cursor_location
+        # In charwise visual mode, read the logical cursor position (not the
+        # extended selection end) so motions operate from the correct position.
+        from sqlit.core.vim import VimMode as _VM
+
+        if self.vim_mode == _VM.VISUAL and getattr(self, "_visual_cursor", None) is not None:
+            row, col = self._visual_cursor
+        else:
+            row, col = self.query_input.cursor_location
 
         # Apply motion `count` times
         for _ in range(count):
@@ -31,7 +38,16 @@ class QueryEditingCursorMixin:
                 break
             row, col = new_row, new_col
 
-        self.query_input.cursor_location = (row, col)
+        # In visual modes, update the selection directly instead of setting
+        # cursor_location, which would clear the TextArea selection.
+        from sqlit.core.vim import VimMode
+
+        if self.vim_mode == VimMode.VISUAL_LINE and hasattr(self, "_update_visual_line_selection"):
+            self._update_visual_line_selection(cursor_row=row)
+        elif self.vim_mode == VimMode.VISUAL and hasattr(self, "_update_query_visual_selection"):
+            self._update_query_visual_selection(cursor=(row, col))
+        else:
+            self.query_input.cursor_location = (row, col)
 
     def action_g_leader_key(self: QueryMixinHost) -> None:
         """Show the g motion leader menu."""
@@ -39,6 +55,8 @@ class QueryEditingCursorMixin:
 
     def action_g_first_line(self: QueryMixinHost) -> None:
         """Go to first line (gg), or to line N with count prefix (e.g., 3gg)."""
+        from sqlit.core.vim import VimMode
+
         self._clear_leader_pending()
         count = self._get_and_clear_count()
         if count is not None:
@@ -46,9 +64,15 @@ class QueryEditingCursorMixin:
             num_lines = len(lines)
             target_row = min(count - 1, num_lines - 1)
             target_row = max(0, target_row)
-            self.query_input.cursor_location = (target_row, 0)
         else:
-            self.query_input.cursor_location = (0, 0)
+            target_row = 0
+
+        if self.vim_mode == VimMode.VISUAL_LINE and hasattr(self, "_update_visual_line_selection"):
+            self._update_visual_line_selection(cursor_row=target_row)
+        elif self.vim_mode == VimMode.VISUAL and hasattr(self, "_update_query_visual_selection"):
+            self._update_query_visual_selection(cursor=(target_row, 0))
+        else:
+            self.query_input.cursor_location = (target_row, 0)
 
     def action_g_word_end_back(self: QueryMixinHost) -> None:
         """Go to end of previous word (ge)."""
@@ -107,6 +131,10 @@ class QueryEditingCursorMixin:
         """Move cursor to previous WORD (B)."""
         self._move_with_motion("B")
 
+    def action_cursor_first_non_blank(self: QueryMixinHost) -> None:
+        """Move cursor to first non-whitespace character (^)."""
+        self._move_with_motion("^")
+
     def action_cursor_line_start(self: QueryMixinHost) -> None:
         """Move cursor to start of line (0)."""
         self._move_with_motion("0")
@@ -117,6 +145,8 @@ class QueryEditingCursorMixin:
 
     def action_cursor_last_line(self: QueryMixinHost) -> None:
         """Move cursor to last line (G), or to line N with count prefix (e.g., 25G)."""
+        from sqlit.core.vim import VimMode
+
         count = self._get_and_clear_count()
         if count is not None:
             # Go to specific line (1-indexed)
@@ -124,7 +154,12 @@ class QueryEditingCursorMixin:
             num_lines = len(lines)
             target_row = min(count - 1, num_lines - 1)  # Convert to 0-indexed, clamp
             target_row = max(0, target_row)
-            self.query_input.cursor_location = (target_row, 0)
+            if self.vim_mode == VimMode.VISUAL_LINE and hasattr(self, "_update_visual_line_selection"):
+                self._update_visual_line_selection(cursor_row=target_row)
+            elif self.vim_mode == VimMode.VISUAL and hasattr(self, "_update_query_visual_selection"):
+                self._update_query_visual_selection(cursor=(target_row, 0))
+            else:
+                self.query_input.cursor_location = (target_row, 0)
         else:
             # Go to last line
             self._move_with_motion("G")

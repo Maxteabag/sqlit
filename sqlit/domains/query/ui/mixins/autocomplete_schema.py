@@ -406,13 +406,7 @@ class AutocompleteSchemaMixin:
                     if single_db:
                         full_name = table_name
                     else:
-                        quoted_db = dialect.quote_identifier(database) if database else ""
-                        quoted_schema = dialect.quote_identifier(schema_name)
-                        quoted_table = dialect.quote_identifier(table_name)
-                        if database:
-                            full_name = f"{quoted_db}.{quoted_schema}.{quoted_table}"
-                        else:
-                            full_name = f"{quoted_schema}.{quoted_table}"
+                        full_name = dialect.qualified_name(database, schema_name, table_name)
 
                     display_name = dialect.format_table_name(schema_name, table_name)
                     metadata = [
@@ -495,13 +489,7 @@ class AutocompleteSchemaMixin:
                     if single_db:
                         full_name = view_name
                     else:
-                        quoted_db = dialect.quote_identifier(database) if database else ""
-                        quoted_schema = dialect.quote_identifier(schema_name)
-                        quoted_view = dialect.quote_identifier(view_name)
-                        if database:
-                            full_name = f"{quoted_db}.{quoted_schema}.{quoted_view}"
-                        else:
-                            full_name = f"{quoted_schema}.{quoted_view}"
+                        full_name = dialect.qualified_name(database, schema_name, view_name)
 
                     display_name = dialect.format_table_name(schema_name, view_name)
                     metadata = [
@@ -816,14 +804,8 @@ class AutocompleteSchemaMixin:
                             # Single database - use simple table name
                             schema_cache["tables"].append(table_name)
                         else:
-                            # Multiple databases - use full qualifier [db].[schema].[table]
-                            quoted_db = dialect.quote_identifier(database) if database else ""
-                            quoted_schema = dialect.quote_identifier(schema_name)
-                            quoted_table = dialect.quote_identifier(table_name)
-                            if database:
-                                full_name = f"{quoted_db}.{quoted_schema}.{quoted_table}"
-                            else:
-                                full_name = f"{quoted_schema}.{quoted_table}"
+                            # Multiple databases - use qualified identifier
+                            full_name = dialect.qualified_name(database, schema_name, table_name)
                             schema_cache["tables"].append(full_name)
                         # Keep metadata for column loading (multiple keys for flexible lookup)
                         display_name = dialect.format_table_name(schema_name, table_name)
@@ -843,14 +825,8 @@ class AutocompleteSchemaMixin:
                             # Single database - use simple view name
                             schema_cache["views"].append(view_name)
                         else:
-                            # Multiple databases - use full qualifier [db].[schema].[view]
-                            quoted_db = dialect.quote_identifier(database) if database else ""
-                            quoted_schema = dialect.quote_identifier(schema_name)
-                            quoted_view = dialect.quote_identifier(view_name)
-                            if database:
-                                full_name = f"{quoted_db}.{quoted_schema}.{quoted_view}"
-                            else:
-                                full_name = f"{quoted_schema}.{quoted_view}"
+                            # Multiple databases - use qualified identifier
+                            full_name = dialect.qualified_name(database, schema_name, view_name)
                             schema_cache["views"].append(full_name)
                         # Keep metadata for column loading (multiple keys for flexible lookup)
                         display_name = dialect.format_table_name(schema_name, view_name)

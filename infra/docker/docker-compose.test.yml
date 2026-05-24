@@ -175,6 +175,101 @@ services:
       retries: 10
       start_period: 10s
 
+  # Apache Impala ships no single-container image. The official quickstart runs
+  # Hive Metastore + statestored + catalogd + impalad together, all pinned to
+  # apache/impala:4.5.0-* with hive-site.xml mounted from impala_quickstart_conf/.
+  # Based on https://github.com/apache/impala/blob/master/docker/quickstart.yml
+  impala-hms:
+    image: apache/impala:4.5.0-impala_quickstart_hms
+    container_name: sqlit-test-impala-hms
+    command: ["hms"]
+    volumes:
+      - impala-warehouse:/var/lib/hive
+      - impala-warehouse:/user/hive/warehouse
+      - ./impala_quickstart_conf:/opt/hive/conf:ro
+    # hive-site.xml refers to the metastore as `thrift://quickstart-hive-metastore:9083`
+    # (matching the upstream quickstart). Alias so catalogd/impalad can resolve it.
+    networks:
+      impala-network:
+        aliases:
+          - quickstart-hive-metastore
+    profiles:
+      - enterprise
+
+  impala-statestored:
+    image: apache/impala:4.5.0-statestored
+    container_name: sqlit-test-impala-statestored
+    command: ["-redirect_stdout_stderr=false", "-logtostderr", "-v=1"]
+    volumes:
+      - ./impala_quickstart_conf:/opt/impala/conf:ro
+    # Impala hard-codes peer hostnames `statestored` and `catalogd` when the
+    # services register — alias so the other containers can reach it there.
+    networks:
+      impala-network:
+        aliases:
+          - statestored
+    profiles:
+      - enterprise
+
+  impala-catalogd:
+    image: apache/impala:4.5.0-catalogd
+    container_name: sqlit-test-impala-catalogd
+    depends_on:
+      - impala-statestored
+      - impala-hms
+    command:
+      - "-redirect_stdout_stderr=false"
+      - "-logtostderr"
+      - "-v=1"
+      - "-hms_event_polling_interval_s=1"
+      - "-invalidate_tables_timeout_s=999999"
+    volumes:
+      - impala-warehouse:/user/hive/warehouse
+      - ./impala_quickstart_conf:/opt/impala/conf:ro
+    networks:
+      impala-network:
+        aliases:
+          - catalogd
+    profiles:
+      - enterprise
+
+  impala:
+    image: apache/impala:4.5.0-impalad_coord_exec
+    container_name: sqlit-test-impala
+    depends_on:
+      - impala-statestored
+      - impala-catalogd
+    command:
+      - "-v=1"
+      - "-redirect_stdout_stderr=false"
+      - "-logtostderr"
+      - "-mt_dop_auto_fallback=true"
+      - "-default_query_options=mt_dop=4,default_file_format=parquet,default_transactional_type=insert_only"
+      - "-mem_limit=4gb"
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xmx1g
+    ports:
+      - "${IMPALA_PORT:-21050}:21050"
+    volumes:
+      - impala-warehouse:/user/hive/warehouse
+      - ./impala_quickstart_conf:/opt/impala/conf:ro
+    networks:
+      - impala-network
+    healthcheck:
+      # /bin/sh in this image is dash, which doesn't support bash's /dev/tcp.
+      # The Impala image ships Python, so use that for a tiny TCP probe.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import socket,sys; s=socket.socket(); s.settimeout(2); s.connect(('localhost',21050)); sys.exit(0)"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    profiles:
+      - enterprise
+
   mariadb:
     image: mariadb:11
     container_name: sqlit-test-mariadb
@@ -185,6 +280,48 @@ services:
       MARIADB_DATABASE: "test_sqlit"
     ports:
       - "${MARIADB_PORT:-3307}:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    tmpfs:
+      - /var/lib/mysql
+
+  # MariaDB with TIS-620 charset (Thai) - for charset testing
+  mariadb-tis620:
+    image: mariadb:11
+    container_name: sqlit-test-mariadb-tis620
+    command: --character-set-server=tis620 --collation-server=tis620_thai_ci
+    environment:
+      MARIADB_ROOT_PASSWORD: "TestPassword123!"
+      MARIADB_USER: "testuser"
+      MARIADB_PASSWORD: "TestPassword123!"
+      MARIADB_DATABASE: "test_sqlit"
+    ports:
+      - "${MARIADB_TIS620_PORT:-3310}:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    tmpfs:
+      - /var/lib/mysql
+
+  # MariaDB with Latin1 charset - for charset testing
+  mariadb-latin1:
+    image: mariadb:11
+    container_name: sqlit-test-mariadb-latin1
+    command: --character-set-server=latin1 --collation-server=latin1_swedish_ci
+    environment:
+      MARIADB_ROOT_PASSWORD: "TestPassword123!"
+      MARIADB_USER: "testuser"
+      MARIADB_PASSWORD: "TestPassword123!"
+      MARIADB_DATABASE: "test_sqlit"
+    ports:
+      - "${MARIADB_LATIN1_PORT:-3311}:3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
@@ -219,6 +356,20 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    container_name: sqlit-test-surrealdb
+    command: start --user root --pass root --bind 0.0.0.0:8000 memory
+    ports:
+      - "${SURREALDB_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "/surreal", "is-ready", "--endpoint", "http://localhost:8000"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 
   firebird:
     image: firebirdsql/firebird:5.0.3-noble
@@ -333,3 +484,12 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+volumes:
+  impala-warehouse:
+
+networks:
+  impala-network:
+    # Underscore-free FQDN: Java's URL parser rejects hostnames with underscores,
+    # which is why we can't let compose auto-prefix the network name.
+    name: impalanet

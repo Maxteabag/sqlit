@@ -34,6 +34,8 @@ from sqlit.domains.query.state import (
     QueryFocusedState,
     QueryInsertModeState,
     QueryNormalModeState,
+    QueryVisualModeState,
+    QueryVisualLineModeState,
 )
 from sqlit.domains.results.state import (
     ResultsFilterActiveState,
@@ -71,6 +73,8 @@ class UIStateMachine:
         self.tree_on_object = TreeOnObjectState(parent=self.tree_focused)
 
         self.query_focused = QueryFocusedState(parent=self.main_screen)
+        self.query_visual = QueryVisualModeState(parent=self.query_focused)
+        self.query_visual_line = QueryVisualLineModeState(parent=self.query_focused)
         self.query_normal = QueryNormalModeState(parent=self.query_focused)
         self.query_insert = QueryInsertModeState(parent=self.query_focused)
         self.autocomplete_active = AutocompleteActiveState(parent=self.query_focused)
@@ -94,6 +98,8 @@ class UIStateMachine:
             self.tree_on_object,  # For index/trigger/sequence nodes
             self.tree_focused,
             self.autocomplete_active,  # Before query_insert (more specific)
+            self.query_visual,  # Before query_normal (more specific)
+            self.query_visual_line,  # Before query_normal (more specific)
             self.query_insert,
             self.query_normal,
             self.query_focused,
@@ -230,6 +236,26 @@ class UIStateMachine:
         lines.append(binding(k("copy_selection", "^c"), "Copy selection"))
         lines.append(binding(k("paste", "^v"), "Paste"))
         lines.append("")
+        lines.append(subsection(f"Visual Mode ({k('enter_visual_mode', 'v')}):"))
+        lines.append(binding(f"{k('exit_visual_mode', '<esc>')}/{k('enter_visual_mode', 'v')}", "Exit visual mode"))
+        lines.append(binding(k("switch_to_visual_line_mode", "V"), "Switch to visual line mode"))
+        lines.append(binding("h/j/k/l", "Extend selection"))
+        lines.append(binding("w/b/e/$", "Extend by word/line motions"))
+        lines.append(binding(k("visual_yank", "y"), "Yank selection"))
+        lines.append(binding(k("visual_delete", "d"), "Delete selection"))
+        lines.append(binding(k("visual_change", "c"), "Change selection"))
+        lines.append(binding(k("visual_execute", "<enter>"), "Execute selection"))
+        lines.append("")
+        lines.append(subsection(f"Visual Line Mode ({k('enter_visual_line_mode', 'V')}):"))
+        lines.append(binding(f"{k('exit_visual_line_mode', '<esc>')}/{k('enter_visual_line_mode', 'V')}", "Exit visual line mode"))
+        lines.append(binding(k("switch_to_visual_mode", "v"), "Switch to visual mode"))
+        lines.append(binding("j/k", "Extend selection down/up"))
+        lines.append(binding("gg/G", "Extend to first/last line"))
+        lines.append(binding(k("visual_line_yank", "y"), "Yank selected lines"))
+        lines.append(binding(k("visual_line_delete", "d"), "Delete selected lines"))
+        lines.append(binding(k("visual_line_change", "c"), "Change selected lines"))
+        lines.append(binding(k("visual_line_execute", "<enter>"), "Execute selected lines"))
+        lines.append("")
         # Operator + motion sequences: resolve the operator key, keep "{motion}" literal.
         yank_op = k("yank_leader_key", "y")
         del_op = k("delete_leader_key", "d")
@@ -244,7 +270,8 @@ class UIStateMachine:
         lines.append(binding(ks([("cursor_left", "h"), ("cursor_down", "j"), ("cursor_up", "k"), ("cursor_right", "l")]), "Cursor left/down/up/right"))
         lines.append(binding(ks([("cursor_word_forward", "w"), ("cursor_WORD_forward", "W")]), "Word forward"))
         lines.append(binding(ks([("cursor_word_back", "b"), ("cursor_WORD_back", "B")]), "Word backward"))
-        lines.append(binding(ks([("cursor_line_start", "0"), ("cursor_line_end", "$")]), "Line start/end"))
+        # `^` (first non-blank) is not a separate keymap action — kept as a literal.
+        lines.append(binding(f"{k('cursor_line_start', '0')}/^/{k('cursor_line_end', '$')}", "Line start/first char/end"))
         lines.append(binding(f"{g_key}{lk('first_line', 'g', 'g')}/{k('cursor_last_line', 'G')}", "File start/end"))
         lines.append(binding(f"{k('cursor_find_char', 'f')}{{c}}/{k('cursor_find_char_back', 'F')}{{c}}", "Find char forward/back"))
         lines.append(binding(f"{k('cursor_till_char', 't')}{{c}}/{k('cursor_till_char_back', 'T')}{{c}}", "Till char forward/back"))

@@ -62,6 +62,18 @@ class Dialect(Protocol):
 
     def format_table_name(self, schema: str | None, table: str) -> str: ...
 
+    def qualified_name(self, database: str | None, schema: str | None, name: str) -> str:
+        """Build a quoted qualified identifier for use in SQL.
+
+        Called when completing tables/views across multiple databases. Each
+        dialect decides how many segments to emit:
+          - SQL Server / generic: `[db].[schema].[name]`
+          - PostgreSQL:           `"schema"."name"` (databases are isolated)
+          - MySQL/MariaDB:        `` `db`.`name` `` (no schemas within databases)
+          - SQLite:               `"name"`
+        """
+        ...
+
 
 @runtime_checkable
 class SchemaInspector(Protocol):

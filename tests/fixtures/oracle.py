@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
+from tests.fixtures.utils import cleanup_connection, is_binary_port_open, run_cli
 
 # Oracle connection settings for Docker
 ORACLE_HOST = os.environ.get("ORACLE_HOST", "localhost")
@@ -19,7 +19,7 @@ ORACLE_SERVICE = os.environ.get("ORACLE_SERVICE", "FREEPDB1")
 
 def oracle_available() -> bool:
     """Check if Oracle is available."""
-    return is_port_open(ORACLE_HOST, ORACLE_PORT)
+    return is_binary_port_open(ORACLE_HOST, ORACLE_PORT)
 
 
 @pytest.fixture(scope="session")

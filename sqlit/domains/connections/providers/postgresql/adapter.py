@@ -52,8 +52,15 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
             "connect_timeout": 10,
             "database": endpoint.database or "postgres",
         }
-        if endpoint.host:
-            connect_args["host"] = endpoint.host
+        host = endpoint.host
+        # If the user only set a port (e.g. Postgres on a non-default port
+        # like 5433), default the host to "localhost" — matches the Server
+        # field's placeholder. Without this, libpq drops both args and
+        # falls back to the default unix socket, ignoring the port.
+        if not host and endpoint.port:
+            host = "localhost"
+        if host:
+            connect_args["host"] = host
             connect_args["port"] = int(endpoint.port or get_default_port("postgresql"))
         if endpoint.username:
             connect_args["user"] = endpoint.username

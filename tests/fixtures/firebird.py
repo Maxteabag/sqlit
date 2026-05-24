@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
+from tests.fixtures.utils import cleanup_connection, is_binary_port_open, run_cli
 
 FIREBIRD_HOST = os.environ.get("FIREBIRD_HOST", "localhost")
 FIREBIRD_PORT = int(os.environ.get("FIREBIRD_PORT", "3050"))
@@ -18,7 +18,7 @@ FIREBIRD_DATABASE = os.environ.get("FIREBIRD_DATABASE", "/var/lib/firebird/data/
 
 def firebird_available() -> bool:
     """Check if Firebird is available."""
-    return is_port_open(FIREBIRD_HOST, FIREBIRD_PORT)
+    return is_binary_port_open(FIREBIRD_HOST, FIREBIRD_PORT)
 
 
 @pytest.fixture(scope="session")

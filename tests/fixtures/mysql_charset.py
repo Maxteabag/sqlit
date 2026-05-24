@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
+from tests.fixtures.utils import cleanup_connection, is_binary_port_open, run_cli
 
 # TIS-620 (Thai) MySQL
 MYSQL_TIS620_HOST = os.environ.get("MYSQL_TIS620_HOST", "localhost")
@@ -25,12 +25,12 @@ MYSQL_CHARSET_DATABASE = os.environ.get("MYSQL_CHARSET_DATABASE", "test_sqlit")
 
 def mysql_tis620_available() -> bool:
     """Check if MySQL TIS-620 is available."""
-    return is_port_open(MYSQL_TIS620_HOST, MYSQL_TIS620_PORT)
+    return is_binary_port_open(MYSQL_TIS620_HOST, MYSQL_TIS620_PORT)
 
 
 def mysql_latin1_available() -> bool:
     """Check if MySQL Latin1 is available."""
-    return is_port_open(MYSQL_LATIN1_HOST, MYSQL_LATIN1_PORT)
+    return is_binary_port_open(MYSQL_LATIN1_HOST, MYSQL_LATIN1_PORT)
 
 
 @pytest.fixture(scope="session")

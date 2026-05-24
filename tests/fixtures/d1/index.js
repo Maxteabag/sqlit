@@ -14,7 +14,7 @@ export default {
     }
 
     const execMatch = path.match(
-      /^\/client\/v4\/accounts\/([^/]+)\/d1\/database\/([^/]+)\/execute$/
+      /^\/client\/v4\/accounts\/([^/]+)\/d1\/database\/([^/]+)\/query$/
     );
     if (execMatch && request.method === "POST") {
       let body;

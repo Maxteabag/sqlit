@@ -125,8 +125,8 @@ class D1Adapter(DatabaseAdapter):
         return [db["name"] for db in databases if "name" in db]
 
     def _execute(self, conn: D1Connection, query: str) -> dict[str, Any]:
-        """Internal method to run a command on the D1 execute endpoint."""
-        api_url = f"{self._api_base_url()}/client/v4/accounts/{conn.account_id}/d1/database/{conn.database_id}/execute"
+        """Internal method to run a command on the D1 query endpoint."""
+        api_url = f"{self._api_base_url()}/client/v4/accounts/{conn.account_id}/d1/database/{conn.database_id}/query"
         response = conn.session.post(api_url, json={"sql": query})
         response.raise_for_status()
         # The result is a list containing a single result object

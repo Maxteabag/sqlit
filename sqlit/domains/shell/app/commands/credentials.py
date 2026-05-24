@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlit.shared.core.store import CONFIG_DIR
+
 from .router import register_command_handler
 
 
@@ -85,15 +87,13 @@ def _handle_credentials_command(app: Any, cmd: str, args: list[str]) -> bool:
         if hasattr(app.services.connection_store, "set_credentials_service"):
             app.services.connection_store.set_credentials_service(app.services.credentials_service)
 
-        msg = "Credentials will be stored as plaintext in ~/.sqlit/ (protected folder)"
+        msg = "Credentials will be stored as plaintext in the sqlit config directory (protected folder)"
         if migrated > 0:
             msg += f" ({migrated} password(s) migrated from keyring)"
         app.notify(msg)
         return True
 
     if value == "keyring":
-        from sqlit.shared.core.store import CONFIG_DIR
-
         settings = app.services.settings_store.load_all()
         was_plaintext = settings.get(ALLOW_PLAINTEXT_CREDENTIALS_SETTING) is True
 
@@ -142,7 +142,7 @@ def _handle_credentials_command(app: Any, cmd: str, args: list[str]) -> bool:
         keyring_ok = is_keyring_usable()
 
         if allow_plaintext:
-            app.notify("Credentials: plaintext (~/.sqlit/credentials.json)")
+            app.notify(f"Credentials: plaintext ({CONFIG_DIR / 'credentials.json'})")
         elif keyring_ok:
             app.notify("Credentials: system keyring")
         else:

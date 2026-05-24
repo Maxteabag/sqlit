@@ -115,7 +115,7 @@ class CustomThemeScreen(ModalScreen[str | None]):
         shortcuts = [("Add", "<enter>"), ("Cancel", "<esc>")]
         with Dialog(id="custom-theme-dialog", title="Add Theme", shortcuts=shortcuts):
             yield Static(
-                "Enter theme name (template created in ~/.sqlit/themes/<name>.json):",
+                "Enter theme name (template created under <config-dir>/themes/<name>.json):",
                 id="custom-theme-description",
             )
             container = Container(id="custom-theme-container")

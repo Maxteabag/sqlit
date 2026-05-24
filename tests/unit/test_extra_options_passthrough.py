@@ -80,6 +80,37 @@ class TestExtraOptionsPassthrough:
             assert call_kwargs.get("private_key_file") == "/path/to/key.p8"
             assert call_kwargs.get("private_key_file_pwd") == "secret"
 
+    def test_snowflake_pat_auth_options(self):
+        """Test Snowflake PAT authentication options are passed."""
+        from sqlit.domains.connections.domain.config import ConnectionConfig, TcpEndpoint
+        from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
+
+        mock_sf = MagicMock()
+        mock_conn = MagicMock()
+        mock_sf.connect.return_value = mock_conn
+
+        with patch.dict("sys.modules", {"snowflake.connector": mock_sf}):
+            adapter = SnowflakeAdapter()
+            config = ConnectionConfig(
+                name="test_sf_pat",
+                db_type="snowflake",
+                endpoint=TcpEndpoint(
+                    host="account.snowflakecomputing.com",
+                    username="user",
+                    database="db",
+                ),
+                options={
+                    "authenticator": "PROGRAMMATIC_ACCESS_TOKEN",
+                    "pat_token": "test_pat_token",
+                },
+            )
+
+            adapter.connect(config)
+
+            call_kwargs = mock_sf.connect.call_args[1]
+            assert call_kwargs.get("authenticator") == "PROGRAMMATIC_ACCESS_TOKEN"
+            assert call_kwargs.get("token") == "test_pat_token"
+
     def test_postgresql_passes_extra_options(self):
         """Test PostgreSQL adapter passes extra_options to driver."""
         from sqlit.domains.connections.domain.config import ConnectionConfig, TcpEndpoint
@@ -162,12 +193,13 @@ class TestSnowflakeAuthSchema:
                 break
 
         assert auth_field is not None, "Snowflake schema should have authenticator field"
-        assert len(auth_field.options) == 4
+        assert len(auth_field.options) == 5
         auth_values = [opt.value for opt in auth_field.options]
         assert "default" in auth_values
         assert "externalbrowser" in auth_values
         assert "snowflake_jwt" in auth_values
         assert "oauth" in auth_values
+        assert "PROGRAMMATIC_ACCESS_TOKEN" in auth_values
 
     def test_snowflake_schema_has_private_key_fields(self):
         """Test Snowflake schema includes private key fields for JWT auth."""

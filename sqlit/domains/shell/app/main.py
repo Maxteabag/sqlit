@@ -763,7 +763,7 @@ class SSMSTUI(
                 "Connection",
                 ":credentials [plaintext|keyring]",
                 "Configure password storage",
-                "Use 'plaintext' to store passwords in ~/.sqlit/ (protected folder), 'keyring' to use system keyring.",
+                "Use 'plaintext' to store passwords in the sqlit config directory (protected folder), 'keyring' to use system keyring.",
             ),
             ("Appearance", ":theme", "Open theme selection", ""),
             ("Query", ":alert off|delete|write", "Confirm before risky queries", "Modes: off, delete, write"),

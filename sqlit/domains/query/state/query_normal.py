@@ -22,6 +22,10 @@ class QueryNormalModeState(State):
         self.allows("g_leader_key", label="Go", help="Go motions (menu)")
         self.allows("new_query", label="New", help="New query (clear all)")
         self.allows("show_history", label="History", help="Query history")
+        self.allows(
+            "edit_query_in_editor",
+            help="Open current query in your terminal editor",
+        )
         # Vim cursor movement
         self.allows("cursor_left", help="Move cursor left")
         self.allows("cursor_right", help="Move cursor right")
@@ -31,6 +35,7 @@ class QueryNormalModeState(State):
         self.allows("cursor_WORD_forward", help="Move to next WORD")
         self.allows("cursor_word_back", help="Move to previous word")
         self.allows("cursor_WORD_back", help="Move to previous WORD")
+        self.allows("cursor_first_non_blank", help="Move to first non-blank")
         self.allows("cursor_line_start", help="Move to line start")
         self.allows("cursor_line_end", help="Move to line end")
         self.allows("cursor_last_line", help="Move to last line")
@@ -45,6 +50,8 @@ class QueryNormalModeState(State):
         # Vim open line
         self.allows("open_line_below", help="Open line below")
         self.allows("open_line_above", help="Open line above")
+        # Vim delete char
+        self.allows("delete_char", help="Delete character under cursor")
         # Vim delete or change
         self.allows("change_line_end_motion", help="Change to line end")
         self.allows("delete_line_end", help="Delete to line end")
@@ -66,6 +73,9 @@ class QueryNormalModeState(State):
         # Undo/redo
         self.allows("undo", help="Undo")
         self.allows("redo", help="Redo")
+        # Visual modes
+        self.allows("enter_visual_mode", label="Visual", help="Enter visual mode")
+        self.allows("enter_visual_line_mode", label="Visual Line", help="Enter visual line mode")
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []

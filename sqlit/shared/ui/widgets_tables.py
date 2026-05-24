@@ -35,8 +35,9 @@ class SqlitDataTable(FastDataTable):
 
     def action_copy_selection(self) -> None:
         """Copy selection to clipboard, guarding against empty tables."""
-        # Guard against empty table - the library doesn't check this
-        if self.backend is None:
+        # Guard against empty table - the library doesn't check this.
+        # A schema-only backend (columns but no rows) still has backend != None.
+        if self.backend is None or self.backend.row_count == 0:
             return
         # Call parent implementation
         super().action_copy_selection()
@@ -99,8 +100,11 @@ class SqlitDataTable(FastDataTable):
         if isinstance(obj, timedelta):
             return str(obj)
 
+        if isinstance(obj, (bytes, bytearray, memoryview)):
+            return f"<BLOB {len(bytes(obj))} bytes>"
+
         if not is_renderable(obj):
-            return str(obj)
+            return escape(str(obj))
 
         return obj
 

@@ -39,7 +39,7 @@ class InMemoryHistoryStore:
     def load_all(self) -> list[QueryHistoryEntry]:
         return [QueryHistoryEntry.from_dict(entry) for entry in self._entries]
 
-    def save_query(self, connection_name: str, query: str) -> None:
+    def save_query(self, connection_name: str, query: str, database: str = "") -> None:
         query_stripped = query.strip()
         now = datetime.now().isoformat()
 
@@ -47,15 +47,18 @@ class InMemoryHistoryStore:
         for entry in self._entries:
             if entry.get("connection_name") == connection_name and entry.get("query", "").strip() == query_stripped:
                 entry["timestamp"] = now
+                if database:
+                    entry["database"] = database
                 break
         else:
-            self._entries.append(
-                {
-                    "query": query_stripped,
-                    "timestamp": now,
-                    "connection_name": connection_name,
-                }
-            )
+            d: dict[str, Any] = {
+                "query": query_stripped,
+                "timestamp": now,
+                "connection_name": connection_name,
+            }
+            if database:
+                d["database"] = database
+            self._entries.append(d)
 
     def delete_entry(self, connection_name: str, timestamp: str) -> bool:
         return False

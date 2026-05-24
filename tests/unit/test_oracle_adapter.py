@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from tests.helpers import ConnectionConfig
 
 
@@ -160,7 +162,11 @@ class TestOracleAdapterConnectionType:
             assert call_kwargs["dsn"] == "localhost:1521/XEPDB1"
 
     def test_connect_sid_format(self):
-        """Test that sid connection type uses colon separator with oracle_sid field."""
+        """SID connection type must go through oracledb.makedsn — see issue #106.
+
+        The legacy host:port:SID Easy-Connect form is rejected by thin-mode with
+        DPY-4027, so the adapter must use makedsn to emit a TNS descriptor.
+        """
         mock_oracledb = MagicMock()
         mock_oracledb.AUTH_MODE_SYSDBA = 2
         mock_oracledb.AUTH_MODE_SYSOPER = 4
@@ -181,10 +187,9 @@ class TestOracleAdapterConnectionType:
 
             adapter.connect(config)
 
-            mock_oracledb.connect.assert_called_once()
+            mock_oracledb.makedsn.assert_called_once_with("localhost", 1521, sid="ORCL")
             call_kwargs = mock_oracledb.connect.call_args.kwargs
-            # SID uses colon separator: host:port:sid
-            assert call_kwargs["dsn"] == "localhost:1521:ORCL"
+            assert call_kwargs["dsn"] is mock_oracledb.makedsn.return_value
 
     def test_connect_sid_backward_compat_uses_database_field(self):
         """Test that SID falls back to database field for backward compatibility."""
@@ -210,10 +215,7 @@ class TestOracleAdapterConnectionType:
 
             adapter.connect(config)
 
-            mock_oracledb.connect.assert_called_once()
-            call_kwargs = mock_oracledb.connect.call_args.kwargs
-            # Should use database field as fallback
-            assert call_kwargs["dsn"] == "localhost:1521:LEGACY_SID"
+            mock_oracledb.makedsn.assert_called_once_with("localhost", 1521, sid="LEGACY_SID")
 
     def test_connect_default_connection_type_is_service_name(self):
         """Test that missing oracle_connection_type defaults to service_name format."""
@@ -265,6 +267,34 @@ class TestOracleAdapterConnectionType:
 
             adapter.connect(config)
 
-            mock_oracledb.connect.assert_called_once()
-            call_kwargs = mock_oracledb.connect.call_args.kwargs
-            assert call_kwargs["dsn"] == "db.example.com:1522:PROD"
+            mock_oracledb.makedsn.assert_called_once_with("db.example.com", 1522, sid="PROD")
+
+    def test_sid_dsn_parses_in_real_driver(self):
+        """Issue #106 regression: adapter must produce a DSN that thin-mode accepts.
+
+        Calls the adapter against a port that is guaranteed closed so the driver
+        is forced to parse the DSN but cannot complete a network connection.
+        If parsing fails (DPY-4027), we've regressed.
+        """
+        oracledb = pytest.importorskip("oracledb")
+
+        from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+        adapter = OracleAdapter()
+        config = ConnectionConfig(
+            name="test",
+            db_type="oracle",
+            server="127.0.0.1",
+            port="1",  # reserved port — guaranteed no Oracle listener
+            username="x",
+            password="x",
+            options={"oracle_connection_type": "sid", "oracle_sid": "FREE"},
+        )
+
+        with pytest.raises(oracledb.DatabaseError) as exc_info:
+            adapter.connect(config)
+
+        message = str(exc_info.value)
+        assert "DPY-4027" not in message, (
+            f"issue #106 regression: SID DSN rejected at parse step: {message}"
+        )

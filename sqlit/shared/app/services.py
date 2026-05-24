@@ -62,7 +62,7 @@ def _normalize_install_method_hint(value: str | None) -> str | None:
     if not value:
         return None
     normalized = value.strip().lower()
-    if normalized in {"pipx", "pip", "unknown", "uvx", "uv", "conda"}:
+    if normalized in {"pipx", "pip", "unknown", "uv-tool", "uvx", "uv", "conda"}:
         return normalized
     return None
 
@@ -264,12 +264,26 @@ def build_app_services(
         credentials_service = credentials_service or build_credentials_service(settings_store)
     if credentials_service is None:
         raise RuntimeError("Credentials service is not available.")
+
+    # Project-scoped paths: when runtime.project_dir is set, connections,
+    # history, and starred queries live in <project>/.sqlit/ instead of
+    # the global CONFIG_DIR. Settings, credentials, and theme stay global.
+    project_config = runtime.project_config_dir
+    if project_config is not None:
+        project_config.mkdir(parents=True, exist_ok=True)
+    project_connections_path = project_config / "connections.json" if project_config else None
+    project_queries_dir = project_config / "queries" if project_config else None
+    project_starred_path = project_config / "starred_queries.json" if project_config else None
+
     with startup_span("build_connection_store"):
-        connection_store = connection_store or ConnectionStore(credentials_service=credentials_service)
+        connection_store = connection_store or ConnectionStore(
+            credentials_service=credentials_service,
+            file_path=project_connections_path,
+        )
     with startup_span("build_history_store"):
-        history_store = history_store or HistoryStore()
+        history_store = history_store or HistoryStore(base_dir=project_queries_dir)
     with startup_span("build_starred_store"):
-        starred_store = starred_store or StarredStore()
+        starred_store = starred_store or StarredStore(file_path=project_starred_path)
 
     if hasattr(connection_store, "set_credentials_service"):
         connection_store.set_credentials_service(credentials_service)

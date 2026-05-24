@@ -37,6 +37,64 @@ def _get_schema_value_flags() -> set[str]:
     return flags
 
 
+def _looks_like_project_path(arg: str) -> bool:
+    """Conservative test for a positional project-dir argument.
+
+    Only matches things that are obviously paths: `.`, `..`, anything
+    starting with `./`, `../`, `/`, `~`, or anything ending in `/`.
+    """
+    if arg in {".", ".."}:
+        return True
+    if arg.startswith(("./", "../", "/", "~")):
+        return True
+    if arg.endswith("/"):
+        return True
+    return False
+
+
+def _extract_project_dir(argv: list[str]) -> tuple[Path | None, list[str]]:
+    """Extract a positional project-dir argument from argv if present.
+
+    Returns (project_dir, remaining_argv). Exits with an error if the
+    user passed a path that doesn't resolve to an existing directory.
+    """
+    subcommands = {"connections", "connection", "connect", "query", "docker"}
+    result_argv: list[str] = []
+    project_dir: Path | None = None
+
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if i == 0:
+            result_argv.append(arg)
+            i += 1
+            continue
+        # Flags pass straight through (let argparse handle them).
+        if arg.startswith("-"):
+            result_argv.append(arg)
+            i += 1
+            continue
+        # First subcommand: copy the rest verbatim.
+        if arg in subcommands:
+            result_argv.extend(argv[i:])
+            break
+        if project_dir is None and _looks_like_project_path(arg):
+            resolved = Path(arg).expanduser().resolve()
+            if not resolved.is_dir():
+                print(
+                    f"Error: project directory does not exist: {arg}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            project_dir = resolved
+            i += 1
+            continue
+        result_argv.append(arg)
+        i += 1
+
+    return project_dir, result_argv
+
+
 def _extract_connection_url(argv: list[str]) -> tuple[str | None, list[str]]:
     """Extract a connection URL from argv if present.
 
@@ -255,7 +313,12 @@ def _exec_restart(argv: list[str]) -> None:
         os.execvp(exe, argv)
 
 
-def _build_runtime(args: argparse.Namespace, startup_mark: float) -> RuntimeConfig:
+def _build_runtime(
+    args: argparse.Namespace,
+    startup_mark: float,
+    *,
+    project_dir: Path | None = None,
+) -> RuntimeConfig:
     settings_path = Path(args.settings).expanduser() if args.settings else None
     max_rows = args.max_rows if args.max_rows and args.max_rows > 0 else None
     mock_install = args.mock_install if args.mock_install != "real" else None
@@ -297,6 +360,7 @@ def _build_runtime(args: argparse.Namespace, startup_mark: float) -> RuntimeConf
 
     return RuntimeConfig(
         settings_path=settings_path,
+        project_dir=project_dir,
         theme=getattr(args, "theme", None),
         max_rows=max_rows,
         debug_mode=bool(args.debug),
@@ -328,15 +392,25 @@ def main() -> int:
     )
     log_startup_step("cli_start")
 
+    # Extract positional project-dir before argparse so we can route
+    # connections/history/starred into <project>/.sqlit/.
+    with startup_span("cli_extract_project_dir"):
+        project_dir, filtered_argv = _extract_project_dir(sys.argv)
     # Extract connection URL before argparse (URLs conflict with subcommands)
     with startup_span("cli_extract_connection_url"):
-        connection_url, filtered_argv = _extract_connection_url(sys.argv)
+        connection_url, filtered_argv = _extract_connection_url(filtered_argv)
 
     log_startup_step("cli_parser_start")
     parser = argparse.ArgumentParser(
         prog="sqlit",
         description="A terminal UI for SQL databases",
-        epilog="Connect via URL: sqlit mysql://user:pass@host/db, sqlit sqlite:///path/to/db.sqlite",
+        epilog=(
+            "Connect via URL: sqlit mysql://user:pass@host/db, "
+            "sqlit sqlite:///path/to/db.sqlite\n"
+            "Project mode: sqlit . or sqlit /path/to/project — "
+            "connections, history, and starred queries live in "
+            "<project>/.sqlit/ instead of the global config."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -372,7 +446,7 @@ def main() -> int:
     parser.add_argument(
         "--settings",
         metavar="PATH",
-        help="Path to settings JSON file (overrides ~/.sqlit/settings.json)",
+        help="Path to settings JSON file (overrides the one in the sqlit config directory)",
     )
     parser.add_argument(
         "--theme",
@@ -511,6 +585,8 @@ def main() -> int:
             description=f"{schema.display_name} connection options",
         )
         add_schema_arguments(provider_parser, schema, include_name=True, name_required=True)
+        provider_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
+        provider_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
 
     edit_parser = conn_subparsers.add_parser("edit", help="Edit an existing connection")
     edit_parser.add_argument("connection_name", help="Name of connection to edit")
@@ -528,6 +604,8 @@ def main() -> int:
         help="Authentication type (SQL Server only)",
     )
     edit_parser.add_argument("--file-path", help="Database file path (SQLite only)")
+    edit_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
+    edit_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
 
     delete_parser = conn_subparsers.add_parser("delete", help="Delete a connection")
     delete_parser.add_argument("connection_name", help="Name of connection to delete")
@@ -542,6 +620,8 @@ def main() -> int:
             description=f"{schema.display_name} connection options",
         )
         add_schema_arguments(provider_parser, schema, include_name=True, name_required=False)
+        provider_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
+        provider_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
 
     query_parser = subparsers.add_parser("query", help="Execute a SQL query")
     query_parser.add_argument("--connection", "-c", required=True, help="Connection name to use")
@@ -575,7 +655,7 @@ def main() -> int:
     log_startup_step("cli_parse_end")
 
     with startup_span("runtime_build"):
-        runtime = _build_runtime(args, startup_mark)
+        runtime = _build_runtime(args, startup_mark, project_dir=project_dir)
 
     with startup_span("services_build"):
         services = build_app_services(runtime)

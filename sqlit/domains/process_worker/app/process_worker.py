@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pickle
 import threading
 import time
 from collections import deque
@@ -53,7 +54,24 @@ class _WorkerState:
         with self.send_lock:
             try:
                 self.conn.send(payload)
+                return
+            except (TypeError, AttributeError, pickle.PickleError) as exc:
+                # Result isn't picklable. Replace with an error so the
+                # client surfaces it instead of hanging on recv().
+                fallback = {
+                    "type": "error",
+                    "id": payload.get("id"),
+                    "message": (
+                        f"Result could not be serialized across the process "
+                        f"worker pipe: {type(exc).__name__}: {exc}"
+                    ),
+                }
+                try:
+                    self.conn.send(fallback)
+                except Exception:
+                    pass
             except Exception:
+                # Pipe closed or similar; nothing we can do.
                 pass
 
     def _ensure_tunnel(self, config: ConnectionConfig) -> Any | None:

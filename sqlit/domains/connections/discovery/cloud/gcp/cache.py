@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
+
+from sqlit.shared.core.store import CONFIG_DIR
 
 if TYPE_CHECKING:
     from .provider import GCPCloudSQLInstance
 
 # Cache configuration
 GCP_CACHE_TTL_SECONDS = 300  # 5 minutes
-GCP_CACHE_FILE = Path(os.path.expanduser("~/.config/sqlit/gcp_cache.json"))
+GCP_CACHE_FILE = CONFIG_DIR / "gcp_cache.json"
 
 
 @dataclass

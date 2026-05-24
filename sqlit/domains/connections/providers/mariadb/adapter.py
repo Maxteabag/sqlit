@@ -1,17 +1,11 @@
-"""MariaDB adapter using mariadb connector."""
+"""MariaDB adapter using PyMySQL (pure Python)."""
 
 from __future__ import annotations
 
 import re
 from typing import TYPE_CHECKING, Any
 
-from sqlit.domains.connections.providers.adapters.base import (
-    ColumnInfo,
-    IndexInfo,
-    SequenceInfo,
-    TableInfo,
-    TriggerInfo,
-)
+from sqlit.domains.connections.providers.adapters.base import SequenceInfo
 from sqlit.domains.connections.providers.mysql.base import MySQLBaseAdapter
 from sqlit.domains.connections.providers.registry import get_default_port
 from sqlit.domains.connections.providers.tls import (
@@ -28,10 +22,12 @@ if TYPE_CHECKING:
 
 
 class MariaDBAdapter(MySQLBaseAdapter):
-    """Adapter for MariaDB using mariadb connector.
+    """Adapter for MariaDB using PyMySQL.
 
-    MariaDB uses ? placeholders instead of %s, so we override the
-    introspection methods that use parameterized queries.
+    PyMySQL speaks the MySQL/MariaDB wire protocol and is pure Python, so it
+    works on any platform without a system-level C library. It also handles
+    legacy charsets like TIS-620 and Latin1 that the MariaDB C connector
+    cannot read.
     """
 
     @property
@@ -44,11 +40,11 @@ class MariaDBAdapter(MySQLBaseAdapter):
 
     @property
     def install_package(self) -> str:
-        return "mariadb"
+        return "PyMySQL"
 
     @property
     def driver_import_names(self) -> tuple[str, ...]:
-        return ("mariadb",)
+        return ("pymysql",)
 
     @property
     def supports_sequences(self) -> bool:
@@ -65,8 +61,8 @@ class MariaDBAdapter(MySQLBaseAdapter):
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to MariaDB database."""
-        mariadb = self._import_driver_module(
-            "mariadb",
+        pymysql = self._import_driver_module(
+            "pymysql",
             driver_name=self.name,
             extra_name=self.install_extra,
             package_name=self.install_package,
@@ -76,36 +72,57 @@ class MariaDBAdapter(MySQLBaseAdapter):
         if endpoint is None:
             raise ValueError("MariaDB connections require a TCP-style endpoint.")
         port = int(endpoint.port or get_default_port("mariadb"))
-        mariadb_any: Any = mariadb
+        host = endpoint.host
+        if host and host.lower() == "localhost":
+            host = "127.0.0.1"
         connect_args: dict[str, Any] = {
-            "host": endpoint.host,
+            "host": host,
             "port": port,
             "database": endpoint.database or None,
             "user": endpoint.username,
             "password": endpoint.password,
             "connect_timeout": 10,
+            "autocommit": True,
+            "charset": "utf8mb4",
         }
 
         tls_mode = get_tls_mode(config)
         tls_ca, tls_cert, tls_key, _ = get_tls_files(config)
         has_tls_files = any([tls_ca, tls_cert, tls_key])
         if tls_mode != TLS_MODE_DISABLE and (tls_mode != TLS_MODE_DEFAULT or has_tls_files):
+            import ssl
+
+            ssl_params: dict[str, Any] = {}
             if tls_ca:
-                connect_args["ssl_ca"] = tls_ca
+                ssl_params["ca"] = tls_ca
             if tls_cert:
-                connect_args["ssl_cert"] = tls_cert
+                ssl_params["cert"] = tls_cert
             if tls_key:
-                connect_args["ssl_key"] = tls_key
-            if tls_mode != TLS_MODE_DEFAULT:
-                connect_args["ssl_verify_cert"] = tls_mode_verifies_cert(tls_mode)
-                connect_args["ssl_verify_identity"] = tls_mode_verifies_hostname(tls_mode)
+                ssl_params["key"] = tls_key
+
+            if tls_mode_verifies_cert(tls_mode):
+                ssl_params["cert_reqs"] = ssl.CERT_REQUIRED
+            else:
+                ssl_params["cert_reqs"] = ssl.CERT_NONE
+
+            ssl_params["check_hostname"] = tls_mode_verifies_hostname(tls_mode)
+            connect_args["ssl"] = ssl_params
 
         connect_args.update(config.extra_options)
-        conn = mariadb_any.connect(**connect_args)
+        conn = pymysql.connect(**connect_args)
 
-        # Note: The MariaDB Python connector only supports UTF-8 family charsets.
-        # Legacy charsets like TIS-620 or Latin1 are not supported. For databases
-        # using legacy charsets, use the MySQL provider with PyMySQL instead.
+        # Auto-sync charset with server to handle legacy encodings (e.g., TIS-620, Latin1).
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT @@character_set_database")
+            row = cursor.fetchone()
+            if row:
+                server_charset = row[0]
+                if server_charset and server_charset.lower() != "utf8mb4":
+                    conn.set_charset(server_charset)
+            cursor.close()
+        except Exception:
+            pass
 
         self._supports_sequences = self._detect_sequences_support(conn)
         return conn
@@ -123,7 +140,7 @@ class MariaDBAdapter(MySQLBaseAdapter):
             return True
 
         self._server_version_str = row[0]
-        match = re.match(r"^(\\d+)\\.(\\d+)(?:\\.(\\d+))?", row[0])
+        match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", row[0])
         if not match:
             return True
 
@@ -132,142 +149,15 @@ class MariaDBAdapter(MySQLBaseAdapter):
         patch = int(match.group(3) or 0)
         return (major, minor, patch) >= (10, 3, 0)
 
-    # MariaDB connector uses ? placeholders instead of %s, so override methods with params
-
-    def get_tables(self, conn: Any, database: str | None = None) -> list[TableInfo]:
-        """Get list of tables from MariaDB. Returns (schema, name) with empty schema."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
-                "ORDER BY table_name",
-                (database,),
-            )
-        else:
-            cursor.execute("SHOW TABLES")
-        return [("", row[0]) for row in cursor.fetchall()]
-
-    def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
-        """Get list of views from MariaDB. Returns (schema, name) with empty schema."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                "SELECT table_name FROM information_schema.views " "WHERE table_schema = ? ORDER BY table_name",
-                (database,),
-            )
-        else:
-            cursor.execute(
-                "SELECT table_name FROM information_schema.views " "WHERE table_schema = DATABASE() ORDER BY table_name"
-            )
-        return [("", row[0]) for row in cursor.fetchall()]
-
-    def get_columns(
-        self, conn: Any, table: str, database: str | None = None, schema: str | None = None
-    ) -> list[ColumnInfo]:
-        """Get columns for a table from MariaDB. Schema parameter is ignored."""
-        cursor = conn.cursor()
-
-        # Get primary key columns
-        if database:
-            cursor.execute(
-                "SELECT column_name FROM information_schema.key_column_usage "
-                "WHERE table_schema = ? AND table_name = ? AND constraint_name = 'PRIMARY'",
-                (database, table),
-            )
-        else:
-            cursor.execute(
-                "SELECT column_name FROM information_schema.key_column_usage "
-                "WHERE table_schema = DATABASE() AND table_name = ? AND constraint_name = 'PRIMARY'",
-                (table,),
-            )
-        pk_columns = {row[0] for row in cursor.fetchall()}
-
-        # Get all columns
-        if database:
-            cursor.execute(
-                "SELECT column_name, data_type FROM information_schema.columns "
-                "WHERE table_schema = ? AND table_name = ? "
-                "ORDER BY ordinal_position",
-                (database, table),
-            )
-        else:
-            cursor.execute(
-                "SELECT column_name, data_type FROM information_schema.columns "
-                "WHERE table_schema = DATABASE() AND table_name = ? "
-                "ORDER BY ordinal_position",
-                (table,),
-            )
-        return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in cursor.fetchall()]
-
-    def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
-        """Get stored procedures from MariaDB."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                "SELECT routine_name FROM information_schema.routines "
-                "WHERE routine_schema = ? AND routine_type = 'PROCEDURE' "
-                "ORDER BY routine_name",
-                (database,),
-            )
-        else:
-            cursor.execute(
-                "SELECT routine_name FROM information_schema.routines "
-                "WHERE routine_schema = DATABASE() AND routine_type = 'PROCEDURE' "
-                "ORDER BY routine_name"
-            )
-        return [row[0] for row in cursor.fetchall()]
-
-    def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
-        """Get indexes from MariaDB (uses ? placeholders)."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                "SELECT DISTINCT index_name, table_name, non_unique "
-                "FROM information_schema.statistics "
-                "WHERE table_schema = ? AND index_name != 'PRIMARY' "
-                "ORDER BY table_name, index_name",
-                (database,),
-            )
-        else:
-            cursor.execute(
-                "SELECT DISTINCT index_name, table_name, non_unique "
-                "FROM information_schema.statistics "
-                "WHERE table_schema = DATABASE() AND index_name != 'PRIMARY' "
-                "ORDER BY table_name, index_name"
-            )
-        return [
-            IndexInfo(name=row[0], table_name=row[1], is_unique=row[2] == 0)
-            for row in cursor.fetchall()
-        ]
-
-    def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
-        """Get triggers from MariaDB (uses ? placeholders)."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                "SELECT trigger_name, event_object_table "
-                "FROM information_schema.triggers "
-                "WHERE trigger_schema = ? "
-                "ORDER BY event_object_table, trigger_name",
-                (database,),
-            )
-        else:
-            cursor.execute(
-                "SELECT trigger_name, event_object_table "
-                "FROM information_schema.triggers "
-                "WHERE trigger_schema = DATABASE() "
-                "ORDER BY event_object_table, trigger_name"
-            )
-        return [TriggerInfo(name=row[0], table_name=row[1]) for row in cursor.fetchall()]
-
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         """Get sequences from MariaDB 10.3+."""
+        if not self.supports_sequences:
+            return []
         cursor = conn.cursor()
         if database:
             cursor.execute(
                 "SELECT sequence_name FROM information_schema.sequences "
-                "WHERE sequence_schema = ? "
+                "WHERE sequence_schema = %s "
                 "ORDER BY sequence_name",
                 (database,),
             )
@@ -279,94 +169,23 @@ class MariaDBAdapter(MySQLBaseAdapter):
             )
         return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
 
-    def get_index_definition(
-        self, conn: Any, index_name: str, table_name: str, database: str | None = None
-    ) -> dict[str, Any]:
-        """Get detailed information about a MariaDB index (uses ? placeholders)."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                "SELECT column_name, non_unique, index_type "
-                "FROM information_schema.statistics "
-                "WHERE table_schema = ? AND table_name = ? AND index_name = ? "
-                "ORDER BY seq_in_index",
-                (database, table_name, index_name),
-            )
-        else:
-            cursor.execute(
-                "SELECT column_name, non_unique, index_type "
-                "FROM information_schema.statistics "
-                "WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? "
-                "ORDER BY seq_in_index",
-                (table_name, index_name),
-            )
-        rows = cursor.fetchall()
-        columns = [row[0] for row in rows]
-        is_unique = rows[0][1] == 0 if rows else False
-        index_type = rows[0][2] if rows else "BTREE"
-
-        return {
-            "name": index_name,
-            "table_name": table_name,
-            "columns": columns,
-            "is_unique": is_unique,
-            "type": index_type,
-            "definition": f"CREATE {'UNIQUE ' if is_unique else ''}INDEX {index_name} ON {table_name} ({', '.join(columns)})",
-        }
-
-    def get_trigger_definition(
-        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
-    ) -> dict[str, Any]:
-        """Get detailed information about a MariaDB trigger (uses ? placeholders)."""
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                "SELECT action_timing, event_manipulation, action_statement "
-                "FROM information_schema.triggers "
-                "WHERE trigger_schema = ? AND trigger_name = ?",
-                (database, trigger_name),
-            )
-        else:
-            cursor.execute(
-                "SELECT action_timing, event_manipulation, action_statement "
-                "FROM information_schema.triggers "
-                "WHERE trigger_schema = DATABASE() AND trigger_name = ?",
-                (trigger_name,),
-            )
-        row = cursor.fetchone()
-        if row:
-            return {
-                "name": trigger_name,
-                "table_name": table_name,
-                "timing": row[0],
-                "event": row[1],
-                "definition": row[2],
-            }
-        return {
-            "name": trigger_name,
-            "table_name": table_name,
-            "timing": None,
-            "event": None,
-            "definition": None,
-        }
-
     def get_sequence_definition(
         self, conn: Any, sequence_name: str, database: str | None = None
     ) -> dict[str, Any]:
-        """Get detailed information about a MariaDB sequence (uses ? placeholders)."""
+        """Get detailed information about a MariaDB sequence."""
         cursor = conn.cursor()
         if database:
             cursor.execute(
                 "SELECT start_value, increment, minimum_value, maximum_value, cycle_option "
                 "FROM information_schema.sequences "
-                "WHERE sequence_schema = ? AND sequence_name = ?",
+                "WHERE sequence_schema = %s AND sequence_name = %s",
                 (database, sequence_name),
             )
         else:
             cursor.execute(
                 "SELECT start_value, increment, minimum_value, maximum_value, cycle_option "
                 "FROM information_schema.sequences "
-                "WHERE sequence_schema = DATABASE() AND sequence_name = ?",
+                "WHERE sequence_schema = DATABASE() AND sequence_name = %s",
                 (sequence_name,),
             )
         row = cursor.fetchone()

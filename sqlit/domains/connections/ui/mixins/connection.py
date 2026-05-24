@@ -597,7 +597,7 @@ class ConnectionMixin:
                         self.services.credentials_service = build_credentials_service(self.services.settings_store)
                         self.services.connection_store.set_credentials_service(self.services.credentials_service)
                         do_save(config, original_name)
-                        self.notify("Saved passwords as plaintext in ~/.sqlit/ (0600)", severity="warning")
+                        self.notify("Saved passwords as plaintext in the sqlit config directory (0600)", severity="warning")
                         return
 
                     settings2[ALLOW_PLAINTEXT_CREDENTIALS_SETTING] = False
@@ -612,7 +612,7 @@ class ConnectionMixin:
                 self.push_screen(
                     ConfirmScreen(
                         "Keyring isn't available",
-                        "Save passwords as plaintext in ~/.sqlit/ (protected directory)?",
+                        "Save passwords as plaintext in the sqlit config directory (protected directory)?",
                         yes_label="Yes",
                         no_label="No",
                     ),

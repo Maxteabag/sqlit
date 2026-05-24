@@ -8,6 +8,8 @@ from sqlit.domains.connections.app.credentials import CredentialsPersistError, C
 from sqlit.shared.core.store import CONFIG_DIR, JSONFileStore
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from sqlit.domains.connections.app.credentials import CredentialsService
     from sqlit.domains.connections.domain.config import ConnectionConfig
 
@@ -15,7 +17,7 @@ if TYPE_CHECKING:
 class ConnectionStore(JSONFileStore):
     """Store for managing saved database connections.
 
-    Connections are stored as a JSON object (versioned) in ~/.sqlit/connections.json.
+    Connections are stored as connections.json in the sqlit config directory (versioned).
     Passwords are stored separately in the OS keyring via CredentialsService.
     """
 
@@ -26,8 +28,13 @@ class ConnectionStore(JSONFileStore):
     _instance: ConnectionStore | None = None
     is_persistent: bool = True
 
-    def __init__(self, credentials_service: CredentialsService | None = None) -> None:
-        super().__init__(CONFIG_DIR / "connections.json")
+    def __init__(
+        self,
+        credentials_service: CredentialsService | None = None,
+        *,
+        file_path: Path | None = None,
+    ) -> None:
+        super().__init__(file_path if file_path is not None else CONFIG_DIR / "connections.json")
         self._credentials_service = credentials_service
 
     @property

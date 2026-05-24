@@ -30,6 +30,7 @@ class RuntimeConfig:
     """Runtime configuration provided by CLI or tests."""
 
     settings_path: Path | None = None
+    project_dir: Path | None = None
     theme: str | None = None
     max_rows: int | None = None
     debug_mode: bool = False
@@ -46,6 +47,11 @@ class RuntimeConfig:
     ui_stall_watchdog_ms: float = 0.0
     query_alert_mode: int = 0
     mock: MockConfig = field(default_factory=MockConfig)
+
+    @property
+    def project_config_dir(self) -> Path | None:
+        """The `.sqlit/` directory inside the project, if project_dir is set."""
+        return self.project_dir / ".sqlit" if self.project_dir is not None else None
 
     @classmethod
     def from_env(cls) -> RuntimeConfig:

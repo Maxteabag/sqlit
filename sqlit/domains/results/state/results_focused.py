@@ -26,6 +26,14 @@ class ResultsFocusedState(State):
         self.allows("results_cursor_down", has_results)  # vim j
         self.allows("results_cursor_up", has_results)  # vim k
         self.allows("results_cursor_right", has_results)  # vim l
+        self.allows("rg_leader_key", has_results)  # vim gg (first step)
+        self.allows("rg_first_row", has_results)  # vim gg (second step)
+        self.allows("results_cursor_last_row", has_results)  # vim G
+        self.allows("results_page_up", has_results)  # vim Ctrl+U
+        self.allows("results_page_down", has_results)  # vim Ctrl+D
+        self.allows("results_cursor_first_column", has_results)  # vim 0
+        self.allows("results_cursor_last_column", has_results)  # vim $
+        self.allows("results_column_picker", has_results)  # vim f/F
         self.allows("next_result_section", has_results, label="Next result", help="Next result section")
         self.allows("prev_result_section", has_results, label="Prev result", help="Previous result section")
 

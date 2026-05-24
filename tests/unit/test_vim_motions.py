@@ -212,7 +212,7 @@ class TestMotionRegistry:
         expected = {
             "h", "j", "k", "l",
             "w", "W", "b", "B", "e", "E",
-            "0", "$", "G", "gg", "ge", "gE", "_",
+            "0", "^", "$", "G", "gg", "ge", "gE", "_",
             "f", "F", "t", "T",
             "%",
         }

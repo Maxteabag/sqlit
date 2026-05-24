@@ -19,7 +19,7 @@ def _resolve_settings_path() -> Path:
 class SettingsStore(JSONFileStore):
     """Store for managing application settings.
 
-    Settings are stored as a JSON object in ~/.sqlit/settings.json
+    Settings are stored as settings.json in the sqlit config directory.
     """
 
     _instance: SettingsStore | None = None

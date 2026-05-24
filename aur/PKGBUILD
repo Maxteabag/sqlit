@@ -20,8 +20,7 @@ depends=(
 optdepends=(
     'python-psycopg2: PostgreSQL, CockroachDB and Supabase support'
     'python-pyodbc: SQL Server support'
-    'python-pymysql: MySQL support'
-    'python-mariadb-connector: MariaDB support'
+    'python-pymysql: MySQL and MariaDB support'
     'python-oracledb: Oracle support'
     'python-duckdb: DuckDB support'
     'python-clickhouse-connect: ClickHouse support'

@@ -97,6 +97,8 @@ class SnowflakeAdapter(CursorBasedAdapter):
             connect_args["private_key_file_pwd"] = extras["private_key_file_pwd"]
         if "oauth_token" in extras:
             connect_args["token"] = extras["oauth_token"]
+        if "pat_token" in extras:
+            connect_args["token"] = extras["pat_token"]
 
         # Pass through any extra_options to the driver
         connect_args.update(config.extra_options)

@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
+from tests.fixtures.utils import cleanup_connection, is_binary_port_open, run_cli
 
 DB2_HOST = os.environ.get("DB2_HOST", "localhost")
 DB2_PORT = int(os.environ.get("DB2_PORT", "50000"))
@@ -18,7 +18,7 @@ DB2_DATABASE = os.environ.get("DB2_DATABASE", "testdb")
 
 def db2_available() -> bool:
     """Check if Db2 is available."""
-    return is_port_open(DB2_HOST, DB2_PORT)
+    return is_binary_port_open(DB2_HOST, DB2_PORT)
 
 
 @pytest.fixture(scope="session")

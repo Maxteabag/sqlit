@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
+
+from sqlit.shared.core.store import CONFIG_DIR
 
 if TYPE_CHECKING:
     from .provider import RegionResources
 
 # Cache configuration
 AWS_CACHE_TTL_SECONDS = 300  # 5 minutes
-AWS_CACHE_FILE = Path(os.path.expanduser("~/.config/sqlit/aws_cache.json"))
+AWS_CACHE_FILE = CONFIG_DIR / "aws_cache.json"
 
 
 @dataclass

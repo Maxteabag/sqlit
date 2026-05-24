@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
+from tests.fixtures.utils import cleanup_connection, is_binary_port_open, run_cli
 
 POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")
 POSTGRES_PORT = int(os.environ.get("POSTGRES_PORT", "5432"))
@@ -18,7 +18,7 @@ POSTGRES_DATABASE = os.environ.get("POSTGRES_DATABASE", "test_sqlit")
 
 def postgres_available() -> bool:
     """Check if PostgreSQL is available."""
-    return is_port_open(POSTGRES_HOST, POSTGRES_PORT)
+    return is_binary_port_open(POSTGRES_HOST, POSTGRES_PORT)
 
 
 @pytest.fixture(scope="session")

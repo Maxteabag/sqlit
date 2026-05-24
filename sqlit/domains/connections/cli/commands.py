@@ -63,7 +63,7 @@ def _maybe_prompt_plaintext_credentials(services: AppServices) -> bool:
     if not sys.stdin.isatty():
         return False
 
-    answer = input("Keyring isn't available. Save passwords as plaintext in ~/.sqlit/? [y/N]: ").strip().lower()
+    answer = input("Keyring isn't available. Save passwords as plaintext in the sqlit config directory? [y/N]: ").strip().lower()
     allow = answer in {"y", "yes"}
     settings[ALLOW_PLAINTEXT_CREDENTIALS_SETTING] = allow
     services.settings_store.save_all(settings)
@@ -252,6 +252,14 @@ def cmd_connection_edit(args: Any, *, services: AppServices | None = None) -> in
             endpoint.username = args.username
         if args.password is not None:
             endpoint.password = args.password
+
+    password_command = getattr(args, "password_command", None)
+    if password_command is not None and endpoint:
+        endpoint.password_command = password_command or None
+
+    ssh_password_command = getattr(args, "ssh_password_command", None)
+    if ssh_password_command is not None and conn.tunnel:
+        conn.tunnel.password_command = ssh_password_command or None
 
     file_path = getattr(args, "file_path", None)
     if file_path is not None:

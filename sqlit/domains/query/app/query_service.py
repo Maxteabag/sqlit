@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 # Query types that return result sets (SELECT-like queries)
 SELECT_KEYWORDS = frozenset(["SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA"])
 
+# DML statements that may carry a RETURNING clause — when present they produce a result set.
+_DML_KEYWORDS = frozenset(["INSERT", "UPDATE", "DELETE", "MERGE"])
+_RETURNING_RE = re.compile(r"(?is)\bRETURNING\b\s+\S")
+
 # Regex for parsing USE database statements
 # Matches: USE dbname, USE [dbname], USE `dbname`, USE "dbname"
 _USE_PATTERN = re.compile(
@@ -93,7 +97,12 @@ class KeywordQueryAnalyzer:
             if non_comment_lines:
                 first_line = non_comment_lines[0].upper()
                 first_word = first_line.split()[0] if first_line else ""
-                return QueryKind.RETURNS_ROWS if first_word in SELECT_KEYWORDS else QueryKind.NON_QUERY
+                if first_word in SELECT_KEYWORDS:
+                    return QueryKind.RETURNS_ROWS
+                # DML with a RETURNING clause produces a result set too.
+                if first_word in _DML_KEYWORDS and _RETURNING_RE.search(stmt):
+                    return QueryKind.RETURNS_ROWS
+                return QueryKind.NON_QUERY
 
         return QueryKind.NON_QUERY
 

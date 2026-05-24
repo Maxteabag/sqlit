@@ -92,9 +92,25 @@ class SystemProbe:
         exe = self._executable.lower()
         return "/pipx/venvs/" in exe or "\\pipx\\venvs\\" in exe
 
-    def is_uvx(self) -> bool:
+    def is_uv_tool_install(self) -> bool:
+        """True when launched from a `uv tool install` persistent environment."""
         exe = self._executable.lower()
         return "/uv/tools/" in exe or "\\uv\\tools\\" in exe
+
+    def is_uvx(self) -> bool:
+        """True when launched from a `uvx` / `uv tool run` ephemeral environment.
+
+        uvx envs live under the uv cache as `environments-v2/<hash>/<subhash>/`,
+        backed by symlinks into `archive-v0/`.
+        """
+        exe = self._executable.lower()
+        markers = (
+            "/uv/environments-v2/",
+            "\\uv\\environments-v2\\",
+            "/uv/cache/archive-v0/",
+            "\\uv\\cache\\archive-v0\\",
+        )
+        return any(m in exe for m in markers)
 
     def is_uv_run(self) -> bool:
         return self._uv_env
@@ -143,6 +159,7 @@ class SystemProbeProtocol(Protocol):
 
     def in_venv(self) -> bool: ...
     def is_pipx(self) -> bool: ...
+    def is_uv_tool_install(self) -> bool: ...
     def is_uvx(self) -> bool: ...
     def is_uv_run(self) -> bool: ...
     def is_conda(self) -> bool: ...

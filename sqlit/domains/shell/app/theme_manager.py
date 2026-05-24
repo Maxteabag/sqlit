@@ -17,6 +17,7 @@ from textual.timer import Timer
 
 from sqlit.domains.shell.store.settings import SettingsStore
 from sqlit.shared.core.protocols import SettingsStoreProtocol
+from sqlit.shared.core.store import CONFIG_DIR
 
 from .omarchy import (
     DEFAULT_THEME,
@@ -34,7 +35,7 @@ from .themes import (
 )
 
 CUSTOM_THEME_SETTINGS_KEY = "custom_themes"
-CUSTOM_THEME_DIR = Path.home() / ".sqlit" / "themes"
+CUSTOM_THEME_DIR = CONFIG_DIR / "themes"
 CUSTOM_THEME_FIELDS = {
     "name",
     "primary",

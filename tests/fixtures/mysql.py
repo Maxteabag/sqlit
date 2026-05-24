@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
+from tests.fixtures.utils import cleanup_connection, is_binary_port_open, run_cli
 
 # Note: We use root user because MySQL's testuser only has localhost access inside the container
 MYSQL_HOST = os.environ.get("MYSQL_HOST", "localhost")
@@ -19,7 +19,7 @@ MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE", "test_sqlit")
 
 def mysql_available() -> bool:
     """Check if MySQL is available."""
-    return is_port_open(MYSQL_HOST, MYSQL_PORT)
+    return is_binary_port_open(MYSQL_HOST, MYSQL_PORT)
 
 
 @pytest.fixture(scope="session")

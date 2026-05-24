@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
+from tests.fixtures.utils import cleanup_connection, is_binary_port_open, run_cli
 
 ORACLE11G_HOST = os.environ.get("ORACLE11G_HOST", "localhost")
 ORACLE11G_PORT = int(os.environ.get("ORACLE11G_PORT", "1522"))
@@ -23,7 +23,7 @@ def oracle11g_available() -> bool:
     """Check if Oracle 11g is available."""
     if not ORACLE11G_RUN_TESTS:
         return False
-    return is_port_open(ORACLE11G_HOST, ORACLE11G_PORT)
+    return is_binary_port_open(ORACLE11G_HOST, ORACLE11G_PORT)
 
 
 def _init_oracle_client(oracledb) -> None:

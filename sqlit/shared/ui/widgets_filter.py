@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rich.markup import escape as escape_markup
 from textual.widgets import Static
 
 
@@ -54,7 +55,9 @@ class FilterInput(Static):
             # Show "5000+" if results were truncated
             count_display = f"{self.match_count}+" if self.truncated else str(self.match_count)
             count_text = f"[dim]{count_display}/{self.total_count}[/]"
-            self.update(f"[dim]/[/] {self.filter_text} {count_text}")
+            # Escape filter_text so user-typed brackets aren't parsed as Rich markup.
+            safe_text = escape_markup(self.filter_text)
+            self.update(f"[dim]/[/] {safe_text} {count_text}")
 
     def show(self) -> None:
         """Show the filter input."""

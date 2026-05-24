@@ -71,11 +71,15 @@ class QueryEditingClipboardMixin:
 
     def action_paste(self: QueryMixinHost) -> None:
         """Paste text from clipboard (CTRL+V)."""
+        clipboard = self._get_clipboard_text()
+        self._paste_text(clipboard)
+
+    def _paste_text(self: QueryMixinHost, clipboard: str) -> None:
+        """Paste provided text at the query cursor."""
         from textual.widgets.text_area import Selection
 
         from sqlit.domains.query.editing import paste_text
 
-        clipboard = self._get_clipboard_text()
         if not clipboard:
             return
 
@@ -104,10 +108,13 @@ class QueryEditingClipboardMixin:
         cursor = self.query_input.cursor_location
         self.query_input.selection = Selection(cursor, cursor)
 
-    def _get_clipboard_text(self: QueryMixinHost) -> str:
+    def _get_clipboard_text(self: QueryMixinHost, prefer_internal: bool = False) -> str:
         """Get text from system clipboard."""
-        try:
-            import pyperclip  # pyright: ignore[reportMissingModuleSource]
-            return pyperclip.paste() or ""
-        except Exception:
-            return ""
+        from sqlit.shared.ui.clipboard import get_system_clipboard_text
+
+        internal = getattr(self, "_internal_clipboard", "") or ""
+
+        if prefer_internal and internal:
+            return internal
+
+        return get_system_clipboard_text() or internal

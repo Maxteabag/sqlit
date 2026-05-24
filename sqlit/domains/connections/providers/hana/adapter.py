@@ -115,19 +115,15 @@ class HanaAdapter(CursorBasedAdapter):
         schema = schema or self.default_schema
 
         cursor.execute(
-            "SELECT cc.column_name "
-            "FROM sys.constraints c "
-            "JOIN sys.constraint_columns cc "
-            "  ON c.schema_name = cc.schema_name "
-            " AND c.constraint_name = cc.constraint_name "
-            "WHERE c.constraint_type = 'PRIMARY KEY' "
-            "AND c.schema_name = ? AND c.table_name = ?",
+            "SELECT column_name FROM sys.constraints "
+            "WHERE is_primary_key = 'TRUE' "
+            "AND schema_name = ? AND table_name = ?",
             (schema, table),
         )
         pk_columns = {row[0] for row in cursor.fetchall()}
 
         cursor.execute(
-            "SELECT column_name, data_type_name FROM sys.columns "
+            "SELECT column_name, data_type_name FROM sys.table_columns "
             "WHERE schema_name = ? AND table_name = ? "
             "ORDER BY position",
             (schema, table),

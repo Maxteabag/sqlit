@@ -21,6 +21,10 @@ def get_binding_contexts(ctx: InputContext) -> set[str]:
         contexts.add("query")
         if ctx.vim_mode == VimMode.INSERT:
             contexts.add("query_insert")
+        elif ctx.vim_mode == VimMode.VISUAL:
+            contexts.add("query_visual")
+        elif ctx.vim_mode == VimMode.VISUAL_LINE:
+            contexts.add("query_visual_line")
         else:
             contexts.add("query_normal")
     if ctx.autocomplete_visible:

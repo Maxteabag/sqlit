@@ -72,6 +72,28 @@ class QueryResultsMixin:
             )
 
         render_rows = rows[:MAX_RENDER_ROWS] if rows else []
+        if not render_rows:
+            # An empty `data=[]` yields a backend with no columns, so column
+            # labels never render. Build an Arrow backend with the right
+            # schema so headers still appear for zero-row results.
+            import pyarrow as pa
+            from textual_fastdatatable.backend import ArrowBackend
+
+            empty_backend = ArrowBackend(
+                pa.Table.from_arrays(
+                    [pa.array([], type=pa.string()) for _ in columns],
+                    names=list(columns),
+                )
+            )
+            return SqlitDataTable(
+                id=new_id,
+                zebra_stripes=True,
+                backend=empty_backend,
+                column_labels=columns,
+                max_column_content_width=MAX_COLUMN_CONTENT_WIDTH,
+                render_markup=render_markup,
+                null_rep="NULL",
+            )
         return SqlitDataTable(
             id=new_id,
             zebra_stripes=True,

@@ -19,7 +19,11 @@ def needs_db_password(config: ConnectionConfig) -> bool:
         return False
 
     endpoint = config.tcp_endpoint
-    return bool(endpoint and endpoint.password is None)
+    if not endpoint or endpoint.password is not None:
+        return False
+    if endpoint.password_command:
+        return False
+    return True
 
 
 def needs_ssh_password(config: ConnectionConfig) -> bool:
@@ -30,4 +34,8 @@ def needs_ssh_password(config: ConnectionConfig) -> bool:
     if config.tunnel.auth_type != "password":
         return False
 
-    return config.tunnel.password is None
+    if config.tunnel.password is not None:
+        return False
+    if config.tunnel.password_command:
+        return False
+    return True

@@ -298,8 +298,13 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
     def _save_query_history(self: QueryMixinHost, config: Any, query: str) -> None:
         """Save query history only for saved connections."""
+        database = getattr(self, "_active_database", None) or ""
+        if not database:
+            endpoint = getattr(config, "tcp_endpoint", None)
+            if endpoint:
+                database = getattr(endpoint, "database", "") or ""
         if self._should_save_query_history(config):
-            self._get_history_store().save_query(config.name, query)
+            self._get_history_store().save_query(config.name, query, database=database)
             return
         self._get_unsaved_history_store().save_query(config.name, query)
 
@@ -376,10 +381,14 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             or self.current_config is None
         ):
             return
-        connection_name, query = pending
+        connection_name = pending[0]
+        query = pending[1]
+        database = pending[2] if len(pending) > 2 else ""
         if self.current_config.name != connection_name:
             return
         self._pending_telescope_query = None
+        if database:
+            self._active_database = database
         self._apply_history_query(query)
 
     @property
@@ -745,6 +754,111 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         # Focus query input - this triggers on_descendant_focus which updates footer bindings
         self.query_input.focus()
 
+    PREFERRED_EDITOR_SETTING = "preferred_editor"
+
+    def action_edit_query_in_editor(self: QueryMixinHost) -> None:
+        """Open the current query in the user's terminal editor.
+
+        Pops up an editor picker on first use (or whenever the saved
+        preference is missing from PATH). On editor exit, replaces the
+        query buffer and — when the connection is saved — saves the
+        edited text to history regardless of execution.
+        """
+        from sqlit.domains.query.app.editor import resolve_editor
+
+        settings = self.services.settings_store.load_all()
+        preferred = settings.get(self.PREFERRED_EDITOR_SETTING)
+        editor_cmd = resolve_editor(preferred)
+        if editor_cmd is None:
+            self._open_editor_picker()
+            return
+        self._run_external_editor(editor_cmd)
+
+    def _open_editor_picker(self: QueryMixinHost) -> None:
+        from sqlit.domains.query.app.editor import detect_editors
+
+        from ..screens import EditorPickerScreen
+
+        if not any(e.is_installed for e in detect_editors()):
+            self.notify(
+                "No terminal editor detected. Install nvim, vim, hx, micro, or "
+                "nano and try again (or set $EDITOR).",
+                severity="error",
+                timeout=8,
+            )
+            return
+
+        self.notify(
+            "No preferred editor set — pick one (saved for next time).",
+            severity="information",
+        )
+
+        def on_pick(result: str | None) -> None:
+            if not result:
+                self.notify("Editor selection cancelled.", severity="warning")
+                return
+            settings = self.services.settings_store.load_all()
+            settings[self.PREFERRED_EDITOR_SETTING] = result
+            self.services.settings_store.save_all(settings)
+            self.notify(f"Editor set to '{result}'. Launching…", severity="information")
+            self._run_external_editor(result)
+
+        self.push_screen(EditorPickerScreen(), on_pick)
+
+    def _run_external_editor(self: QueryMixinHost, editor_cmd: str) -> None:
+        import os
+        import subprocess
+        import tempfile
+        from datetime import datetime
+
+        from sqlit.domains.query.app.editor import build_editor_argv
+
+        original = self.query_input.text
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        fd, path_str = tempfile.mkstemp(
+            prefix=f"sqlit-edit-{timestamp}-",
+            suffix=".sql",
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(original)
+            argv = build_editor_argv(editor_cmd) + [path_str]
+            try:
+                with self.suspend():
+                    subprocess.run(argv, check=False)
+            except Exception as exc:
+                self.notify(f"Failed to launch editor '{editor_cmd}': {exc}", severity="error")
+                return
+
+            try:
+                with open(path_str, encoding="utf-8") as f:
+                    edited = f.read()
+            except OSError as exc:
+                self.notify(f"Could not read edited file: {exc}", severity="error")
+                return
+        finally:
+            try:
+                os.unlink(path_str)
+            except OSError:
+                pass
+
+        # Trim a single trailing newline that most editors add on save.
+        if edited.endswith("\n"):
+            edited = edited[:-1]
+
+        if edited == original:
+            self.notify("Editor closed — no changes.", severity="information")
+            return
+
+        self._apply_history_query(edited)
+        self.notify("Query updated from editor.", severity="information")
+
+        if self.current_config and self._should_save_query_history(self.current_config):
+            database = getattr(self, "_active_database", None) or ""
+            self._get_history_store().save_query(
+                self.current_config.name, edited, database=database
+            )
+
     def action_show_history(self: QueryMixinHost) -> None:
         """Show query history for the current connection."""
         if not self.current_config:
@@ -842,7 +956,8 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         if action == "select":
             query = data.get("query", "")
             connection_name = data.get("connection_name", "")
-            self._run_telescope_query(connection_name, query)
+            database = data.get("database", "")
+            self._run_telescope_query(connection_name, query, database=database)
         elif action == "delete":
             timestamp = data.get("timestamp", "")
             connection_name = data.get("connection_name", "")
@@ -866,7 +981,9 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             else:
                 self.action_telescope()
 
-    def _run_telescope_query(self: QueryMixinHost, connection_name: str, query: str) -> None:
+    def _run_telescope_query(
+        self: QueryMixinHost, connection_name: str, query: str, *, database: str = ""
+    ) -> None:
         if not query or not connection_name:
             return
 
@@ -875,6 +992,12 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             self.notify(f"Connection '{connection_name}' not found", severity="warning")
             return
 
+        # Resolve the active database from when the query was originally executed.
+        # For old history entries without a database field, try to find one
+        # from other entries for the same connection.
+        if not database:
+            database = self._infer_database_from_history(connection_name)
+
         self._apply_history_query(query)
 
         if (
@@ -882,10 +1005,14 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             and self.current_config is not None
             and self.current_config.name == connection_name
         ):
+            if database:
+                self._active_database = database
             self._pending_telescope_query = None
             return
 
-        self._pending_telescope_query = None
+        # Store database in the pending tuple so _maybe_run_pending_telescope_query
+        # can restore it AFTER the connection callback resets _active_database.
+        self._pending_telescope_query = (connection_name, query, database)
         self._connect_like_explorer(connection_name, config)
 
     def _get_telescope_connection_map(self: QueryMixinHost) -> dict[str, Any]:
@@ -925,6 +1052,19 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             return
 
         self.connect_to_server(config)
+
+    def _infer_database_from_history(self: QueryMixinHost, connection_name: str) -> str:
+        """Try to find the most recently used database for a connection from history."""
+        try:
+            history_store = self._get_history_store()
+            entries = history_store.load_for_connection(connection_name)
+            for entry in entries:
+                db = getattr(entry, "database", "") or ""
+                if db:
+                    return db
+        except Exception:
+            pass
+        return ""
 
     def _format_telescope_connection_label(self: QueryMixinHost, config: Any) -> str:
         endpoint = getattr(config, "tcp_endpoint", None)

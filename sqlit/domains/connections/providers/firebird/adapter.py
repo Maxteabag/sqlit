@@ -273,7 +273,13 @@ class FirebirdAdapter(CursorBasedAdapter):
         13: "TIME",
         14: "CHAR",
         16: "BIGINT",
+        23: "BOOLEAN",
+        24: "DECFLOAT(16)",
+        25: "DECFLOAT(34)",
+        26: "INT128",
         27: "DOUBLE PRECISION",
+        28: "TIME WITH TIME ZONE",
+        29: "TIMESTAMP WITH TIME ZONE",
         35: "TIMESTAMP",
         37: "VARCHAR",
         261: "BLOB",
@@ -302,7 +308,7 @@ class FirebirdAdapter(CursorBasedAdapter):
 
         # Find the fields themselves.
         cursor.execute(
-            "SELECT rf.rdb$field_name, f.rdb$field_type, f.rdb$character_length "
+            "SELECT rf.rdb$field_name, f.rdb$field_type, f.rdb$character_length, f.rdb$field_sub_type "
             "FROM   rdb$relation_fields AS rf "
             "JOIN   rdb$fields AS f ON f.rdb$field_name = rf.rdb$field_source "
             "WHERE  rdb$relation_name = ? "
@@ -313,8 +319,10 @@ class FirebirdAdapter(CursorBasedAdapter):
         for row in cursor.fetchall():
             if row[1] in [14, 37]:  # CHAR, VARCHAR
                 data_type = f"{self._types[row[1]]}({row[2]})"
+            if row[1] == 261 and row[3] == 1:
+                data_type = "BLOB (text)"
             else:
-                data_type = self._types[row[1]]
+                data_type = self._types.get(row[1], "UNKNOWN")
             name = row[0].rstrip()
             columns.append(ColumnInfo(name=name, data_type=data_type, is_primary_key=name in pk_fields))
         return columns

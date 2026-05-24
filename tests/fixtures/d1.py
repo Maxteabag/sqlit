@@ -63,7 +63,7 @@ class _D1Client:
     def execute(self, db_name: str, sql: str) -> dict | None:
         payload = self._request(
             "POST",
-            f"/client/v4/accounts/{self._account_id}/d1/database/{db_name}/execute",
+            f"/client/v4/accounts/{self._account_id}/d1/database/{db_name}/query",
             {"sql": sql},
         )
         if not payload.get("success", False):

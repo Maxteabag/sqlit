@@ -220,6 +220,9 @@ class SQLiteAdapter(DatabaseAdapter):
             else:
                 rows = cursor.fetchall()
                 truncated = False
+            # DML with RETURNING produces a result set but also writes — persist it.
+            if conn.in_transaction:
+                conn.commit()
             return columns, [tuple(row) for row in rows], truncated
         return [], [], False
 

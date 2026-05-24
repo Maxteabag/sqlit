@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from tests.fixtures.utils import cleanup_connection, is_port_open, run_cli
+from tests.fixtures.utils import cleanup_connection, is_binary_port_open, run_cli
 
 # CockroachDB connection settings for Docker
 COCKROACHDB_HOST = os.environ.get("COCKROACHDB_HOST", "localhost")
@@ -19,7 +19,7 @@ COCKROACHDB_DATABASE = os.environ.get("COCKROACHDB_DATABASE", "test_sqlit")
 
 def cockroachdb_available() -> bool:
     """Check if CockroachDB is available."""
-    return is_port_open(COCKROACHDB_HOST, COCKROACHDB_PORT)
+    return is_binary_port_open(COCKROACHDB_HOST, COCKROACHDB_PORT)
 
 
 @pytest.fixture(scope="session")

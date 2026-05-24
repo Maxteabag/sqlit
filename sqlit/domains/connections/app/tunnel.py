@@ -11,9 +11,20 @@ if TYPE_CHECKING:
 
 
 def ensure_ssh_tunnel_available() -> None:
-    """Ensure SSH tunnel dependencies are installed."""
+    """Ensure SSH tunnel dependencies are installed and compatible."""
     try:
+        import paramiko
         import sshtunnel  # noqa: F401
+
+        # paramiko 4 removed DSSKey, but sshtunnel still references it at
+        # runtime. Surface this as a MissingDriverError so the installer
+        # prompt suggests reinstalling with the [ssh] extra (pins paramiko<4).
+        if not hasattr(paramiko, "DSSKey"):
+            raise RuntimeError(
+                f"paramiko {getattr(paramiko, '__version__', '?')} is incompatible "
+                "with sshtunnel (DSSKey was removed in paramiko 4); reinstall with "
+                "the [ssh] extra to pin paramiko<4."
+            )
     except Exception as e:
         from sqlit.domains.connections.providers.exceptions import MissingDriverError
 

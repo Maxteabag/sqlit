@@ -417,6 +417,22 @@ class DatabaseAdapter(ABC):
         """Quote an identifier (table name, column name, etc.)."""
         pass
 
+    def qualified_name(self, database: str | None, schema: str | None, name: str) -> str:
+        """Build a quoted qualified identifier, skipping empty segments.
+
+        Default handles SQL Server-style `[db].[schema].[name]`, PostgreSQL-
+        style `"schema"."name"`, and single-part `"name"` by omitting any
+        empty/None component. Dialects that want different composition
+        (e.g. MySQL, which has no schemas within databases) can override.
+        """
+        parts: list[str] = []
+        if database:
+            parts.append(self.quote_identifier(database))
+        if schema:
+            parts.append(self.quote_identifier(schema))
+        parts.append(self.quote_identifier(name))
+        return ".".join(parts)
+
     @abstractmethod
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build a SELECT query with limit.
@@ -450,6 +466,22 @@ class DatabaseAdapter(ABC):
         pass
 
 
+def _sanitize_cell(value: Any) -> Any:
+    """Convert non-picklable types to picklable equivalents.
+
+    psycopg2 returns memoryview for bytea columns which cannot be pickled
+    through multiprocessing.Pipe, causing the process worker to hang.
+    """
+    if isinstance(value, memoryview):
+        return bytes(value)
+    return value
+
+
+def _sanitize_row(row: Any) -> tuple:
+    """Sanitize a database row so it can be pickled safely."""
+    return tuple(_sanitize_cell(v) for v in row)
+
+
 class CursorBasedAdapter(DatabaseAdapter):
     """Base class for adapters using cursor-based execution (most SQL databases).
 
@@ -471,7 +503,7 @@ class CursorBasedAdapter(DatabaseAdapter):
             else:
                 rows = cursor.fetchall()
                 truncated = False
-            return columns, [tuple(row) for row in rows], truncated
+            return columns, [_sanitize_row(row) for row in rows], truncated
         return [], [], False
 
     def execute_non_query(self, conn: Any, query: str) -> int:

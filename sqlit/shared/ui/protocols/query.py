@@ -120,7 +120,10 @@ class QueryActionsProtocol(Protocol):
     def _show_text_object_menu(self, mode: str) -> None:
         ...
 
-    def _get_clipboard_text(self) -> str:
+    def _get_clipboard_text(self, prefer_internal: bool = False) -> str:
+        ...
+
+    def _paste_text(self, clipboard: str) -> None:
         ...
 
     def _get_undo_history(self) -> Any:

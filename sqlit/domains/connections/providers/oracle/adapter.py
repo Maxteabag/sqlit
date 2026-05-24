@@ -77,12 +77,12 @@ class OracleAdapter(DatabaseAdapter):
         connection_type = config.get_option("oracle_connection_type", "service_name")
 
         if connection_type == "sid":
-            # SID format: host:port:sid (uses colon separator)
-            # SID is stored in oracle_sid field, fall back to database for backward compat
+            # Thin-mode Easy Connect doesn't accept the legacy host:port:SID form;
+            # it tries to resolve the string as a TNS alias and fails with DPY-4027.
+            # makedsn emits a full TNS descriptor that thin mode handles directly.
             sid = config.get_option("oracle_sid") or endpoint.database
-            dsn = f"{endpoint.host}:{port}:{sid}"
+            dsn = oracledb.makedsn(endpoint.host, port, sid=sid)
         else:
-            # Service Name format: host:port/service_name (uses slash separator)
             dsn = f"{endpoint.host}:{port}/{endpoint.database}"
 
         # Determine connection mode based on oracle_role

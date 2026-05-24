@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
+
+from sqlit.shared.core.store import CONFIG_DIR
 
 from .models import AzureSqlServer, AzureSubscription
 
 # Cache configuration
 AZURE_CACHE_TTL_SECONDS = 300  # 5 minutes
-AZURE_CACHE_FILE = Path(os.path.expanduser("~/.config/sqlit/azure_cache.json"))
+AZURE_CACHE_FILE = CONFIG_DIR / "azure_cache.json"
 
 
 @dataclass

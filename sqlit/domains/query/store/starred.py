@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlit.shared.core.store import CONFIG_DIR, JSONFileStore
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class StarredStore(JSONFileStore):
     """Store for managing starred queries.
 
-    Starred queries are stored as a JSON object in ~/.sqlit/starred_queries.json
+    Starred queries are stored as starred_queries.json in the sqlit config directory.
     Structure: { "connection_name": ["query1", "query2", ...] }
 
     Starred queries persist independently of history - they are never auto-deleted
@@ -17,8 +22,8 @@ class StarredStore(JSONFileStore):
 
     _instance: StarredStore | None = None
 
-    def __init__(self) -> None:
-        super().__init__(CONFIG_DIR / "starred_queries.json")
+    def __init__(self, *, file_path: Path | None = None) -> None:
+        super().__init__(file_path if file_path is not None else CONFIG_DIR / "starred_queries.json")
 
     @classmethod
     def get_instance(cls) -> StarredStore:
