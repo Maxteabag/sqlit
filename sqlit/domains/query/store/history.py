@@ -204,13 +204,11 @@ class HistoryStore:
         return conn_dir
 
     def _maybe_migrate(self) -> None:
+        """One-time migration from the legacy `query_history.json` store.
+        Runs lazily on the first public-API call."""
         if self._migrated:
             return
         self._migrated = True
-        self._migrate_from_legacy_json()
-        self._migrate_layout_v1_to_v2()
-
-    def _migrate_from_legacy_json(self) -> None:
         legacy = self._base_dir.parent / "query_history.json"
         if not legacy.exists():
             return
@@ -234,54 +232,6 @@ class HistoryStore:
             legacy.replace(legacy.with_suffix(".json.migrated"))
         except OSError:
             pass
-
-    def _migrate_layout_v1_to_v2(self) -> None:
-        """Move existing files written under v1 layout
-        (`<conn>/<file>.sql` with `-- database:` in the header) into the
-        v2 layout (`<conn>/<db>/<file>.sql`, header trimmed)."""
-        if not self._base_dir.is_dir():
-            return
-        for conn_dir in self._base_dir.iterdir():
-            if not conn_dir.is_dir():
-                continue
-            for path in list(conn_dir.glob("*.sql")):
-                try:
-                    text = path.read_text(encoding="utf-8")
-                except OSError:
-                    continue
-                stem = path.stem
-                fallback_ts_raw = stem.rsplit("_", 1)[0] if "_" in stem else stem
-                fallback_ts = _filename_to_timestamp(fallback_ts_raw)
-                entry = _parse_entry(
-                    text,
-                    fallback_connection=conn_dir.name,
-                    fallback_database="",
-                    fallback_timestamp=fallback_ts,
-                )
-                if entry is None:
-                    continue
-                # If body matches what we'd write now (no db and no ran/database
-                # in the header), nothing to migrate for this file.
-                if not entry.database and not self._header_has_dropped_fields(text):
-                    continue
-                # Rewrite into the correct location with the trimmed header.
-                self._write_entry(entry)
-                if path.exists():
-                    try:
-                        path.unlink()
-                    except OSError:
-                        pass
-
-    @staticmethod
-    def _header_has_dropped_fields(text: str) -> bool:
-        for line in text.splitlines():
-            stripped = line.rstrip()
-            if stripped == "":
-                return False
-            m = _HEADER_LINE.match(stripped)
-            if m and m.group(1).lower() in {"ran", "database"}:
-                return True
-        return False
 
     def _write_entry(self, entry: QueryHistoryEntry) -> Path:
         """Write one entry to disk, replacing any prior file with the

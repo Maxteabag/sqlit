@@ -256,69 +256,6 @@ class TestLegacyMigration:
         assert (config / "query_history.json").exists()
 
 
-class TestV1ToV2LayoutMigration:
-    """Files written under the v1 layout (flat under conn dir, database
-    in the header) should be moved into v2 (db subdir, trimmed header)."""
-
-    def test_migrates_v1_files_with_database_to_subdir(self, tmp_path: Path) -> None:
-        config = tmp_path / "config"
-        queries = config / "queries"
-        conn_dir = queries / _connection_dir_name("postgres-prod")
-        conn_dir.mkdir(parents=True)
-        v1_text = (
-            "-- sqlit:history\n"
-            "-- connection: postgres-prod\n"
-            "-- database: myapp\n"
-            "-- ran: 2025-12-01T10:00:00\n"
-            "\n"
-            "SELECT * FROM users\n"
-        )
-        (conn_dir / "2025-12-01T10-00-00_deadbeef.sql").write_text(v1_text)
-
-        store = HistoryStore(base_dir=queries)
-        entries = store.load_for_connection("postgres-prod")
-        assert len(entries) == 1
-        assert entries[0].database == "myapp"
-
-        # File should now live in the db subdir, not flat.
-        flat = list(conn_dir.glob("*.sql"))
-        assert not [p for p in flat if p.is_file()]
-        db_dir = conn_dir / _database_dir_name("myapp")
-        assert any(db_dir.glob("*.sql"))
-
-        # Header is trimmed — no ran/database lines.
-        migrated_text = next(db_dir.glob("*.sql")).read_text(encoding="utf-8")
-        assert "-- database:" not in migrated_text
-        assert "-- ran:" not in migrated_text
-        assert "-- connection: postgres-prod" in migrated_text
-
-    def test_migrates_v1_files_without_database_just_trims_header(
-        self, tmp_path: Path
-    ) -> None:
-        config = tmp_path / "config"
-        queries = config / "queries"
-        conn_dir = queries / _connection_dir_name("local-sqlite")
-        conn_dir.mkdir(parents=True)
-        v1_text = (
-            "-- sqlit:history\n"
-            "-- connection: local-sqlite\n"
-            "-- ran: 2025-12-01T10:00:00\n"
-            "\n"
-            "SELECT 1\n"
-        )
-        (conn_dir / "2025-12-01T10-00-00_deadbeef.sql").write_text(v1_text)
-
-        store = HistoryStore(base_dir=queries)
-        entries = store.load_for_connection("local-sqlite")
-        assert len(entries) == 1
-        assert entries[0].database == ""
-
-        # Stays flat under the connection dir; header trimmed.
-        files = [p for p in conn_dir.glob("*.sql") if p.is_file()]
-        assert len(files) == 1
-        assert "-- ran:" not in files[0].read_text(encoding="utf-8")
-
-
 class TestFallbackParsing:
     def test_file_without_header_uses_filename_timestamp(
         self, store: HistoryStore
