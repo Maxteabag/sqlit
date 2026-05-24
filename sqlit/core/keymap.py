@@ -201,7 +201,6 @@ class DefaultKeymapProvider(KeymapProvider):
                 "edit_query_in_editor",
                 "Open in editor",
                 "Actions",
-                guard="query_focused",
             ),
             LeaderCommandDef("h", "show_help", "Help", "Actions"),
             LeaderCommandDef("space", "telescope", "Telescope", "Actions"),
