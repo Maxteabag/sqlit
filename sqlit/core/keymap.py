@@ -196,6 +196,13 @@ class DefaultKeymapProvider(KeymapProvider):
             # Actions
             LeaderCommandDef("z", "cancel_operation", "Cancel", "Actions", guard="query_executing"),
             LeaderCommandDef("t", "change_theme", "Change Theme", "Actions"),
+            LeaderCommandDef(
+                "E",
+                "edit_query_in_editor",
+                "Edit in editor",
+                "Actions",
+                guard="query_focused",
+            ),
             LeaderCommandDef("h", "show_help", "Help", "Actions"),
             LeaderCommandDef("space", "telescope", "Telescope", "Actions"),
             LeaderCommandDef("slash", "telescope_filter", "Telescope Search", "Actions"),

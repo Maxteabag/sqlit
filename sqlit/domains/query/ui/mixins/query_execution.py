@@ -754,6 +754,91 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         # Focus query input - this triggers on_descendant_focus which updates footer bindings
         self.query_input.focus()
 
+    PREFERRED_EDITOR_SETTING = "preferred_editor"
+
+    def action_edit_query_in_editor(self: QueryMixinHost) -> None:
+        """Open the current query in the user's terminal editor.
+
+        Pops up an editor picker on first use (or whenever the saved
+        preference is missing from PATH). On editor exit, replaces the
+        query buffer and — when the connection is saved — saves the
+        edited text to history regardless of execution.
+        """
+        from sqlit.domains.query.app.editor import resolve_editor
+
+        settings = self.services.settings_store.load_all()
+        preferred = settings.get(self.PREFERRED_EDITOR_SETTING)
+        editor_cmd = resolve_editor(preferred)
+        if editor_cmd is None:
+            self._open_editor_picker()
+            return
+        self._run_external_editor(editor_cmd)
+
+    def _open_editor_picker(self: QueryMixinHost) -> None:
+        from ..screens import EditorPickerScreen
+
+        def on_pick(result: str | None) -> None:
+            if not result:
+                return
+            settings = self.services.settings_store.load_all()
+            settings[self.PREFERRED_EDITOR_SETTING] = result
+            self.services.settings_store.save_all(settings)
+            self._run_external_editor(result)
+
+        self.push_screen(EditorPickerScreen(), on_pick)
+
+    def _run_external_editor(self: QueryMixinHost, editor_cmd: str) -> None:
+        import os
+        import subprocess
+        import tempfile
+        from datetime import datetime
+
+        from sqlit.domains.query.app.editor import build_editor_argv
+
+        original = self.query_input.text
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        fd, path_str = tempfile.mkstemp(
+            prefix=f"sqlit-edit-{timestamp}-",
+            suffix=".sql",
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(original)
+            argv = build_editor_argv(editor_cmd) + [path_str]
+            try:
+                with self.suspend():
+                    subprocess.run(argv, check=False)
+            except Exception as exc:
+                self.notify(f"Failed to launch editor '{editor_cmd}': {exc}", severity="error")
+                return
+
+            try:
+                with open(path_str, encoding="utf-8") as f:
+                    edited = f.read()
+            except OSError as exc:
+                self.notify(f"Could not read edited file: {exc}", severity="error")
+                return
+        finally:
+            try:
+                os.unlink(path_str)
+            except OSError:
+                pass
+
+        # Trim a single trailing newline that most editors add on save.
+        if edited.endswith("\n"):
+            edited = edited[:-1]
+
+        if edited == original:
+            return
+
+        self._apply_history_query(edited)
+
+        if self.current_config and self._should_save_query_history(self.current_config):
+            database = getattr(self, "_active_database", None) or ""
+            self._get_history_store().save_query(
+                self.current_config.name, edited, database=database
+            )
+
     def action_show_history(self: QueryMixinHost) -> None:
         """Show query history for the current connection."""
         if not self.current_config:

@@ -11,6 +11,7 @@ from sqlit.core.keymap import get_keymap
 LEADER_GUARDS: dict[str, Callable[[InputContext], bool]] = {
     "has_connection": lambda ctx: ctx.has_connection,
     "query_executing": lambda ctx: ctx.query_executing,
+    "query_focused": lambda ctx: ctx.focus == "query",
 }
 
 

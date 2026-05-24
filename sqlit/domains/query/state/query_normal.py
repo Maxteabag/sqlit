@@ -22,6 +22,10 @@ class QueryNormalModeState(State):
         self.allows("g_leader_key", label="Go", help="Go motions (menu)")
         self.allows("new_query", label="New", help="New query (clear all)")
         self.allows("show_history", label="History", help="Query history")
+        self.allows(
+            "edit_query_in_editor",
+            help="Open current query in your terminal editor",
+        )
         # Vim cursor movement
         self.allows("cursor_left", help="Move cursor left")
         self.allows("cursor_right", help="Move cursor right")
