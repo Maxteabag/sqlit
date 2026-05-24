@@ -61,7 +61,7 @@ You also cannot invent new actions or attach an existing action to a state it do
 
 ## Validation at startup
 
-The keymap is checked before the app boots. Failures fall back to defaults and print to stderr:
+The keymap is checked before the app boots. Failures fall back to defaults; the error surfaces as a Textual notification in the running app, and as a `[sqlit] …` line on stderr when running headless. Possible failures:
 
 - **Unknown action in a state** — sqlit lists the actions that *do* exist in that state.
 - **Conflicting bindings** — two different actions claiming the same key in the same state (or the same menu, for leader commands). Default-only overlaps that are disambiguated by runtime state — e.g. `d` on a connection vs. on a folder, both in `tree` — are tolerated; only collisions you introduce are flagged.
@@ -141,7 +141,7 @@ Rebind autocomplete to `ctrl+n`/`ctrl+p`, swap `<leader>h` to `<leader>?`, keep 
 
 ## Troubleshooting
 
-**Keymap didn't load.** Check `~/.sqlit/settings.json` — `custom_keymap` must match your filename without the `.json`. Check stderr for `[sqlit] Failed to load custom keymap …`.
+**Keymap didn't load.** Check `~/.sqlit/settings.json` — `custom_keymap` must match your filename without the `.json`. The app shows a notification on startup; running headless prints `[sqlit] Failed to load custom keymap …` to stderr.
 
 **"Unknown action" error.** The action doesn't exist in the state you named. The error message lists the known actions for that state — pick one of those, or check the canonical list in `sqlit/core/keymap.py`.
 

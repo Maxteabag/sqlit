@@ -36,7 +36,6 @@ stderr so the user can fix their config.
 from __future__ import annotations
 
 import json
-import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -84,6 +83,10 @@ class KeymapManager:
 
     def __init__(self, settings_store: SettingsStoreProtocol) -> None:
         self._settings_store = settings_store
+        # Last load error surfaced by startup_flow once the app is mounted,
+        # so the user sees it in the UI instead of only on stderr. None when
+        # the most recent load succeeded or no custom keymap was requested.
+        self.load_error: str | None = None
 
     def initialize(self) -> dict:
         settings = self._settings_store.load_all()
@@ -91,6 +94,7 @@ class KeymapManager:
         return settings
 
     def load_custom_keymap(self, settings: dict) -> None:
+        self.load_error = None
         keymap_name = settings.get(CUSTOM_KEYMAP_SETTINGS_KEY)
         if not keymap_name or not isinstance(keymap_name, str):
             return
@@ -101,10 +105,7 @@ class KeymapManager:
             path = self._resolve_keymap_path(keymap_name.strip())
             self._register_custom_keymap(path, keymap_name.strip())
         except Exception as exc:
-            print(
-                f"[sqlit] Failed to load custom keymap '{keymap_name}': {exc}",
-                file=sys.stderr,
-            )
+            self.load_error = f"Failed to load custom keymap '{keymap_name}': {exc}"
 
     def _resolve_keymap_path(self, keymap_name: str) -> Path:
         if keymap_name.startswith(("~", "/")) or Path(keymap_name).is_absolute():

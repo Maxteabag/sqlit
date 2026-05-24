@@ -106,6 +106,7 @@ def run_on_mount(app: AppProtocol) -> None:
     app._startup_stamp("footer_updated")
     _warn_on_missing_actions(app, is_headless)
     _warn_on_keyring_error(app, is_headless)
+    _warn_on_keymap_error(app, is_headless)
     if (
         app.services.runtime.process_worker
         and app.services.runtime.process_worker_warm_on_idle
@@ -160,6 +161,21 @@ def _warn_on_keyring_error(app: AppProtocol, is_headless: bool) -> None:
         return
     try:
         app.notify(message, severity="warning", timeout=15)
+    except Exception:
+        print(f"[sqlit] {message}", file=sys.stderr)
+
+
+def _warn_on_keymap_error(app: AppProtocol, is_headless: bool) -> None:
+    manager = getattr(app, "_keymap_manager", None)
+    error = getattr(manager, "load_error", None) if manager else None
+    if not error:
+        return
+    message = f"{error}. Defaults are in effect — fix ~/.sqlit/keymaps/ and restart."
+    if is_headless:
+        print(f"[sqlit] {message}", file=sys.stderr)
+        return
+    try:
+        app.notify(message, severity="error", timeout=15)
     except Exception:
         print(f"[sqlit] {message}", file=sys.stderr)
 

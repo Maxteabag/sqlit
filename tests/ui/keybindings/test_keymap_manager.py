@@ -54,20 +54,31 @@ class TestLifecycle:
         manager.initialize()
         assert not isinstance(get_keymap(), FileBasedKeymapProvider)
 
-    def test_invalid_json_falls_back(self, tmp_path: Path, capsys):
+    def test_invalid_json_falls_back(self, tmp_path: Path):
         path = tmp_path / "invalid.json"
         path.write_text("not valid json", encoding="utf-8")
-        KeymapManager(settings_store=MockSettingsStore({"custom_keymap": str(path)})).initialize()
-        captured = capsys.readouterr()
-        assert "Failed to load custom keymap" in captured.err
+        manager = KeymapManager(settings_store=MockSettingsStore({"custom_keymap": str(path)}))
+        manager.initialize()
+        assert manager.load_error and "Failed to load custom keymap" in manager.load_error
         assert not isinstance(get_keymap(), FileBasedKeymapProvider)
 
-    def test_missing_file_falls_back(self, tmp_path: Path, capsys):
-        KeymapManager(
+    def test_missing_file_falls_back(self, tmp_path: Path):
+        manager = KeymapManager(
             settings_store=MockSettingsStore({"custom_keymap": str(tmp_path / "nope.json")})
-        ).initialize()
-        captured = capsys.readouterr()
-        assert "not found" in captured.err
+        )
+        manager.initialize()
+        assert manager.load_error and "not found" in manager.load_error
+
+    def test_load_error_cleared_on_clean_reinit(self, tmp_path: Path):
+        path = tmp_path / "bad.json"
+        path.write_text("not valid json", encoding="utf-8")
+        manager = KeymapManager(settings_store=MockSettingsStore({"custom_keymap": str(path)}))
+        manager.initialize()
+        assert manager.load_error is not None
+        # Re-running with the default sentinel must clear the prior error.
+        manager._settings_store = MockSettingsStore({"custom_keymap": "default"})  # type: ignore[attr-defined]
+        manager.initialize()
+        assert manager.load_error is None
 
 
 class TestSimpleRemap:
@@ -137,70 +148,70 @@ class TestAliases:
 class TestStrictness:
     """Unknown (state, action) pairs are rejected with a helpful error."""
 
-    def test_unknown_action_in_state(self, tmp_path: Path, capsys):
-        _load(
+    def test_unknown_action_in_state(self, tmp_path: Path):
+        manager = _load(
             tmp_path,
             "bad",
             {"keymap": {"action_keys": {"tree": {"this_action_does_not_exist": "x"}}}},
         )
-        captured = capsys.readouterr()
-        assert "Unknown action 'this_action_does_not_exist' in state 'tree'" in captured.err
-        assert "Known actions" in captured.err
+        assert manager.load_error is not None
+        assert "Unknown action 'this_action_does_not_exist' in state 'tree'" in manager.load_error
+        assert "Known actions" in manager.load_error
 
-    def test_unknown_state(self, tmp_path: Path, capsys):
-        _load(
+    def test_unknown_state(self, tmp_path: Path):
+        manager = _load(
             tmp_path,
             "bad-state",
             {"keymap": {"action_keys": {"made_up_state": {"some_action": "x"}}}},
         )
-        captured = capsys.readouterr()
-        assert "Unknown action" in captured.err
-        assert "made_up_state" in captured.err
+        assert manager.load_error is not None
+        assert "Unknown action" in manager.load_error
+        assert "made_up_state" in manager.load_error
 
-    def test_unknown_leader_action(self, tmp_path: Path, capsys):
-        _load(
+    def test_unknown_leader_action(self, tmp_path: Path):
+        manager = _load(
             tmp_path,
             "bad-leader",
             {"keymap": {"leader_commands": {"leader": {"not_a_leader_action": "x"}}}},
         )
-        captured = capsys.readouterr()
-        assert "Unknown leader action" in captured.err
+        assert manager.load_error is not None
+        assert "Unknown leader action" in manager.load_error
 
-    def test_empty_key_string(self, tmp_path: Path, capsys):
-        _load(
+    def test_empty_key_string(self, tmp_path: Path):
+        manager = _load(
             tmp_path,
             "empty",
             {"keymap": {"action_keys": {"tree": {"refresh_tree": ""}}}},
         )
-        captured = capsys.readouterr()
-        assert "key must be a non-empty string" in captured.err
+        assert manager.load_error is not None
+        assert "key must be a non-empty string" in manager.load_error
 
-    def test_empty_key_list(self, tmp_path: Path, capsys):
-        _load(
+    def test_empty_key_list(self, tmp_path: Path):
+        manager = _load(
             tmp_path,
             "empty-list",
             {"keymap": {"action_keys": {"tree": {"refresh_tree": []}}}},
         )
-        captured = capsys.readouterr()
-        assert "key list must contain at least one key" in captured.err
+        assert manager.load_error is not None
+        assert "key list must contain at least one key" in manager.load_error
 
 
 class TestConflicts:
     """User-introduced collisions abort load with a clear error."""
 
-    def test_user_vs_default_action_key(self, tmp_path: Path, capsys):
+    def test_user_vs_default_action_key(self, tmp_path: Path):
         # Default: 'i' → enter_insert_mode in query_normal. User binds 'i' to undo.
-        _load(
+        manager = _load(
             tmp_path,
             "conflict",
             {"keymap": {"action_keys": {"query_normal": {"undo": "i"}}}},
         )
-        captured = capsys.readouterr()
-        assert "Conflicting keybindings detected" in captured.err
-        assert "'i'" in captured.err and "query_normal" in captured.err
+        assert manager.load_error is not None
+        assert "Conflicting keybindings detected" in manager.load_error
+        assert "'i'" in manager.load_error and "query_normal" in manager.load_error
 
-    def test_user_vs_user_action_key(self, tmp_path: Path, capsys):
-        _load(
+    def test_user_vs_user_action_key(self, tmp_path: Path):
+        manager = _load(
             tmp_path,
             "self-conflict",
             {
@@ -214,29 +225,74 @@ class TestConflicts:
                 }
             },
         )
-        captured = capsys.readouterr()
-        assert "Conflicting keybindings detected" in captured.err
+        assert manager.load_error is not None
+        assert "Conflicting keybindings detected" in manager.load_error
 
-    def test_user_vs_default_leader(self, tmp_path: Path, capsys):
+    def test_user_vs_default_leader(self, tmp_path: Path):
         # Default: <leader>e → toggle_explorer. User binds <leader>e → quit.
-        _load(
+        manager = _load(
             tmp_path,
             "leader-conflict",
             {"keymap": {"leader_commands": {"leader": {"quit": "e"}}}},
         )
-        captured = capsys.readouterr()
-        assert "leader key 'e'" in captured.err
+        assert manager.load_error is not None
+        assert "leader key 'e'" in manager.load_error
 
-    def test_default_only_overlaps_are_tolerated(self, tmp_path: Path, capsys):
+    def test_default_only_overlaps_are_tolerated(self, tmp_path: Path):
         # 'd' in tree binds two actions in defaults (state-guarded at runtime).
         # An unrelated user override must not trip on that pre-existing overlap.
-        _load(
+        manager = _load(
             tmp_path,
             "untouched",
             {"keymap": {"action_keys": {"query_normal": {"undo": "Z"}}}},
         )
-        captured = capsys.readouterr()
-        assert "Conflicting" not in captured.err
+        assert manager.load_error is None
+
+
+class TestStartupNotification:
+    """The load error is surfaced to the user via app.notify on startup."""
+
+    def test_notifies_when_load_error_present(self, tmp_path: Path):
+        from sqlit.domains.shell.app.startup_flow import _warn_on_keymap_error
+
+        path = tmp_path / "bad.json"
+        path.write_text("not valid json", encoding="utf-8")
+        manager = KeymapManager(settings_store=MockSettingsStore({"custom_keymap": str(path)}))
+        manager.initialize()
+        assert manager.load_error is not None
+
+        notifications: list[tuple[str, str]] = []
+
+        class FakeApp:
+            _keymap_manager = manager
+
+            def notify(self, message: str, *, severity: str = "information", timeout: float = 5) -> None:
+                notifications.append((severity, message))
+
+        _warn_on_keymap_error(FakeApp(), is_headless=False)  # type: ignore[arg-type]
+        assert len(notifications) == 1
+        severity, message = notifications[0]
+        assert severity == "error"
+        assert "Failed to load custom keymap" in message
+        assert "Defaults are in effect" in message
+
+    def test_silent_when_no_load_error(self, tmp_path: Path):
+        from sqlit.domains.shell.app.startup_flow import _warn_on_keymap_error
+
+        manager = KeymapManager(settings_store=MockSettingsStore({}))
+        manager.initialize()
+        assert manager.load_error is None
+
+        notifications: list[tuple[str, str]] = []
+
+        class FakeApp:
+            _keymap_manager = manager
+
+            def notify(self, message: str, *, severity: str = "information", timeout: float = 5) -> None:
+                notifications.append((severity, message))
+
+        _warn_on_keymap_error(FakeApp(), is_headless=False)  # type: ignore[arg-type]
+        assert notifications == []
 
 
 class TestMetadataInheritance:
