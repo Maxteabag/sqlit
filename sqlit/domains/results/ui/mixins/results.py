@@ -4,10 +4,30 @@ from __future__ import annotations
 
 from typing import Any
 
+from rich.errors import MarkupError
+from rich.text import Text
+
 from sqlit.shared.ui.protocols import ResultsMixinHost
 from sqlit.shared.ui.widgets import SqlitDataTable
 
 MIN_TIMER_DELAY_S = 0.001
+
+
+def _strip_table_markup(table: Any, value: Any) -> Any:
+    """Strip Rich markup from a cell value when the table renders markup.
+
+    The results filter stores cells with Rich markup (e.g. `[bold #FFFF00]Ja[/]ne`)
+    to highlight matches. Reading those cells back for clipboard or value-view
+    purposes would otherwise leak the markup as literal text (issue #229).
+    """
+    if not isinstance(value, str):
+        return value
+    if not getattr(table, "render_markup", False):
+        return value
+    try:
+        return Text.from_markup(value).plain
+    except MarkupError:
+        return value
 
 
 class ResultsMixin:
@@ -280,7 +300,7 @@ class ResultsMixin:
             return
         try:
             _cursor_row, cursor_col = table.cursor_coordinate
-            value = table.get_cell_at(table.cursor_coordinate)
+            value = _strip_table_markup(table, table.get_cell_at(table.cursor_coordinate))
         except Exception:
             return
 
@@ -429,7 +449,7 @@ class ResultsMixin:
             self.notify("No results", severity="warning")
             return
         try:
-            value = table.get_cell_at(table.cursor_coordinate)
+            value = _strip_table_markup(table, table.get_cell_at(table.cursor_coordinate))
         except Exception:
             return
         self._copy_text(str(value) if value is not None else "NULL")
@@ -503,7 +523,9 @@ class ResultsMixin:
             self.notify("No results", severity="warning")
             return
         try:
-            row_values = table.get_row_at(table.cursor_row)
+            row_values = [
+                _strip_table_markup(table, v) for v in table.get_row_at(table.cursor_row)
+            ]
         except Exception:
             return
 
@@ -546,7 +568,7 @@ class ResultsMixin:
             self.notify("No results", severity="warning")
             return
         try:
-            value = table.get_cell_at(table.cursor_coordinate)
+            value = _strip_table_markup(table, table.get_cell_at(table.cursor_coordinate))
         except Exception:
             return
         self._copy_text(str(value) if value is not None else "NULL")
@@ -560,7 +582,9 @@ class ResultsMixin:
             self.notify("No results", severity="warning")
             return
         try:
-            row_values = table.get_row_at(table.cursor_row)
+            row_values = [
+                _strip_table_markup(table, v) for v in table.get_row_at(table.cursor_row)
+            ]
         except Exception:
             return
         text = self._format_tsv([], [tuple(row_values)])

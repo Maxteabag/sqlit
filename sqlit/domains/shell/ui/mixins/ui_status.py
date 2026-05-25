@@ -109,9 +109,16 @@ class UIStatusMixin:
                 # Inactive pane: key and title match border color via CSS
                 pane.border_title = f"\\[{key}] {label}"
 
-        set_title(pane_explorer, "e", explorer_label, active=active_pane == "explorer")
-        set_title(pane_query, "q", "Query", active=active_pane == "query")
-        set_title(pane_results, "r", "Results", active=active_pane == "results")
+        from sqlit.core.keymap import format_key, get_keymap
+
+        km = get_keymap()
+        explorer_key = format_key(km.action("focus_explorer") or "e")
+        query_key = format_key(km.action("focus_query") or "q")
+        results_key = format_key(km.action("focus_results") or "r")
+
+        set_title(pane_explorer, explorer_key, explorer_label, active=active_pane == "explorer")
+        set_title(pane_query, query_key, "Query", active=active_pane == "query")
+        set_title(pane_results, results_key, "Results", active=active_pane == "results")
 
     def _update_vim_mode_visuals(self: UINavigationMixinHost) -> None:
         """Update all visual indicators based on current vim mode.

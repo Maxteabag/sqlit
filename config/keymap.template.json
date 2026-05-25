@@ -3,10 +3,12 @@
     "action_keys": {
       "global": {
         "leader_key": "space",
-        "quit": "ctrl+q",
         "cancel_operation": "escape",
         "show_help": "?",
-        "enter_command_mode": ":",
+        "enter_command_mode": [
+          ":",
+          "shift+;"
+        ],
         "undo": "ctrl+z",
         "redo": "ctrl+y"
       },
@@ -224,6 +226,14 @@
         "toggle_value_view_mode": "t",
         "collapse_all_json_nodes": "z",
         "expand_all_json_nodes": "Z"
+      },
+      "error_dialog": {
+        "error_copy_message": "y"
+      },
+      "connection_editor": {
+        "connection_save": "ctrl+s",
+        "connection_test": "ctrl+t",
+        "connection_install_driver": "ctrl+d"
       }
     },
     "leader_commands": {
@@ -237,8 +247,7 @@
         "edit_query_in_editor": "o",
         "show_help": "h",
         "telescope": "space",
-        "telescope_filter": "/",
-        "quit": "q"
+        "telescope_filter": "/"
       },
       "delete": {
         "line": "d",

@@ -50,9 +50,9 @@ class ConnectionScreen(ModalScreen):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", priority=True),
-        Binding("ctrl+s", "save", "Save", priority=True),
-        Binding("ctrl+t", "test_connection", "Test", priority=True),
-        Binding("ctrl+d", "install_driver", "Install driver", show=False, priority=True),
+        Binding("ctrl+s", "save", "Save", priority=True, id="connection_save"),
+        Binding("ctrl+t", "test_connection", "Test", priority=True, id="connection_test"),
+        Binding("ctrl+d", "install_driver", "Install driver", show=False, priority=True, id="connection_install_driver"),
         Binding("tab", "next_field", "Next field", priority=True),
         Binding("shift+tab", "prev_field", "Previous field", priority=True),
         Binding("down", "focus_tab_content", "Focus content", show=False),
@@ -306,7 +306,12 @@ class ConnectionScreen(ModalScreen):
         title = "Edit Connection" if self.editing else "New Connection"
         db_type = self._form.current_db_type
 
-        shortcuts = [("Test", "^t"), ("Save", "^s"), ("Cancel", "<esc>")]
+        from sqlit.core.keymap import format_key, get_keymap
+
+        km = get_keymap()
+        test_key = format_key(km.action("connection_test") or "ctrl+t")
+        save_key = format_key(km.action("connection_save") or "ctrl+s")
+        shortcuts = [("Test", test_key), ("Save", save_key), ("Cancel", "<esc>")]
         initial_values = self._form.get_initial_visibility_values()
 
         with Dialog(id="connection-dialog", title=title, shortcuts=shortcuts):

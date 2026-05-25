@@ -21,8 +21,8 @@ class TestKeymapProvider:
         """Default keymap should have standard leader commands."""
         keymap = get_keymap()
 
-        # Verify leader commands exist (don't check specific keys)
-        assert keymap.leader("quit") is not None
+        # Verify leader commands exist (don't check specific keys).
+        # quit is intentionally NOT in the user-overridable keymap.
         assert keymap.leader("show_help") is not None
         assert keymap.leader("toggle_explorer") is not None
         assert keymap.leader("change_theme") is not None

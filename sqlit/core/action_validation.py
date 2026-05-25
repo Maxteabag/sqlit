@@ -7,11 +7,24 @@ from typing import Any
 from sqlit.core.keymap import get_keymap
 from sqlit.core.leader_commands import get_leader_commands
 
+# Contexts whose actions live on a Screen class, not on the App. These are
+# routed via Textual's per-screen Binding system; their action methods are
+# defined on the screen they belong to, so checking the App for them would
+# always miss. Skipped by the validator.
+_SCREEN_LOCAL_CONTEXTS: frozenset[str] = frozenset(
+    {
+        "error_dialog",
+        "connection_editor",
+    }
+)
+
 
 def validate_actions(app: Any) -> list[str]:
     missing: set[str] = set()
 
     for action_key in get_keymap().get_action_keys():
+        if action_key.context in _SCREEN_LOCAL_CONTEXTS:
+            continue
         action_name = f"action_{action_key.action}"
         if not hasattr(app, action_name):
             missing.add(action_name)
