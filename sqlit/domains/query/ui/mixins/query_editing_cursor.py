@@ -131,6 +131,14 @@ class QueryEditingCursorMixin:
         """Move cursor to previous WORD (B)."""
         self._move_with_motion("B")
 
+    def action_cursor_word_end(self: QueryMixinHost) -> None:
+        """Move cursor to end of word (e). Unbound by default."""
+        self._move_with_motion("e")
+
+    def action_cursor_WORD_end(self: QueryMixinHost) -> None:
+        """Move cursor to end of WORD (E). Unbound by default."""
+        self._move_with_motion("E")
+
     def action_cursor_first_non_blank(self: QueryMixinHost) -> None:
         """Move cursor to first non-whitespace character (^)."""
         self._move_with_motion("^")

@@ -371,6 +371,11 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("W", "cursor_WORD_forward", "query_normal"),
             ActionKeyDef("b", "cursor_word_back", "query_normal"),
             ActionKeyDef("B", "cursor_WORD_back", "query_normal"),
+            # Unbound by default — users can bind in their keymap.json
+            # (typically "e"/"E"), but they must also rebind whatever
+            # `focus_explorer` action is currently using those keys.
+            ActionKeyDef("", "cursor_word_end", "query_normal"),
+            ActionKeyDef("", "cursor_WORD_end", "query_normal"),
             ActionKeyDef("0", "cursor_line_start", "query_normal"),
             ActionKeyDef("circumflex_accent", "cursor_first_non_blank", "query_normal"),
             ActionKeyDef("dollar_sign", "cursor_line_end", "query_normal"),
