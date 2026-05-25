@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from sqlit.domains.connections.app.session import ConnectionSession
-from sqlit.domains.connections.providers.adapters.base import ColumnInfo
+from sqlit.domains.connections.providers.adapters.base import ColumnInfo, ForeignKeyInfo
 from sqlit.domains.connections.providers.model import (
+    ForeignKeyInspector,
     IndexInspector,
     ProcedureInspector,
     SequenceInspector,
@@ -84,6 +85,38 @@ class ExplorerSchemaService:
         db_arg = self._resolve_db_arg(database)
         return self._run_with_retry(
             lambda: inspector.get_columns(self.session.connection, name, db_arg, schema),
+            database,
+        )
+
+    def list_foreign_keys(
+        self,
+        database: str | None,
+        schema: str | None,
+        name: str,
+    ) -> list[ForeignKeyInfo]:
+        """Outgoing FKs of `name`. Empty list if the adapter doesn't support FKs."""
+        inspector = self.session.provider.schema_inspector
+        if not isinstance(inspector, ForeignKeyInspector):
+            return []
+        db_arg = self._resolve_db_arg(database)
+        return self._run_with_retry(
+            lambda: inspector.get_foreign_keys(self.session.connection, name, db_arg, schema),
+            database,
+        )
+
+    def list_referencing_foreign_keys(
+        self,
+        database: str | None,
+        schema: str | None,
+        name: str,
+    ) -> list[ForeignKeyInfo]:
+        """Incoming FKs pointing at `name`. Empty list if unsupported."""
+        inspector = self.session.provider.schema_inspector
+        if not isinstance(inspector, ForeignKeyInspector):
+            return []
+        db_arg = self._resolve_db_arg(database)
+        return self._run_with_retry(
+            lambda: inspector.get_referencing_foreign_keys(self.session.connection, name, db_arg, schema),
             database,
         )
 

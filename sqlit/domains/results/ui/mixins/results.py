@@ -6,11 +6,36 @@ from typing import Any
 
 from rich.errors import MarkupError
 from rich.text import Text
+from textual.widgets import DataTable
 
 from sqlit.shared.ui.protocols import ResultsMixinHost
 from sqlit.shared.ui.widgets import SqlitDataTable
 
 MIN_TIMER_DELAY_S = 0.001
+
+FK_NAVIGATION_DEFAULT_LIMIT = 100
+
+
+def build_fk_navigation_query(
+    *,
+    adapter: Any,
+    ref_table: str,
+    ref_column: str,
+    value: Any,
+    ref_schema: str = "",
+    ref_database: str = "",
+    limit: int = FK_NAVIGATION_DEFAULT_LIMIT,
+) -> str:
+    """Build a dialect-aware `SELECT * FROM ref_table WHERE ref_col = <value>` query.
+
+    `adapter` must expose `qualified_name`, `quote_identifier`, and
+    `quote_literal` — DatabaseAdapter satisfies this; both the dialect
+    and schema_inspector entries on a provider point at the same adapter
+    instance.
+    """
+    qualified = adapter.qualified_name(ref_database or None, ref_schema or None, ref_table)
+    quoted_col = adapter.quote_identifier(ref_column)
+    return f"SELECT * FROM {qualified} WHERE {quoted_col} = {adapter.quote_literal(value)} LIMIT {limit}"
 
 
 def _strip_table_markup(table: Any, value: Any) -> Any:
@@ -57,6 +82,20 @@ class ResultsMixin:
             pass
         return None
 
+    def on_data_table_cell_highlighted(
+        self: ResultsMixinHost, event: DataTable.CellHighlighted
+    ) -> None:
+        """Refresh footer when the result-table cursor moves between cells.
+
+        The FK navigation hints (`o` FK / `O` Refs) are gated on the column
+        under the cursor, so the footer needs to re-render on each cell move.
+        Other footer entries don't depend on cursor position; this is cheap
+        because `_update_footer_bindings` just re-queries the state machine.
+        """
+        update = getattr(self, "_update_footer_bindings", None)
+        if callable(update):
+            update()
+
     def _apply_result_table_columns(
         self: ResultsMixinHost,
         table_info: dict[str, Any],
@@ -67,10 +106,24 @@ class ResultsMixin:
             return
         table_info["columns"] = columns
 
+    def _apply_result_table_foreign_keys(
+        self: ResultsMixinHost,
+        table_info: dict[str, Any],
+        token: int,
+        outgoing: list[Any],
+        incoming: list[Any],
+    ) -> None:
+        if table_info.get("_columns_token") != token:
+            return
+        table_info["foreign_keys"] = outgoing
+        table_info["referencing_foreign_keys"] = incoming
+
     def _prime_result_table_columns(self: ResultsMixinHost, table_info: dict[str, Any] | None) -> None:
         if not table_info:
             return
-        if table_info.get("columns"):
+        already_has_columns = bool(table_info.get("columns"))
+        already_has_fks = "foreign_keys" in table_info
+        if already_has_columns and already_has_fks:
             return
         name = table_info.get("name")
         if not name:
@@ -80,10 +133,15 @@ class ResultsMixin:
         token = int(table_info.get("_columns_token", 0)) + 1
         table_info["_columns_token"] = token
 
+        need_columns = not already_has_columns
+        need_fks = not already_has_fks
+
         async def work_async() -> None:
             import asyncio
 
             columns: list[Any] = []
+            outgoing_fks: list[Any] = []
+            incoming_fks: list[Any] = []
             try:
                 runtime = getattr(self.services, "runtime", None)
                 use_worker = bool(getattr(runtime, "process_worker", False)) and not bool(
@@ -93,7 +151,12 @@ class ResultsMixin:
                 if use_worker and hasattr(self, "_get_process_worker_client_async"):
                     client = await self._get_process_worker_client_async()  # type: ignore[attr-defined]
 
-                if client is not None and hasattr(client, "list_columns") and self.current_config is not None:
+                if (
+                    need_columns
+                    and client is not None
+                    and hasattr(client, "list_columns")
+                    and self.current_config is not None
+                ):
                     outcome = await asyncio.to_thread(
                         client.list_columns,
                         config=self.current_config,
@@ -107,26 +170,70 @@ class ResultsMixin:
                     if error:
                         raise RuntimeError(error)
                     columns = outcome.columns or []
-                else:
+
+                # The process worker doesn't currently expose FK queries; fall back to
+                # the local schema service for FK metadata (and for columns if the
+                # worker path wasn't taken above).
+                if need_columns or need_fks:
                     schema_service = getattr(self, "_get_schema_service", None)
                     if callable(schema_service):
                         service = self._get_schema_service()
                         if service:
-                            columns = await asyncio.to_thread(
-                                service.list_columns,
-                                database,
-                                schema,
-                                name,
-                            )
+                            if need_columns and not columns:
+                                columns = await asyncio.to_thread(
+                                    service.list_columns,
+                                    database,
+                                    schema,
+                                    name,
+                                ) or []
+                            if need_fks:
+                                outgoing_fks, incoming_fks = await asyncio.to_thread(
+                                    self._fetch_fk_metadata,
+                                    service,
+                                    database,
+                                    schema,
+                                    name,
+                                )
             except Exception:
-                columns = []
+                pass
 
-            self._schedule_results_timer(
-                MIN_TIMER_DELAY_S,
-                lambda: self._apply_result_table_columns(table_info, token, columns),
-            )
+            if need_columns:
+                self._schedule_results_timer(
+                    MIN_TIMER_DELAY_S,
+                    lambda: self._apply_result_table_columns(table_info, token, columns),
+                )
+            if need_fks:
+                self._schedule_results_timer(
+                    MIN_TIMER_DELAY_S,
+                    lambda: self._apply_result_table_foreign_keys(
+                        table_info, token, outgoing_fks, incoming_fks
+                    ),
+                )
 
         self.run_worker(work_async(), name=f"prime-result-columns-{name}", exclusive=False)
+
+    @staticmethod
+    def _fetch_fk_metadata(
+        service: Any,
+        database: str | None,
+        schema: str | None,
+        name: str,
+    ) -> tuple[list[Any], list[Any]]:
+        """Fetch outgoing + incoming FKs. Returns ([], []) on any failure.
+
+        Runs in a worker thread so connection-bound queries don't block the UI.
+        """
+        outgoing: list[Any] = []
+        incoming: list[Any] = []
+        try:
+            outgoing = service.list_foreign_keys(database, schema, name) or []
+        except Exception:
+            outgoing = []
+        try:
+            incoming = service.list_referencing_foreign_keys(database, schema, name) or []
+        except Exception:
+            incoming = []
+        return outgoing, incoming
 
     def _normalize_column_name(self: ResultsMixinHost, name: str) -> str:
         trimmed = name.strip()
@@ -783,6 +890,199 @@ class ResultsMixin:
                 pass
 
         self.push_screen(ColumnPickerScreen(list(columns)), handle_result)
+
+    def _generate_fk_jump_query(
+        self: ResultsMixinHost,
+        ref_table: str,
+        ref_column: str,
+        value: Any,
+        ref_schema: str = "",
+        ref_database: str = "",
+    ) -> str | None:
+        """Build SELECT * FROM ref_table WHERE ref_col = <literal>, dialect-aware.
+
+        Returns None if no current provider is available (e.g. disconnected).
+        """
+        provider = getattr(self, "current_provider", None)
+        if provider is None:
+            return None
+        # provider.schema_inspector is the adapter; it provides the full
+        # qualified_name / quote_identifier / quote_literal triple.
+        return build_fk_navigation_query(
+            adapter=provider.schema_inspector,
+            ref_table=ref_table,
+            ref_column=ref_column,
+            value=value,
+            ref_schema=ref_schema,
+            ref_database=ref_database,
+        )
+
+    def _run_navigation_query(
+        self: ResultsMixinHost, query: str, database: str | None
+    ) -> None:
+        """Inject `query` into the editor and execute it (mirrors explorer's pattern)."""
+        self.query_input.text = query
+        if hasattr(self, "_query_target_database"):
+            self._query_target_database = database
+        action_execute = getattr(self, "action_execute_query", None)
+        if callable(action_execute):
+            action_execute()
+
+    def _stash_navigation_table_info(
+        self: ResultsMixinHost,
+        database: str | None,
+        schema: str | None,
+        name: str,
+    ) -> None:
+        """Set _pending_result_table_info so the next result inherits navigation context."""
+        info = {
+            "database": database,
+            "schema": schema,
+            "name": name,
+            "columns": [],
+        }
+        self._pending_result_table_info = info
+        self._last_query_table = info
+        prime = getattr(self, "_prime_result_table_columns", None)
+        if callable(prime):
+            prime(info)
+
+    def action_navigate_fk(self: ResultsMixinHost) -> None:
+        """Jump to the row referenced by the current cell's foreign-key column.
+
+        Looks up the active result table's FK metadata; if the current
+        column declares a single-column FK, generates SELECT * FROM
+        ref_table WHERE ref_col = <cell_value> and executes it.
+        """
+        table, columns, _rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0 or not columns:
+            self.notify("No results", severity="warning")
+            return
+        try:
+            cursor_row, cursor_col = table.cursor_coordinate
+            value = _strip_table_markup(table, table.get_cell_at(table.cursor_coordinate))
+        except Exception:
+            return
+        if cursor_col >= len(columns):
+            return
+        column_name = self._normalize_column_name(columns[cursor_col])
+
+        table_info = self._get_active_results_table_info(table, _stacked)
+        if not table_info:
+            self.notify("No table context — open a table from the explorer", severity="warning")
+            return
+        fks: list[Any] = table_info.get("foreign_keys") or []
+        if not fks:
+            self.notify("No foreign keys on this table", severity="warning")
+            return
+
+        matches = [fk for fk in fks if self._normalize_column_name(fk.column) == column_name]
+        if not matches:
+            self.notify(f"'{columns[cursor_col]}' is not a foreign-key column", severity="warning")
+            return
+        # Composite FKs span multiple columns sharing constraint_name. The current
+        # cell only carries one of them, so we'd need to look up the rest of the
+        # row to build the WHERE — punt for now and tell the user.
+        constraint = matches[0].constraint_name
+        if any(fk.constraint_name != constraint for fk in matches):
+            self.notify("Multiple FKs declared on this column — ambiguous", severity="warning")
+            return
+        composite = [fk for fk in fks if fk.constraint_name == constraint]
+        if len(composite) > 1:
+            self.notify("Composite foreign key — manual lookup not yet supported", severity="warning")
+            return
+        if value is None:
+            self.notify("Cell is NULL — nothing to jump to", severity="warning")
+            return
+        fk = matches[0]
+        query = self._generate_fk_jump_query(
+            fk.referenced_table,
+            fk.referenced_column,
+            value,
+            fk.referenced_schema,
+            fk.referenced_database,
+        )
+        if not query:
+            self.notify("Not connected", severity="error")
+            return
+        self._stash_navigation_table_info(
+            fk.referenced_database or table_info.get("database"),
+            fk.referenced_schema or table_info.get("schema"),
+            fk.referenced_table,
+        )
+        self._run_navigation_query(query, fk.referenced_database or table_info.get("database"))
+
+    def action_navigate_referrers(self: ResultsMixinHost) -> None:
+        """Show a picker of tables that reference the current cell's column.
+
+        Useful on a PK cell to find all child rows pointing at it. On
+        selection, generates SELECT * FROM referring_table WHERE
+        referring_col = <cell_value> and executes it.
+        """
+        from sqlit.domains.results.ui.screens import ColumnPickerScreen
+
+        table, columns, _rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0 or not columns:
+            self.notify("No results", severity="warning")
+            return
+        try:
+            cursor_row, cursor_col = table.cursor_coordinate
+            value = _strip_table_markup(table, table.get_cell_at(table.cursor_coordinate))
+        except Exception:
+            return
+        if cursor_col >= len(columns):
+            return
+        column_name = self._normalize_column_name(columns[cursor_col])
+
+        table_info = self._get_active_results_table_info(table, _stacked)
+        if not table_info:
+            self.notify("No table context — open a table from the explorer", severity="warning")
+            return
+        incoming: list[Any] = table_info.get("referencing_foreign_keys") or []
+        if not incoming:
+            self.notify("No tables reference this table", severity="warning")
+            return
+
+        # Filter to FKs that reference the current column (skip composite — single-col only)
+        candidates = [
+            fk for fk in incoming
+            if self._normalize_column_name(fk.referenced_column) == column_name
+        ]
+        # Group by constraint to drop composite FKs (multi-row constraints)
+        from collections import Counter
+        counts = Counter(fk.constraint_name for fk in candidates)
+        candidates = [fk for fk in candidates if counts[fk.constraint_name] == 1]
+        if not candidates:
+            self.notify(f"No incoming references on '{columns[cursor_col]}'", severity="warning")
+            return
+        if value is None:
+            self.notify("Cell is NULL — nothing to look up", severity="warning")
+            return
+
+        labels = [f"{fk.owner_table}.{fk.column}" for fk in candidates]
+
+        def handle_pick(index: int | None) -> None:
+            if index is None or index < 0 or index >= len(candidates):
+                return
+            fk = candidates[index]
+            query = self._generate_fk_jump_query(
+                fk.owner_table,
+                fk.column,
+                value,
+                fk.owner_schema,
+                fk.owner_database,
+            )
+            if not query:
+                self.notify("Not connected", severity="error")
+                return
+            self._stash_navigation_table_info(
+                fk.owner_database or table_info.get("database"),
+                fk.owner_schema or table_info.get("schema"),
+                fk.owner_table,
+            )
+            self._run_navigation_query(query, fk.owner_database or table_info.get("database"))
+
+        self.push_screen(ColumnPickerScreen(labels), handle_pick)
 
     def action_clear_results(self: ResultsMixinHost) -> None:
         """Clear the results table."""

@@ -465,6 +465,8 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("V", "view_cell_full", "results"),
             ActionKeyDef("u", "edit_cell", "results"),
             ActionKeyDef("d", "delete_row", "results"),
+            ActionKeyDef("o", "navigate_fk", "results"),
+            ActionKeyDef("O", "navigate_referrers", "results"),
             ActionKeyDef("y", "results_yank_leader_key", "results"),
             ActionKeyDef("x", "clear_results", "results"),
             ActionKeyDef("slash", "results_filter", "results"),

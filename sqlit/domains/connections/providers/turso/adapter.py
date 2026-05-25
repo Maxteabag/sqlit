@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -63,6 +64,10 @@ class TursoAdapter(DatabaseAdapter):
     @property
     def supports_stored_procedures(self) -> bool:
         return False
+
+    @property
+    def supports_foreign_keys(self) -> bool:
+        return True
 
     def execute_test_query(self, conn: Any) -> None:
         """Execute a simple query to verify the connection works.
@@ -163,6 +168,63 @@ class TursoAdapter(DatabaseAdapter):
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         """Turso/SQLite doesn't support sequences - return empty list."""
         return []
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """SQLite-compatible PRAGMA foreign_key_list (Turso flavor)."""
+        quoted = self.quote_identifier(table)
+        rows = conn.execute(f"PRAGMA foreign_key_list({quoted})").fetchall()
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[3],
+                referenced_table=row[2],
+                referenced_column=row[4],
+                constraint_name=f"fk_{row[0]}",
+                ordinal=int(row[1]) + 1,
+            )
+            for row in rows
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Scan every user table for FKs pointing at `table`."""
+        all_rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_litestream_%' "
+            "ORDER BY name"
+        ).fetchall()
+        target_lower = table.lower()
+        results: list[ForeignKeyInfo] = []
+        for other_row in all_rows:
+            other = other_row[0]
+            if other.lower() == target_lower:
+                continue
+            quoted = self.quote_identifier(other)
+            for row in conn.execute(f"PRAGMA foreign_key_list({quoted})").fetchall():
+                if row[2].lower() != target_lower:
+                    continue
+                results.append(
+                    ForeignKeyInfo(
+                        owner_table=other,
+                        column=row[3],
+                        referenced_table=table,
+                        referenced_column=row[4],
+                        constraint_name=f"{other}_fk_{row[0]}",
+                        ordinal=int(row[1]) + 1,
+                    )
+                )
+        return results
 
     def quote_identifier(self, name: str) -> str:
         """Quote identifier using double quotes for Turso/SQLite.

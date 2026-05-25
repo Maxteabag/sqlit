@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, cast
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -69,6 +70,10 @@ class D1Adapter(DatabaseAdapter):
     def supports_stored_procedures(self) -> bool:
         """D1 is SQLite-based and does not support stored procedures."""
         return False
+
+    @property
+    def supports_foreign_keys(self) -> bool:
+        return True
 
     @property
     def supports_cross_database_queries(self) -> bool:
@@ -260,6 +265,93 @@ class D1Adapter(DatabaseAdapter):
     def get_sequences(self, conn: D1Connection, database: str | None = None) -> list[SequenceInfo]:
         """D1/SQLite doesn't support sequences - return empty list."""
         return []
+
+    def get_foreign_keys(
+        self,
+        conn: D1Connection,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """SQLite-compatible PRAGMA foreign_key_list over D1's HTTP query API."""
+        result = self._execute(conn, f"PRAGMA foreign_key_list({self.quote_identifier(table)});")
+        rows = result.get("results", [])
+        if not isinstance(rows, list):
+            return []
+        out: list[ForeignKeyInfo] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            fk_id = row.get("id")
+            seq = row.get("seq")
+            ref_table = row.get("table")
+            from_col = row.get("from")
+            to_col = row.get("to")
+            if not isinstance(ref_table, str) or not isinstance(from_col, str) or not isinstance(to_col, str):
+                continue
+            out.append(
+                ForeignKeyInfo(
+                    owner_table=table,
+                    column=from_col,
+                    referenced_table=ref_table,
+                    referenced_column=to_col,
+                    constraint_name=f"fk_{fk_id}",
+                    ordinal=(int(seq) if isinstance(seq, int) else 0) + 1,
+                )
+            )
+        return out
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: D1Connection,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Scan every user table for FKs pointing at `table`."""
+        tables_result = self._execute(conn, "PRAGMA table_list;")
+        tables_rows = tables_result.get("results", [])
+        if not isinstance(tables_rows, list):
+            return []
+        target_lower = table.lower()
+        results: list[ForeignKeyInfo] = []
+        for tr in tables_rows:
+            if not isinstance(tr, dict):
+                continue
+            if tr.get("type") != "table":
+                continue
+            other = tr.get("name", "")
+            if not isinstance(other, str) or not other or other.startswith("sqlite_"):
+                continue
+            if other.lower() == target_lower:
+                continue
+            fk_result = self._execute(conn, f"PRAGMA foreign_key_list({self.quote_identifier(other)});")
+            fk_rows = fk_result.get("results", [])
+            if not isinstance(fk_rows, list):
+                continue
+            for row in fk_rows:
+                if not isinstance(row, dict):
+                    continue
+                ref_table = row.get("table")
+                if not isinstance(ref_table, str) or ref_table.lower() != target_lower:
+                    continue
+                from_col = row.get("from")
+                to_col = row.get("to")
+                if not isinstance(from_col, str) or not isinstance(to_col, str):
+                    continue
+                fk_id = row.get("id")
+                seq = row.get("seq")
+                results.append(
+                    ForeignKeyInfo(
+                        owner_table=other,
+                        column=from_col,
+                        referenced_table=table,
+                        referenced_column=to_col,
+                        constraint_name=f"{other}_fk_{fk_id}",
+                        ordinal=(int(seq) if isinstance(seq, int) else 0) + 1,
+                    )
+                )
+        return results
 
     def quote_identifier(self, name: str) -> str:
         """Quotes an identifier with double quotes."""
