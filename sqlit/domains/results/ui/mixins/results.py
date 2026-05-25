@@ -35,6 +35,7 @@ class ResultsMixin:
 
     _last_result_columns: list[str] = []
     _last_result_rows: list[tuple[Any, ...]] = []
+    _export_column_indices: list[int] | None = None
     _last_result_row_count: int = 0
     _tooltip_cell_coord: tuple[int, int] | None = None
     _tooltip_showing: bool = False
@@ -603,6 +604,24 @@ class ResultsMixin:
         if table:
             self._flash_table_yank(table, "all")
 
+    def action_ry_columns(self: ResultsMixinHost) -> None:
+        """Pick a column subset, then copy all rows of those columns as TSV."""
+        self._clear_leader_pending()
+        table, columns, rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0 or not columns:
+            self.notify("No results", severity="warning")
+            return
+
+        def do_copy(indices: list[int]) -> None:
+            from sqlit.domains.results.formatters import project_columns
+
+            sub_cols, sub_rows = project_columns(columns, rows, indices)
+            text = self._format_tsv(sub_cols, sub_rows)
+            self._copy_text(text)
+            self._flash_table_yank(table, "all")
+
+        self._pick_columns(columns, on_confirm=do_copy)
+
     def action_ry_export(self: ResultsMixinHost) -> None:
         """Open the export submenu."""
         self._clear_leader_pending()
@@ -642,6 +661,9 @@ class ResultsMixin:
         def handle_result(filename: str | None) -> None:
             if filename:
                 self._save_export_file(filename, fmt_key)
+            else:
+                # Cancelled: don't leak a column subset to the next export attempt.
+                self._export_column_indices = None
 
         self.push_screen(
             FilePickerScreen(
@@ -653,22 +675,33 @@ class ResultsMixin:
         )
 
     def _save_export_file(self: ResultsMixinHost, filename: str, fmt_key: str) -> None:
-        """Save the export file to disk."""
+        """Save the export file to disk.
+
+        Honors a one-shot column subset set via the `rye o` (Columns…) flow;
+        the subset is consumed and cleared once the export runs.
+        """
         from pathlib import Path
 
-        from sqlit.domains.results.formatters import FORMATS
+        from sqlit.domains.results.formatters import FORMATS, project_columns
 
         try:
             fmt = FORMATS[fmt_key]
-            content = fmt.formatter(self._last_result_columns, self._last_result_rows)
+            cols = list(self._last_result_columns)
+            rows = list(self._last_result_rows)
+            subset = getattr(self, "_export_column_indices", None)
+            if subset:
+                cols, rows = project_columns(cols, rows, subset)
+            content = fmt.formatter(cols, rows)
 
             path = Path(filename).expanduser()
             path.write_text(content, encoding="utf-8")
 
-            row_count = len(self._last_result_rows)
+            row_count = len(rows)
             self.notify(f"Saved {row_count} rows to {path.name}")
         except Exception as e:
             self.notify(f"Failed to save: {e}", severity="error")
+        finally:
+            self._export_column_indices = None
 
     # ------------------------------------------------------------------
     # Copy-as: ryf menu — pick format, then scope (cell/row/all).
@@ -727,6 +760,35 @@ class ResultsMixin:
     def action_ryfc_all(self: ResultsMixinHost) -> None:
         self._copy_scope_as_format("csv", "all")
 
+    def action_ryfm_columns(self: ResultsMixinHost) -> None:
+        self._copy_columns_as_format("markdown")
+
+    def action_ryfj_columns(self: ResultsMixinHost) -> None:
+        self._copy_columns_as_format("json")
+
+    def action_ryfc_columns(self: ResultsMixinHost) -> None:
+        self._copy_columns_as_format("csv")
+
+    def action_rye_columns(self: ResultsMixinHost) -> None:
+        """Pick columns, then pick a format to export with."""
+        self._clear_leader_pending()
+        if not self._last_result_columns or not self._last_result_rows:
+            self.notify("No results to export", severity="warning")
+            return
+        self._pick_columns(
+            self._last_result_columns,
+            on_confirm=lambda indices: self._start_leader_pending_for_export_with_columns(
+                indices
+            ),
+        )
+
+    def _start_leader_pending_for_export_with_columns(
+        self: ResultsMixinHost, indices: list[int]
+    ) -> None:
+        """After a column pick, store the subset and open the format submenu."""
+        self._export_column_indices = indices
+        self._start_leader_pending("rye")
+
     def _copy_scope_as_format(
         self: ResultsMixinHost, fmt_key: str, scope: str
     ) -> None:
@@ -764,6 +826,39 @@ class ResultsMixin:
 
         self._copy_text(content)
         self._flash_table_yank(table, scope)
+
+    def _copy_columns_as_format(self: ResultsMixinHost, fmt_key: str) -> None:
+        """Open the column picker, then copy the subset as fmt_key."""
+        self._clear_leader_pending()
+        table, columns, rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0 or not columns:
+            self.notify("No results", severity="warning")
+            return
+
+        def do_copy(indices: list[int]) -> None:
+            from sqlit.domains.results.formatters import FORMATS, project_columns
+
+            sub_cols, sub_rows = project_columns(columns, rows, indices)
+            content = FORMATS[fmt_key].formatter(sub_cols, sub_rows)
+            self._copy_text(content)
+            self._flash_table_yank(table, "all")
+
+        self._pick_columns(columns, on_confirm=do_copy)
+
+    def _pick_columns(
+        self: ResultsMixinHost,
+        columns: list[str],
+        *,
+        on_confirm: Any,
+    ) -> None:
+        """Show the column-picker modal; call on_confirm(indices) when confirmed."""
+        from sqlit.shared.ui.screens.column_picker import ColumnPickerScreen
+
+        def handle(result: list[int] | None) -> None:
+            if result:
+                on_confirm(result)
+
+        self.push_screen(ColumnPickerScreen(columns), handle)
 
     def _copy_column_values(self: ResultsMixinHost) -> None:
         """Copy every value in the focused column as a SQL-ready list."""

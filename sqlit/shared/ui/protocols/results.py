@@ -124,6 +124,19 @@ class ResultsActionsProtocol(Protocol):
     def _copy_column_values(self) -> None:
         ...
 
+    def _copy_columns_as_format(self, fmt_key: str) -> None:
+        ...
+
+    def _pick_columns(self, columns: list[str], *, on_confirm: Any) -> None:
+        ...
+
+    def _start_leader_pending_for_export_with_columns(
+        self, indices: list[int]
+    ) -> None:
+        ...
+
+    _export_column_indices: list[int] | None
+
     def _show_single_result_mode(self) -> None:
         ...
 

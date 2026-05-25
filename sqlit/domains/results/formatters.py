@@ -94,3 +94,13 @@ FORMATS: dict[str, ResultFormat] = {
     "json": ResultFormat("json", "JSON", "json", format_json),
     "markdown": ResultFormat("markdown", "Markdown", "md", format_markdown),
 }
+
+
+def project_columns(
+    columns: Columns, rows: Rows, indices: Sequence[int]
+) -> tuple[list[str], list[tuple[Any, ...]]]:
+    """Return (columns, rows) restricted to the given column indices."""
+    ordered = [i for i in indices if 0 <= i < len(columns)]
+    new_cols = [columns[i] for i in ordered]
+    new_rows = [tuple(row[i] for i in ordered if i < len(row)) for row in rows]
+    return new_cols, new_rows
