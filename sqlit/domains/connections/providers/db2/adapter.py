@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -51,6 +52,10 @@ class Db2Adapter(CursorBasedAdapter):
 
     @property
     def supports_sequences(self) -> bool:
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     @property
@@ -180,6 +185,103 @@ class Db2Adapter(CursorBasedAdapter):
             "ORDER BY seqname"
         )
         return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs via SYSCAT.REFERENCES + KEYCOLUSE (Db2 LUW).
+
+        Db2 stores identifiers UPPERCASE unless quoted at DDL time, so the
+        caller's table/schema names are upper-cased before binding. The
+        REFERENCES view has one row per constraint; KEYCOLUSE provides
+        column-level details on both the FK (child) and its REFKEYNAME
+        (parent unique-key) sides.
+        """
+        cursor = conn.cursor()
+        schema_upper = (schema or "").upper() or self._current_schema(conn)
+        table_upper = table.upper()
+        cursor.execute(
+            "SELECT r.CONSTNAME, fk.COLSEQ, fk.COLNAME, "
+            "       r.REFTABSCHEMA, r.REFTABNAME, pk.COLNAME "
+            "FROM SYSCAT.REFERENCES r "
+            "JOIN SYSCAT.KEYCOLUSE fk "
+            "  ON fk.CONSTNAME = r.CONSTNAME "
+            "  AND fk.TABSCHEMA = r.TABSCHEMA "
+            "  AND fk.TABNAME = r.TABNAME "
+            "JOIN SYSCAT.KEYCOLUSE pk "
+            "  ON pk.CONSTNAME = r.REFKEYNAME "
+            "  AND pk.TABSCHEMA = r.REFTABSCHEMA "
+            "  AND pk.TABNAME = r.REFTABNAME "
+            "  AND pk.COLSEQ = fk.COLSEQ "
+            "WHERE r.TABSCHEMA = ? AND r.TABNAME = ? "
+            "ORDER BY r.CONSTNAME, fk.COLSEQ",
+            (schema_upper, table_upper),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=str(row[2]).strip(),
+                referenced_table=str(row[4]).strip(),
+                referenced_column=str(row[5]).strip(),
+                owner_schema=schema_upper,
+                referenced_schema=str(row[3]).strip() if row[3] else "",
+                constraint_name=str(row[0]).strip(),
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        cursor = conn.cursor()
+        schema_upper = (schema or "").upper() or self._current_schema(conn)
+        table_upper = table.upper()
+        cursor.execute(
+            "SELECT r.CONSTNAME, fk.COLSEQ, "
+            "       r.TABSCHEMA, r.TABNAME, fk.COLNAME, pk.COLNAME "
+            "FROM SYSCAT.REFERENCES r "
+            "JOIN SYSCAT.KEYCOLUSE fk "
+            "  ON fk.CONSTNAME = r.CONSTNAME "
+            "  AND fk.TABSCHEMA = r.TABSCHEMA "
+            "  AND fk.TABNAME = r.TABNAME "
+            "JOIN SYSCAT.KEYCOLUSE pk "
+            "  ON pk.CONSTNAME = r.REFKEYNAME "
+            "  AND pk.TABSCHEMA = r.REFTABSCHEMA "
+            "  AND pk.TABNAME = r.REFTABNAME "
+            "  AND pk.COLSEQ = fk.COLSEQ "
+            "WHERE r.REFTABSCHEMA = ? AND r.REFTABNAME = ? "
+            "ORDER BY r.TABSCHEMA, r.TABNAME, r.CONSTNAME, fk.COLSEQ",
+            (schema_upper, table_upper),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=str(row[3]).strip(),
+                column=str(row[4]).strip(),
+                referenced_table=table,
+                referenced_column=str(row[5]).strip(),
+                owner_schema=str(row[2]).strip() if row[2] else "",
+                referenced_schema=schema_upper,
+                constraint_name=str(row[0]).strip(),
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def _current_schema(self, conn: Any) -> str:
+        """Resolve the current schema for unqualified Db2 catalog lookups."""
+        cursor = conn.cursor()
+        cursor.execute("VALUES CURRENT SCHEMA")
+        row = cursor.fetchone()
+        return (str(row[0]).strip().upper() if row and row[0] else "")
 
     def quote_identifier(self, name: str) -> str:
         escaped = name.replace('"', '""')

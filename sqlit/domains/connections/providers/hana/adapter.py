@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -51,6 +52,10 @@ class HanaAdapter(CursorBasedAdapter):
 
     @property
     def supports_sequences(self) -> bool:
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     @property
@@ -175,6 +180,94 @@ class HanaAdapter(CursorBasedAdapter):
             "ORDER BY sequence_name"
         )
         return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs via SYS.REFERENTIAL_CONSTRAINTS (denormalized).
+
+        HANA folds unquoted identifiers to UPPERCASE — bind .upper().
+        """
+        cursor = conn.cursor()
+        params: tuple[Any, ...]
+        if schema:
+            sql = (
+                "SELECT CONSTRAINT_NAME, POSITION, COLUMN_NAME, "
+                "       REFERENCED_SCHEMA_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME "
+                "FROM SYS.REFERENTIAL_CONSTRAINTS "
+                "WHERE SCHEMA_NAME = ? AND TABLE_NAME = ? "
+                "ORDER BY CONSTRAINT_NAME, POSITION"
+            )
+            params = (schema.upper(), table.upper())
+        else:
+            sql = (
+                "SELECT CONSTRAINT_NAME, POSITION, COLUMN_NAME, "
+                "       REFERENCED_SCHEMA_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME "
+                "FROM SYS.REFERENTIAL_CONSTRAINTS "
+                "WHERE TABLE_NAME = ? "
+                "ORDER BY CONSTRAINT_NAME, POSITION"
+            )
+            params = (table.upper(),)
+        cursor.execute(sql, params)
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=schema or "",
+                referenced_schema=row[3] or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        cursor = conn.cursor()
+        params: tuple[Any, ...]
+        if schema:
+            sql = (
+                "SELECT CONSTRAINT_NAME, POSITION, SCHEMA_NAME, TABLE_NAME, "
+                "       COLUMN_NAME, REFERENCED_COLUMN_NAME "
+                "FROM SYS.REFERENTIAL_CONSTRAINTS "
+                "WHERE REFERENCED_SCHEMA_NAME = ? AND REFERENCED_TABLE_NAME = ? "
+                "ORDER BY SCHEMA_NAME, TABLE_NAME, CONSTRAINT_NAME, POSITION"
+            )
+            params = (schema.upper(), table.upper())
+        else:
+            sql = (
+                "SELECT CONSTRAINT_NAME, POSITION, SCHEMA_NAME, TABLE_NAME, "
+                "       COLUMN_NAME, REFERENCED_COLUMN_NAME "
+                "FROM SYS.REFERENTIAL_CONSTRAINTS "
+                "WHERE REFERENCED_TABLE_NAME = ? "
+                "ORDER BY SCHEMA_NAME, TABLE_NAME, CONSTRAINT_NAME, POSITION"
+            )
+            params = (table.upper(),)
+        cursor.execute(sql, params)
+        return [
+            ForeignKeyInfo(
+                owner_table=row[3],
+                column=row[4],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[2] or "",
+                referenced_schema=schema or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def quote_identifier(self, name: str) -> str:
         escaped = name.replace('"', '""')
