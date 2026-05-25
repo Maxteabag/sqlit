@@ -187,6 +187,50 @@ class TestStrictness:
         assert "every entry must be a non-empty string" in manager.load_error
 
 
+class TestDefaultKeymapFile:
+    """Drop ~/.config/sqlit/keymap.json with no settings edit → it loads."""
+
+    def test_default_file_picked_up_automatically(self, tmp_path: Path, monkeypatch):
+        # Point CONFIG_DIR-derived constants at a fresh dir.
+        from sqlit.domains.shell.app import keymap_manager as km_mod
+        default_path = tmp_path / "keymap.json"
+        default_path.write_text(json.dumps(
+            {"keymap": {"action_keys": {"query_normal": {"execute_query": "ctrl+enter"}}}}
+        ))
+        monkeypatch.setattr(km_mod, "DEFAULT_KEYMAP_FILE", default_path)
+
+        manager = KeymapManager(settings_store=MockSettingsStore({}))
+        manager.initialize()
+        assert manager.load_error is None
+        assert get_keymap().action("execute_query") == "ctrl+enter"
+
+    def test_settings_override_takes_precedence(self, tmp_path: Path, monkeypatch):
+        # If both default file and `custom_keymap` setting exist, the setting wins.
+        from sqlit.domains.shell.app import keymap_manager as km_mod
+        default_path = tmp_path / "keymap.json"
+        default_path.write_text(json.dumps(
+            {"keymap": {"action_keys": {"query_normal": {"execute_query": "ctrl+enter"}}}}
+        ))
+        monkeypatch.setattr(km_mod, "DEFAULT_KEYMAP_FILE", default_path)
+
+        named = tmp_path / "named.json"
+        named.write_text(json.dumps(
+            {"keymap": {"action_keys": {"query_normal": {"execute_query": "ctrl+shift+enter"}}}}
+        ))
+        manager = KeymapManager(settings_store=MockSettingsStore({"custom_keymap": str(named)}))
+        manager.initialize()
+        assert get_keymap().action("execute_query") == "ctrl+shift+enter"
+
+    def test_no_default_file_and_no_setting_is_silent(self, tmp_path: Path, monkeypatch):
+        from sqlit.domains.shell.app import keymap_manager as km_mod
+        # Point at a path that doesn't exist.
+        monkeypatch.setattr(km_mod, "DEFAULT_KEYMAP_FILE", tmp_path / "nope.json")
+        manager = KeymapManager(settings_store=MockSettingsStore({}))
+        manager.initialize()
+        assert manager.load_error is None
+        assert not isinstance(get_keymap(), FileBasedKeymapProvider)
+
+
 class TestUnbind:
     """null / "" / [] removes a default binding without adding a replacement."""
 

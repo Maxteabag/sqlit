@@ -243,7 +243,7 @@ If an older install left files in `~/.sqlit/`, they are moved to the new locatio
 
 ### Custom keybindings
 
-Drop a JSON file in `~/.config/sqlit/keymaps/` and point `custom_keymap` in `settings.json` at it. The file lists only the bindings you want to change — anything you don't touch keeps its default. Footer hints and the help screen pick up your custom keys automatically.
+Drop a JSON file at `~/.config/sqlit/keymap.json` listing only the bindings you want to change. No settings edit, no `mkdir`. Footer hints and the help screen pick up your custom keys automatically.
 
 ```json
 {
@@ -258,7 +258,10 @@ Drop a JSON file in `~/.config/sqlit/keymaps/` and point `custom_keymap` in `set
 }
 ```
 
-See [docs/custom-keymaps.md](docs/custom-keymaps.md) for the full action/state catalog and the unbind / alias-list semantics.
+- Outer keys under `action_keys` are state names (`query_normal`, `tree`, `results`, …); under `leader_commands` they are menu names (`leader`, `delete`, `yank`, …). Mistype one and the loader names the valid options for you.
+- The value is a key string, a list `["primary", "alias", …]`, or `null` to unbind that default.
+- If you want to keep several named keymaps and swap between them, put them in `~/.config/sqlit/keymaps/` and pick one in `settings.json` as `"custom_keymap": "name"`.
+- `config/keymap.template.json` in the repo is a ready-to-edit starting point.
 
 ## FAQ
 

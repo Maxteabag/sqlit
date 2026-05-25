@@ -2,8 +2,12 @@
 
 Follows the same domain-service pattern as
 [`ThemeManager`][sqlit.domains.shell.app.theme_manager] — a settings-driven
-configuration step run during app startup. Keymaps live in JSON files under
-``~/.sqlit/keymaps/`` and are selected by the ``custom_keymap`` setting.
+configuration step run during app startup. The loader looks for, in order:
+
+1. A named keymap selected by the ``custom_keymap`` setting, resolved
+   relative to ``~/.config/sqlit/keymaps/<name>.json`` (or an absolute path).
+2. ``~/.config/sqlit/keymap.json`` if it exists — picked up automatically
+   so a user can customize without editing settings.json.
 
 The JSON is strictly a *key remapping*. The set of actions and the states
 they live in are defined in :mod:`sqlit.core.keymap`; the user only
@@ -52,6 +56,10 @@ from sqlit.shared.core.store import CONFIG_DIR
 
 CUSTOM_KEYMAP_SETTINGS_KEY = "custom_keymap"
 CUSTOM_KEYMAP_DIR = CONFIG_DIR / "keymaps"
+# Picked up automatically when no `custom_keymap` setting is present.
+# Lets a user customize their bindings by dropping a single file in
+# their config dir — no settings edit, no mkdir.
+DEFAULT_KEYMAP_FILE = CONFIG_DIR / "keymap.json"
 
 
 class FileBasedKeymapProvider(KeymapProvider):
@@ -96,16 +104,22 @@ class KeymapManager:
     def load_custom_keymap(self, settings: dict) -> None:
         self.load_error = None
         keymap_name = settings.get(CUSTOM_KEYMAP_SETTINGS_KEY)
-        if not keymap_name or not isinstance(keymap_name, str):
-            return
-        if keymap_name.strip() in ("", "default"):
+        if isinstance(keymap_name, str) and keymap_name.strip() not in ("", "default"):
+            # Explicit named keymap from settings — power-user path.
+            try:
+                path = self._resolve_keymap_path(keymap_name.strip())
+                self._register_custom_keymap(path, keymap_name.strip())
+            except Exception as exc:
+                self.load_error = f"Failed to load custom keymap '{keymap_name}': {exc}"
             return
 
-        try:
-            path = self._resolve_keymap_path(keymap_name.strip())
-            self._register_custom_keymap(path, keymap_name.strip())
-        except Exception as exc:
-            self.load_error = f"Failed to load custom keymap '{keymap_name}': {exc}"
+        # No setting → look for the default file. Silently absent is fine; a
+        # broken file still raises.
+        if DEFAULT_KEYMAP_FILE.exists():
+            try:
+                self._register_custom_keymap(DEFAULT_KEYMAP_FILE, DEFAULT_KEYMAP_FILE.name)
+            except Exception as exc:
+                self.load_error = f"Failed to load {DEFAULT_KEYMAP_FILE}: {exc}"
 
     def _resolve_keymap_path(self, keymap_name: str) -> Path:
         if keymap_name.startswith(("~", "/")) or Path(keymap_name).is_absolute():

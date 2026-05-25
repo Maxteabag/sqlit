@@ -1,6 +1,5 @@
 {
-  "_note": "Copy to ~/.sqlit/keymaps/<name>.json and set 'custom_keymap' to '<name>' in settings.json.",
-  "_help": "Only list the bindings you want to change. Each entry maps action → key (or [primary, alias...]) within its state. See docs/custom-keymaps.md for the action/state catalog.",
+  "_note": "Copy to ~/.config/sqlit/keymap.json (no subdir) — sqlit loads it automatically. List only the bindings you want to change. See docs/custom-keymaps.md for the action/state catalog.",
   "keymap": {
     "action_keys": {
       "query_normal": {
