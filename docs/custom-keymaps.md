@@ -6,13 +6,13 @@ sqlit lets you remap the keys that trigger any action. The set of actions and th
 
 1. Create the keymaps directory and copy the template:
    ```bash
-   mkdir -p ~/.sqlit/keymaps
-   cp config/keymap.template.json ~/.sqlit/keymaps/my-custom.json
+   mkdir -p ~/.config/sqlit/keymaps
+   cp config/keymap.template.json ~/.config/sqlit/keymaps/my-custom.json
    ```
 
-2. Edit `~/.sqlit/keymaps/my-custom.json`. Only list the bindings you want to change.
+2. Edit `~/.config/sqlit/keymaps/my-custom.json`. Only list the bindings you want to change.
 
-3. Enable it by adding to `~/.sqlit/settings.json`:
+3. Enable it by adding to `~/.config/sqlit/settings.json`:
    ```json
    { "custom_keymap": "my-custom" }
    ```
@@ -150,10 +150,10 @@ Rebind autocomplete to `ctrl+n`/`ctrl+p`, swap `<leader>h` to `<leader>?`, keep 
 
 ## Troubleshooting
 
-**Keymap didn't load.** Check `~/.sqlit/settings.json` — `custom_keymap` must match your filename without the `.json`. The app shows a notification on startup; running headless prints `[sqlit] Failed to load custom keymap …` to stderr.
+**Keymap didn't load.** Check `~/.config/sqlit/settings.json` — `custom_keymap` must match your filename without the `.json`. The app shows a notification on startup; running headless prints `[sqlit] Failed to load custom keymap …` to stderr.
 
 **"Unknown action" error.** The action doesn't exist in the state you named. The error message lists the known actions for that state — pick one of those, or check the canonical list in `sqlit/core/keymap.py`.
 
-**"Conflicting keybindings" error.** Your overrides bind the same key to two different actions in the same state. Pick a different key, or remove the redundant entry.
+**"Conflicting keybindings" error.** Your overrides bind the same key to two different actions in the same state. Pick a different key, or unbind the colliding default by setting its key to `null` (e.g. `"undo": null`).
 
-**Invalid JSON.** Run `python -m json.tool ~/.sqlit/keymaps/my-custom.json` to find the syntax error.
+**Invalid JSON.** Run `python -m json.tool ~/.config/sqlit/keymaps/my-custom.json` to find the syntax error.
