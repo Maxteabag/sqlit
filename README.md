@@ -25,7 +25,7 @@
 ---
 
 ### Connect
-Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
+Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Databricks, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
 
 ![Database Providers](docs/demos/demo-providers.gif)
 
@@ -289,6 +289,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Turso                               | `libsql`                     | `pipx inject sqlit-tui libsql`                     | `python -m pip install libsql`                     |
 | Cloudflare D1                       | `requests`                   | `pipx inject sqlit-tui requests`                   | `python -m pip install requests`                   |
 | Snowflake                           | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` |
+| Databricks                          | `databricks-sql-connector`   | `pipx inject sqlit-tui databricks-sql-connector`   | `python -m pip install databricks-sql-connector`   |
 | Firebird                            | `firebirdsql`                | `pipx inject sqlit-tui firebirdsql`                | `python -m pip install firebirdsql`                |
 | Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   |
 | BigQuery                            | `google-cloud-bigquery`      | `pipx inject sqlit-tui google-cloud-bigquery`      | `python -m pip install google-cloud-bigquery`      |
