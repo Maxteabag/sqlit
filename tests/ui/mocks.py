@@ -104,6 +104,12 @@ class MockSettingsStore:
     def set(self, key: str, value: Any) -> None:
         self.settings[key] = value
 
+    def delete(self, key: str) -> bool:
+        if key in self.settings:
+            del self.settings[key]
+            return True
+        return False
+
 
 def build_test_services(
     *,

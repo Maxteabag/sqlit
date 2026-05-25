@@ -4,8 +4,15 @@ from __future__ import annotations
 
 import re
 from enum import IntEnum
+from typing import Any
 
 from sqlit.domains.query.app.multi_statement import split_statements
+
+
+# Settings / option keys for the alert mode hierarchy.
+GLOBAL_ALERT_SETTING = "query_alert_mode"
+DATABASE_ALERT_SETTING = "query_alert_modes_by_database"
+CONNECTION_ALERT_OPTION = "query_alert_mode"
 
 
 class AlertMode(IntEnum):
@@ -129,3 +136,43 @@ def _coerce_alert_mode(value: int) -> AlertMode | None:
     if mode in {AlertMode.OFF, AlertMode.DELETE, AlertMode.WRITE}:
         return mode
     return None
+
+
+def make_db_alert_key(connection_name: str, database: str) -> str:
+    """Compose the key used to store per-database alert overrides."""
+    return f"{connection_name}::{database}"
+
+
+def resolve_alert_mode(
+    *,
+    global_mode: Any = None,
+    connection_option: Any = None,
+    database_override: Any = None,
+) -> tuple[AlertMode, str]:
+    """Resolve the effective alert mode given the three scopes.
+
+    Returns a (mode, source) tuple where source is one of
+    ``"database"``, ``"connection"``, or ``"global"`` — describing which
+    scope supplied the resolved value.
+    """
+    mode = parse_alert_mode(database_override)
+    if mode is not None:
+        return mode, "database"
+    mode = parse_alert_mode(connection_option)
+    if mode is not None:
+        return mode, "connection"
+    mode = parse_alert_mode(global_mode)
+    if mode is not None:
+        return mode, "global"
+    return AlertMode.OFF, "global"
+
+
+def lookup_database_override(
+    overrides: Any,
+    connection_name: str | None,
+    database: str | None,
+) -> Any:
+    """Look up a per-database alert override from a stored mapping."""
+    if not connection_name or not database or not isinstance(overrides, dict):
+        return None
+    return overrides.get(make_db_alert_key(connection_name, database))

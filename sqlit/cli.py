@@ -58,7 +58,7 @@ def _extract_project_dir(argv: list[str]) -> tuple[Path | None, list[str]]:
     Returns (project_dir, remaining_argv). Exits with an error if the
     user passed a path that doesn't resolve to an existing directory.
     """
-    subcommands = {"connections", "connection", "connect", "query", "docker"}
+    subcommands = {"connections", "connection", "connect", "query", "docker", "alerts"}
     result_argv: list[str] = []
     project_dir: Path | None = None
 
@@ -587,6 +587,11 @@ def main() -> int:
         add_schema_arguments(provider_parser, schema, include_name=True, name_required=True)
         provider_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
         provider_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
+        provider_parser.add_argument(
+            "--alert",
+            metavar="MODE",
+            help="Per-connection query alert mode: off|delete|write",
+        )
 
     edit_parser = conn_subparsers.add_parser("edit", help="Edit an existing connection")
     edit_parser.add_argument("connection_name", help="Name of connection to edit")
@@ -606,6 +611,11 @@ def main() -> int:
     edit_parser.add_argument("--file-path", help="Database file path (SQLite only)")
     edit_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
     edit_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
+    edit_parser.add_argument(
+        "--alert",
+        metavar="MODE",
+        help="Per-connection query alert mode: off|delete|write|unset (clears the override)",
+    )
 
     delete_parser = conn_subparsers.add_parser("delete", help="Delete a connection")
     delete_parser.add_argument("connection_name", help="Name of connection to delete")
@@ -622,6 +632,11 @@ def main() -> int:
         add_schema_arguments(provider_parser, schema, include_name=True, name_required=False)
         provider_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
         provider_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
+        provider_parser.add_argument(
+            "--alert",
+            metavar="MODE",
+            help="Per-connection query alert mode: off|delete|write",
+        )
 
     query_parser = subparsers.add_parser("query", help="Execute a SQL query")
     query_parser.add_argument("--connection", "-c", required=True, help="Connection name to use")
@@ -647,6 +662,44 @@ def main() -> int:
     docker_parser = subparsers.add_parser("docker", help="Docker container discovery")
     docker_subparsers = docker_parser.add_subparsers(dest="docker_command", help="Docker commands")
     docker_subparsers.add_parser("list", help="List detected database containers")
+
+    # Query alert management
+    alerts_parser = subparsers.add_parser(
+        "alerts",
+        help="Manage query confirmation alert overrides",
+        description=(
+            "Manage query alert overrides. Hierarchy: database > connection > global."
+        ),
+    )
+    alerts_subparsers = alerts_parser.add_subparsers(dest="alerts_command", help="Alert commands")
+    alerts_subparsers.add_parser("list", help="Show global and all configured overrides")
+
+    alerts_set = alerts_subparsers.add_parser("set", help="Set an alert mode at a scope")
+    alerts_set.add_argument("mode", help="off | delete | write")
+    alerts_set.add_argument(
+        "--connection",
+        "-c",
+        help="Target a specific saved connection (omit for global)",
+    )
+    alerts_set.add_argument(
+        "--database",
+        "-d",
+        help="Target a database on the connection (requires --connection)",
+    )
+
+    alerts_unset = alerts_subparsers.add_parser(
+        "unset", help="Clear an alert override (falls back to the next scope)"
+    )
+    alerts_unset.add_argument(
+        "--connection",
+        "-c",
+        help="Connection whose override to clear",
+    )
+    alerts_unset.add_argument(
+        "--database",
+        "-d",
+        help="Database whose override to clear (requires --connection)",
+    )
 
     log_startup_step("cli_parser_end")
 
@@ -758,6 +811,13 @@ def main() -> int:
             print(f"Error: {exc}")
             return 1
 
+        from sqlit.domains.connections.cli.commands import _apply_alert_option
+
+        alert_error = _apply_alert_option(temp_config, getattr(args, "alert", None))
+        if alert_error:
+            print(f"Error: {alert_error}")
+            return 1
+
         app = SSMSTUI(services=services, startup_connection=temp_config)
         return _run_app(app)
 
@@ -785,6 +845,22 @@ def main() -> int:
         else:
             docker_parser.print_help()
             return 1
+
+    if args.command == "alerts":
+        from sqlit.domains.query.cli.alerts_commands import (
+            cmd_alerts_list,
+            cmd_alerts_set,
+            cmd_alerts_unset,
+        )
+
+        if args.alerts_command == "list":
+            return cmd_alerts_list(args, services=services)
+        if args.alerts_command == "set":
+            return cmd_alerts_set(args, services=services)
+        if args.alerts_command == "unset":
+            return cmd_alerts_unset(args, services=services)
+        alerts_parser.print_help()
+        return 1
 
     parser.print_help()
     return 1
