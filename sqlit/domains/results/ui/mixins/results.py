@@ -610,33 +610,38 @@ class ResultsMixin:
 
     def action_rye_csv(self: ResultsMixinHost) -> None:
         """Export results as CSV to file."""
-        self._clear_leader_pending()
-        if not self._last_result_columns or not self._last_result_rows:
-            self.notify("No results to export", severity="warning")
-            return
-        self._show_export_dialog("csv")
+        self._open_export_dialog("csv")
 
     def action_rye_json(self: ResultsMixinHost) -> None:
         """Export results as JSON to file."""
+        self._open_export_dialog("json")
+
+    def action_rye_markdown(self: ResultsMixinHost) -> None:
+        """Export results as Markdown table to file."""
+        self._open_export_dialog("markdown")
+
+    def _open_export_dialog(self: ResultsMixinHost, fmt_key: str) -> None:
+        """Validate the result set and show the save dialog for a format key."""
         self._clear_leader_pending()
         if not self._last_result_columns or not self._last_result_rows:
             self.notify("No results to export", severity="warning")
             return
-        self._show_export_dialog("json")
+        self._show_export_dialog(fmt_key)
 
-    def _show_export_dialog(self: ResultsMixinHost, fmt: str) -> None:
+    def _show_export_dialog(self: ResultsMixinHost, fmt_key: str) -> None:
         """Show the file save dialog for export."""
         from datetime import datetime
 
+        from sqlit.domains.results.formatters import FORMATS
         from sqlit.shared.ui.screens.file_picker import FilePickerMode, FilePickerScreen
 
+        fmt = FORMATS[fmt_key]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        ext = "csv" if fmt == "csv" else "json"
-        default_filename = f"results_{timestamp}.{ext}"
+        default_filename = f"results_{timestamp}.{fmt.extension}"
 
         def handle_result(filename: str | None) -> None:
             if filename:
-                self._save_export_file(filename, fmt)
+                self._save_export_file(filename, fmt_key)
 
         self.push_screen(
             FilePickerScreen(
@@ -647,17 +652,15 @@ class ResultsMixin:
             handle_result,
         )
 
-    def _save_export_file(self: ResultsMixinHost, filename: str, fmt: str) -> None:
+    def _save_export_file(self: ResultsMixinHost, filename: str, fmt_key: str) -> None:
         """Save the export file to disk."""
         from pathlib import Path
 
-        from sqlit.domains.results.formatters import format_csv, format_json
+        from sqlit.domains.results.formatters import FORMATS
 
         try:
-            if fmt == "csv":
-                content = format_csv(self._last_result_columns, self._last_result_rows)
-            else:
-                content = format_json(self._last_result_columns, self._last_result_rows)
+            fmt = FORMATS[fmt_key]
+            content = fmt.formatter(self._last_result_columns, self._last_result_rows)
 
             path = Path(filename).expanduser()
             path.write_text(content, encoding="utf-8")
@@ -666,6 +669,127 @@ class ResultsMixin:
             self.notify(f"Saved {row_count} rows to {path.name}")
         except Exception as e:
             self.notify(f"Failed to save: {e}", severity="error")
+
+    # ------------------------------------------------------------------
+    # Copy-as: ryf menu — pick format, then scope (cell/row/all).
+    # Values list is column-oriented, so ryf v executes directly.
+    # ------------------------------------------------------------------
+
+    def action_ry_format(self: ResultsMixinHost) -> None:
+        """Open the 'Copy as…' submenu (format picker)."""
+        self._clear_leader_pending()
+        self._start_leader_pending("ryf")
+
+    def action_ryf_markdown(self: ResultsMixinHost) -> None:
+        """Pick Markdown — open scope submenu."""
+        self._clear_leader_pending()
+        self._start_leader_pending("ryfm")
+
+    def action_ryf_json(self: ResultsMixinHost) -> None:
+        """Pick JSON — open scope submenu."""
+        self._clear_leader_pending()
+        self._start_leader_pending("ryfj")
+
+    def action_ryf_csv(self: ResultsMixinHost) -> None:
+        """Pick CSV — open scope submenu."""
+        self._clear_leader_pending()
+        self._start_leader_pending("ryfc")
+
+    def action_ryf_values(self: ResultsMixinHost) -> None:
+        """Copy the focused column's values as a comma-separated list."""
+        self._clear_leader_pending()
+        self._copy_column_values()
+
+    def action_ryfm_cell(self: ResultsMixinHost) -> None:
+        self._copy_scope_as_format("markdown", "cell")
+
+    def action_ryfm_row(self: ResultsMixinHost) -> None:
+        self._copy_scope_as_format("markdown", "row")
+
+    def action_ryfm_all(self: ResultsMixinHost) -> None:
+        self._copy_scope_as_format("markdown", "all")
+
+    def action_ryfj_cell(self: ResultsMixinHost) -> None:
+        self._copy_scope_as_format("json", "cell")
+
+    def action_ryfj_row(self: ResultsMixinHost) -> None:
+        self._copy_scope_as_format("json", "row")
+
+    def action_ryfj_all(self: ResultsMixinHost) -> None:
+        self._copy_scope_as_format("json", "all")
+
+    def action_ryfc_cell(self: ResultsMixinHost) -> None:
+        self._copy_scope_as_format("csv", "cell")
+
+    def action_ryfc_row(self: ResultsMixinHost) -> None:
+        self._copy_scope_as_format("csv", "row")
+
+    def action_ryfc_all(self: ResultsMixinHost) -> None:
+        self._copy_scope_as_format("csv", "all")
+
+    def _copy_scope_as_format(
+        self: ResultsMixinHost, fmt_key: str, scope: str
+    ) -> None:
+        """Copy cell/row/all of the active result set as fmt_key."""
+        from sqlit.domains.results.formatters import FORMATS
+
+        self._clear_leader_pending()
+        table, columns, rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+
+        fmt = FORMATS[fmt_key]
+        try:
+            if scope == "cell":
+                _row_idx, col_idx = table.cursor_coordinate
+                col_name = columns[col_idx] if 0 <= col_idx < len(columns) else ""
+                value = _strip_table_markup(
+                    table, table.get_cell_at(table.cursor_coordinate)
+                )
+                content = fmt.formatter([col_name], [(value,)])
+            elif scope == "row":
+                row_values = [
+                    _strip_table_markup(table, v)
+                    for v in table.get_row_at(table.cursor_row)
+                ]
+                content = fmt.formatter(columns, [tuple(row_values)])
+            else:  # all
+                if not columns and not rows:
+                    self.notify("No results", severity="warning")
+                    return
+                content = fmt.formatter(columns, rows)
+        except Exception:
+            return
+
+        self._copy_text(content)
+        self._flash_table_yank(table, scope)
+
+    def _copy_column_values(self: ResultsMixinHost) -> None:
+        """Copy every value in the focused column as a SQL-ready list."""
+        from sqlit.domains.results.formatters import format_values_list
+
+        table, columns, rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0 or not rows:
+            self.notify("No results", severity="warning")
+            return
+        try:
+            _row_idx, col_idx = table.cursor_coordinate
+        except Exception:
+            return
+        if col_idx < 0 or col_idx >= len(columns):
+            self.notify("No column selected", severity="warning")
+            return
+
+        values = [
+            _strip_table_markup(table, row[col_idx])
+            for row in rows
+            if col_idx < len(row)
+        ]
+        text = format_values_list(values)
+        self._copy_text(text)
+        self._flash_table_yank(table, "all")
+        self.notify(f"Copied {len(values)} values from '{columns[col_idx]}'")
 
     def action_results_cursor_left(self: ResultsMixinHost) -> None:
         """Move results cursor left (vim h)."""

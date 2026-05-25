@@ -295,10 +295,29 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("c", "cell", "Copy cell", "Copy", menu="ry"),
             LeaderCommandDef("y", "row", "Copy row", "Copy", menu="ry"),
             LeaderCommandDef("a", "all", "Copy all", "Copy", menu="ry"),
+            LeaderCommandDef("f", "format", "Copy as...", "Copy", menu="ry"),
             LeaderCommandDef("e", "export", "Export...", "Export", menu="ry"),
             # rye results export menu
             LeaderCommandDef("c", "csv", "Export as CSV", "Export", menu="rye"),
             LeaderCommandDef("j", "json", "Export as JSON", "Export", menu="rye"),
+            LeaderCommandDef("m", "markdown", "Export as Markdown", "Export", menu="rye"),
+            # ryf copy-as format picker
+            LeaderCommandDef("m", "markdown", "Copy as Markdown...", "Copy as", menu="ryf"),
+            LeaderCommandDef("j", "json", "Copy as JSON...", "Copy as", menu="ryf"),
+            LeaderCommandDef("c", "csv", "Copy as CSV...", "Copy as", menu="ryf"),
+            LeaderCommandDef("v", "values", "Copy column values", "Copy as", menu="ryf"),
+            # ryfm markdown scope
+            LeaderCommandDef("c", "cell", "Cell as Markdown", "Copy as", menu="ryfm"),
+            LeaderCommandDef("y", "row", "Row as Markdown", "Copy as", menu="ryfm"),
+            LeaderCommandDef("a", "all", "All as Markdown", "Copy as", menu="ryfm"),
+            # ryfj json scope
+            LeaderCommandDef("c", "cell", "Cell as JSON", "Copy as", menu="ryfj"),
+            LeaderCommandDef("y", "row", "Row as JSON", "Copy as", menu="ryfj"),
+            LeaderCommandDef("a", "all", "All as JSON", "Copy as", menu="ryfj"),
+            # ryfc csv scope
+            LeaderCommandDef("c", "cell", "Cell as CSV", "Copy as", menu="ryfc"),
+            LeaderCommandDef("y", "row", "Row as CSV", "Copy as", menu="ryfc"),
+            LeaderCommandDef("a", "all", "All as CSV", "Copy as", menu="ryfc"),
             # rg results g motion menu (vim-style gg)
             LeaderCommandDef("g", "first_row", "Go to first row", "Go to", menu="rg"),
             # vy value view yank menu (tree mode)
