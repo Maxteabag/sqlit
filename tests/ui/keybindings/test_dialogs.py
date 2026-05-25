@@ -267,6 +267,82 @@ class TestDialogKeybindings:
             assert len(app.screen_stack) == 2
 
     @pytest.mark.asyncio
+    async def test_help_dialog_search_filters_bindings(self):
+        """Pressing `/` in the help dialog should filter bindings by substring."""
+        app = _make_app()
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            keymap = get_keymap()
+            leader_key = keymap.action("leader_key")
+            help_key = keymap.leader("show_help")
+            await pilot.press(leader_key, help_key)
+            await pilot.pause()
+
+            help_screen = next(
+                (s for s in app.screen_stack if isinstance(s, HelpScreen)), None
+            )
+            assert help_screen is not None
+
+            await pilot.press("slash")
+            await pilot.pause()
+            assert help_screen._searching is True
+
+            for ch in "paste":
+                await pilot.press(ch)
+            await pilot.pause()
+            assert help_screen._search == "paste"
+
+            from sqlit.domains.shell.state.help_doc import render_section
+
+            visible_ids = [
+                s.id
+                for s in help_screen._ordered
+                if render_section(s, help_screen._search)[1] > 0
+            ]
+            assert visible_ids, "expected at least one section matching 'paste'"
+            assert "query_insert" in visible_ids
+
+            # Esc exits typing mode but keeps the filter.
+            await pilot.press("escape")
+            await pilot.pause()
+            assert help_screen._searching is False
+            assert help_screen._search == "paste"
+
+            # Second Esc clears the filter.
+            await pilot.press("escape")
+            await pilot.pause()
+            assert help_screen._search == ""
+
+            # Third Esc dismisses the screen.
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not any(isinstance(s, HelpScreen) for s in app.screen_stack)
+
+    @pytest.mark.asyncio
+    async def test_help_dialog_opens_with_active_context_first(self):
+        """Opening help from INSERT mode should put the insert section first."""
+        from sqlit.core.vim import VimMode
+
+        app = _make_app()
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.action_focus_query()
+            await pilot.pause()
+            app.vim_mode = VimMode.INSERT
+            app.query_input.read_only = False
+            await pilot.pause()
+
+            app.action_show_help()
+            await pilot.pause()
+
+            help_screen = next(
+                (s for s in app.screen_stack if isinstance(s, HelpScreen)), None
+            )
+            assert help_screen is not None
+            assert help_screen._active_section_id == "query_insert"
+            assert help_screen._ordered[0].id == "query_insert"
+
+    @pytest.mark.asyncio
     async def test_nested_dialogs_both_block(self):
         """When multiple dialogs are stacked, outer actions should be blocked."""
         app = _make_app()

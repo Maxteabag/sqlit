@@ -178,8 +178,10 @@ class UINavigationMixin(UIStatusMixin, UILeaderMixin):
         """Show help with all keybindings."""
         from ..screens import HelpScreen
 
-        help_text = self._state_machine.generate_help_text()
-        self.push_screen(HelpScreen(help_text))
+        sections = self._state_machine.generate_help_sections()
+        ctx = self._get_input_context()
+        active_section_id = self._state_machine.get_active_help_section_id(ctx)
+        self.push_screen(HelpScreen(sections, active_section_id))
 
     def action_show_keybinding_editor(self: UINavigationMixinHost) -> None:
         """Open the in-app keybinding editor."""
