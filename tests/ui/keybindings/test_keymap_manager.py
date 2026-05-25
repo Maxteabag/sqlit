@@ -134,7 +134,7 @@ class TestSimpleRemap:
         _load(
             tmp_path,
             "small",
-            {"keymap": {"leader_commands": {"leader": {"quit": "Z"}}}},
+            {"keymap": {"leader_commands": {"leader": {"change_theme": "Z"}}}},
         )
         keymap = get_keymap()
         # toggle_explorer wasn't touched — still on its default 'e'.
@@ -438,11 +438,11 @@ class TestConflicts:
         assert "Conflicting keybindings detected" in manager.load_error
 
     def test_user_vs_default_leader(self, tmp_path: Path):
-        # Default: <leader>e → toggle_explorer. User binds <leader>e → quit.
+        # Default: <leader>e → toggle_explorer. User binds <leader>e → change_theme.
         manager = _load(
             tmp_path,
             "leader-conflict",
-            {"keymap": {"leader_commands": {"leader": {"quit": "e"}}}},
+            {"keymap": {"leader_commands": {"leader": {"change_theme": "e"}}}},
         )
         assert manager.load_error is not None
         assert "leader key 'e'" in manager.load_error

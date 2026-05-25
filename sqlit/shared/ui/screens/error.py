@@ -15,7 +15,7 @@ class ErrorScreen(ModalScreen):
 
     BINDINGS = [
         Binding("enter,escape", "close", "Close"),
-        Binding("y", "copy_message", "Copy"),
+        Binding("y", "copy_message", "Copy", id="error_copy_message"),
     ]
 
     CSS = """
@@ -44,7 +44,11 @@ class ErrorScreen(ModalScreen):
         self.message = message
 
     def compose(self) -> ComposeResult:
-        shortcuts = [("Copy", "y"), ("Close", "<enter>")]
+        from sqlit.core.keymap import format_key, get_keymap
+
+        km = get_keymap()
+        copy_key = format_key(km.action("error_copy_message") or "y")
+        shortcuts = [("Copy", copy_key), ("Close", "<enter>")]
         with Dialog(id="error-dialog", title=self.title_text, shortcuts=shortcuts):
             yield Static(self.message, id="error-message")
 

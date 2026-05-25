@@ -88,11 +88,17 @@ class ValueViewScreen(ModalScreen):
         return self._raw_value
 
     def compose(self) -> ComposeResult:
-        shortcuts = [("Copy", "y"), ("Close", "<enter>")]
+        from sqlit.core.keymap import format_key, get_keymap
+
+        km = get_keymap()
+        copy_key = format_key(km.action("copy_value_view") or "y")
+        toggle_key = format_key(km.action("toggle_value_view_mode") or "t")
+        collapse_key = format_key(km.action("collapse_all_json_nodes") or "z")
+        shortcuts = [("Copy", copy_key), ("Close", "<enter>")]
         if self._is_json:
             # Start in tree mode, so show "Syntax View" as what we'd switch to
-            shortcuts.insert(0, ("Syntax View", "t"))
-            shortcuts.insert(0, ("Collapse", "z"))
+            shortcuts.insert(0, ("Syntax View", toggle_key))
+            shortcuts.insert(0, ("Collapse", collapse_key))
         with Dialog(id="value-dialog", title=self._title, shortcuts=shortcuts):
             with VerticalScroll(id="value-scroll", classes="hidden"):
                 yield Static(self._format_syntax_value(), id="value-text", markup=False)

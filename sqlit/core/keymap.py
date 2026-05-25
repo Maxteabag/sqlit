@@ -206,7 +206,6 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("h", "show_help", "Help", "Actions"),
             LeaderCommandDef("space", "telescope", "Telescope", "Actions"),
             LeaderCommandDef("slash", "telescope_filter", "Telescope Search", "Actions"),
-            LeaderCommandDef("q", "quit", "Quit", "Actions"),
             # Delete menu (vim-style)
             LeaderCommandDef("d", "line", "Delete line", "Delete", menu="delete"),
             LeaderCommandDef("w", "word", "Delete word", "Delete", menu="delete"),
@@ -337,7 +336,10 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("enter", "tree_filter_accept", "tree_filter"),
             # Global
             ActionKeyDef("space", "leader_key", "global", priority=True),
-            ActionKeyDef("ctrl+q", "quit", "global"),
+            # quit is intentionally not in the user-overridable keymap;
+            # it lives only as Textual's built-in App.BINDINGS (ctrl+q) and
+            # the `:q` command. Keeping it un-rebindable avoids the footgun
+            # of a user accidentally locking themselves out of the exit key.
             ActionKeyDef("escape", "cancel_operation", "global"),
             ActionKeyDef("question_mark", "show_help", "global"),
             ActionKeyDef("colon", "enter_command_mode", "global"),
@@ -484,6 +486,13 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("t", "toggle_value_view_mode", "value_view"),
             ActionKeyDef("z", "collapse_all_json_nodes", "value_view"),
             ActionKeyDef("Z", "expand_all_json_nodes", "value_view"),
+            # Error dialog (screen-local — action methods live on ErrorScreen,
+            # not the App; the validator skips this context for that reason)
+            ActionKeyDef("y", "error_copy_message", "error_dialog"),
+            # Connection editor (screen-local, same as above)
+            ActionKeyDef("ctrl+s", "connection_save", "connection_editor"),
+            ActionKeyDef("ctrl+t", "connection_test", "connection_editor"),
+            ActionKeyDef("ctrl+d", "connection_install_driver", "connection_editor"),
         ]
 
 
