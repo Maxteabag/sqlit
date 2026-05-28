@@ -169,6 +169,7 @@ max-complexity = 25  # complex domain logic in cloud providers and TUI screens
 
 [project.scripts]
 sqlit = "sqlit.cli:main"
+sqlit-tui = "sqlit.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Maxteabag/sqlit"
