@@ -70,19 +70,23 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
     def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
-        """Get list of views from all schemas."""
+        """Get list of views and materialized views from all schemas."""
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT table_schema, table_name FROM information_schema.views "
-            "WHERE table_schema NOT IN ('pg_catalog', 'information_schema') "
-            "ORDER BY table_schema, table_name"
+            "SELECT n.nspname AS table_schema, c.relname AS table_name, "
+            "       CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'matview' END AS kind "
+            "FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE c.relkind IN ('v', 'm') "
+            "  AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
+            "ORDER BY n.nspname, c.relname"
         )
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
     def get_columns(
         self, conn: Any, table: str, database: str | None = None, schema: str | None = None
     ) -> list[ColumnInfo]:
-        """Get columns for a table."""
+        """Get columns for a table, view, or materialized view."""
         cursor = conn.cursor()
         schema = schema or "public"
 
@@ -99,11 +103,16 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         )
         pk_columns = {row[0] for row in cursor.fetchall()}
 
-        # Get all columns
+        # Get all columns via pg_attribute (covers tables, views, and matviews)
         cursor.execute(
-            "SELECT column_name, data_type FROM information_schema.columns "
-            "WHERE table_schema = %s AND table_name = %s "
-            "ORDER BY ordinal_position",
+            "SELECT a.attname, format_type(a.atttypid, a.atttypmod) "
+            "FROM pg_attribute a "
+            "JOIN pg_class c ON c.oid = a.attrelid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = %s AND c.relname = %s "
+            "  AND c.relkind IN ('r', 'p', 'v', 'm', 'f') "
+            "  AND a.attnum > 0 AND NOT a.attisdropped "
+            "ORDER BY a.attnum",
             (schema, table),
         )
         return [
