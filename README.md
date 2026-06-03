@@ -187,6 +187,37 @@ sqlit connections list
 sqlit connections delete "MyConnection"
 ```
 
+### Shell completion
+
+`sqlit` ships tab-completion for bash, zsh, and fish (subcommands, flags,
+database providers, and your saved connection names). It's powered by
+[`argcomplete`](https://github.com/kislyuk/argcomplete), an optional extra:
+
+```bash
+pipx inject sqlit-tui argcomplete     # or: pip install 'sqlit-tui[completion]'
+```
+
+Then enable it for your shell:
+
+```bash
+# bash — add to ~/.bashrc
+eval "$(sqlit completion bash)"
+
+# zsh — add to ~/.zshrc
+eval "$(sqlit completion zsh)"
+
+# fish — add to ~/.config/fish/config.fish
+sqlit completion fish | source
+```
+
+Restart your shell (or re-source the rc file) and press `<Tab>`:
+
+```bash
+sqlit conn<Tab>                 # → connections / connect / ...
+sqlit connect <Tab>             # → postgresql, mysql, sqlite, ...
+sqlit query --connection <Tab>  # → your saved connection names
+```
+
 ## Keybindings
 
 | Key | Action |

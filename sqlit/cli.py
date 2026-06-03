@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
 """sqlit - A terminal UI for SQL databases."""
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from sqlit.domains.connections.cli.completion import complete_connection_names
 from sqlit.domains.connections.cli.helpers import add_schema_arguments, build_connection_config_from_args
 from sqlit.domains.connections.domain.config import AuthType, ConnectionConfig, DatabaseType
 from sqlit.domains.connections.providers.catalog import get_provider_schema, get_supported_db_types
@@ -464,6 +466,33 @@ def _build_runtime(
     )
 
 
+def _cmd_completion(shell: str) -> int:
+    """Print the argcomplete activation snippet for the given shell."""
+    try:
+        import argcomplete
+    except ImportError:
+        print(
+            "Shell completion requires the 'argcomplete' package.\n"
+            "Install it with: pip install 'sqlit-tui[completion]'",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        snippet = argcomplete.shellcode(["sqlit"], shell=shell)  # type: ignore[attr-defined]
+    except Exception as exc:  # pragma: no cover - depends on argcomplete version
+        print(
+            f"Could not generate completion for {shell!r}: {exc}\n"
+            "Your argcomplete version may not support this shell; "
+            "try upgrading: pip install -U argcomplete",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(snippet)
+    return 0
+
+
 def main() -> int:
     """Entry point for the CLI."""
     startup_mark = time.perf_counter()
@@ -645,7 +674,7 @@ def main() -> int:
         "--connection",
         metavar="NAME",
         help="Connect to a saved connection by name (opens TUI with only this connection)",
-    )
+    ).completer = complete_connection_names  # type: ignore[attr-defined]
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -702,7 +731,9 @@ def main() -> int:
         )
 
     edit_parser = conn_subparsers.add_parser("edit", help="Edit an existing connection")
-    edit_parser.add_argument("connection_name", help="Name of connection to edit")
+    edit_parser.add_argument(
+        "connection_name", help="Name of connection to edit"
+    ).completer = complete_connection_names  # type: ignore[attr-defined]
     edit_parser.add_argument("--name", "-n", help="New connection name")
     edit_parser.add_argument("--server", "-s", help="Server address")
     edit_parser.add_argument("--host", help="Alias for --server (e.g. Cloudflare D1 Account ID)")
@@ -731,7 +762,9 @@ def main() -> int:
     )
 
     delete_parser = conn_subparsers.add_parser("delete", help="Delete a connection")
-    delete_parser.add_argument("connection_name", help="Name of connection to delete")
+    delete_parser.add_argument(
+        "connection_name", help="Name of connection to delete"
+    ).completer = complete_connection_names  # type: ignore[attr-defined]
 
     connect_parser = subparsers.add_parser("connect", help="Temporary connection (not saved)")
     connect_provider_parsers = connect_parser.add_subparsers(dest="provider", metavar="PROVIDER")
@@ -753,7 +786,9 @@ def main() -> int:
         )
 
     query_parser = subparsers.add_parser("query", help="Execute a SQL query")
-    query_parser.add_argument("--connection", "-c", required=True, help="Connection name to use")
+    query_parser.add_argument(
+        "--connection", "-c", required=True, help="Connection name to use"
+    ).completer = complete_connection_names  # type: ignore[attr-defined]
     query_parser.add_argument("--database", "-d", help="Database to query (overrides connection default)")
     query_parser.add_argument("--query", "-q", help="SQL query to execute")
     query_parser.add_argument("--file", "-f", help="SQL file to execute")
@@ -794,7 +829,7 @@ def main() -> int:
         "--connection",
         "-c",
         help="Target a specific saved connection (omit for global)",
-    )
+    ).completer = complete_connection_names  # type: ignore[attr-defined]
     alerts_set.add_argument(
         "--database",
         "-d",
@@ -808,19 +843,53 @@ def main() -> int:
         "--connection",
         "-c",
         help="Connection whose override to clear",
-    )
+    ).completer = complete_connection_names  # type: ignore[attr-defined]
     alerts_unset.add_argument(
         "--database",
         "-d",
         help="Database whose override to clear (requires --connection)",
     )
 
+    completion_parser = subparsers.add_parser(
+        "completion",
+        help="Print a shell completion script for sqlit",
+        description=(
+            "Print the shell completion activation snippet for sqlit.\n"
+            "Requires the optional 'argcomplete' dependency: pip install 'sqlit-tui[completion]'\n\n"
+            "  bash:  eval \"$(sqlit completion bash)\"   # add to ~/.bashrc\n"
+            "  zsh:   eval \"$(sqlit completion zsh)\"    # add to ~/.zshrc\n"
+            "  fish:  sqlit completion fish | source     # add to ~/.config/fish/config.fish"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    completion_parser.add_argument(
+        "shell",
+        choices=["bash", "zsh", "fish"],
+        help="Shell to print the completion script for",
+    )
+
     log_startup_step("cli_parser_end")
+
+    # Shell completion: argcomplete inspects the fully-built parser and exits
+    # here (before runtime/services are built and the TUI is imported) when a
+    # completion request is in progress. No-op when argcomplete isn't installed
+    # or we're running normally.
+    try:
+        import argcomplete
+    except ImportError:
+        pass
+    else:
+        argcomplete.autocomplete(parser)
 
     with startup_span("cli_parse_args"):
         args = parser.parse_args(filtered_argv[1:])  # Skip program name
     _resolve_stdin_secrets(args)
     log_startup_step("cli_parse_end")
+
+    # `sqlit completion <shell>` prints an activation snippet and exits without
+    # touching the runtime or services.
+    if args.command == "completion":
+        return _cmd_completion(args.shell)
 
     with startup_span("runtime_build"):
         runtime = _build_runtime(args, startup_mark, project_dir=project_dir)
