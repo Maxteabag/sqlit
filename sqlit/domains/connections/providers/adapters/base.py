@@ -422,13 +422,15 @@ class DatabaseAdapter(ABC):
 
         Default handles SQL Server-style `[db].[schema].[name]`, PostgreSQL-
         style `"schema"."name"`, and single-part `"name"` by omitting any
-        empty/None component. Dialects that want different composition
-        (e.g. MySQL, which has no schemas within databases) can override.
+        empty/None component, removing database component if provider
+        doesn't support cross-database queries and remove default schema name.
+        Dialects that want different composition (e.g. MySQL, which has
+        no schemas within databases) can override.
         """
         parts: list[str] = []
-        if database:
+        if database and self.supports_cross_database_queries:
             parts.append(self.quote_identifier(database))
-        if schema:
+        if schema and (schema != self.default_schema or parts):
             parts.append(self.quote_identifier(schema))
         parts.append(self.quote_identifier(name))
         return ".".join(parts)

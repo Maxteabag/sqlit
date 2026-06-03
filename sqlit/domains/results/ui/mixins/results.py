@@ -1050,11 +1050,14 @@ class ResultsMixin:
             return "'" + str(v).replace("'", "''") + "'"
 
         # Get table name and primary key columns
-        table_name = "<table>"
+        qualified_name = "<table>"
         pk_column_names: set[str] = set()
         table_info = self._get_active_results_table_info(table, _stacked)
         if table_info:
-            table_name = table_info.get("name", table_name)
+            database_name = table_info.get("database")
+            schema_name = table_info.get("schema")
+            table_name = table_info.get("name")
+            qualified_name = self.current_provider.dialect.qualified_name(database_name, schema_name, table_name)
             # Get PK columns from column info
             for col in table_info.get("columns", []):
                 if col.is_primary_key:
@@ -1090,7 +1093,7 @@ class ResultsMixin:
         where_clause = " AND ".join(where_parts)
 
         # Generate DELETE query for the row
-        query = f"DELETE FROM {table_name} WHERE {where_clause};"
+        query = f"DELETE FROM {qualified_name} WHERE {where_clause};"
 
         # Set query and switch to insert mode
         self._suppress_autocomplete_once = True
@@ -1147,10 +1150,14 @@ class ResultsMixin:
             return "'" + str(v).replace("'", "''") + "'"
 
         # Get table name and primary key columns
-        table_name = "<table>"
+        qualified_name = "<table>"
         pk_column_names: set[str] = set()
         if table_info:
-            table_name = table_info.get("name", table_name)
+            database_name = table_info.get("database")
+            schema_name = table_info.get("schema")
+            table_name = table_info.get("name")
+            qualified_name = self.current_provider.dialect.qualified_name(database_name, schema_name, table_name)
+
             # Get PK columns from column info
             for col in table_info.get("columns", []):
                 if col.is_primary_key:
@@ -1182,7 +1189,7 @@ class ResultsMixin:
         where_clause = " AND ".join(where_parts)
 
         # Generate UPDATE query with empty placeholder for the new value
-        query = f"UPDATE {table_name} SET {column_name} = '' WHERE {where_clause};"
+        query = f"UPDATE {qualified_name} SET {column_name} = '' WHERE {where_clause};"
 
         # Find position inside the empty quotes (after "SET column = '")
         set_prefix = f"SET {column_name} = '"

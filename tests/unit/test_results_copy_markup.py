@@ -9,6 +9,7 @@ so they fail without the fix and pass with it.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -86,6 +87,7 @@ def test_copy_cell_preserves_literal_brackets_when_not_rendering_markup() -> Non
     app.action_copy_cell()
     assert app.clipboard_text == "[bold]hello"
 
+
 class _FakeQueryInput:
     def __init__(self) -> None:
         self.text = ""
@@ -102,6 +104,9 @@ class _FakeEditApp(_FakeApp):
         self._columns = columns
         self.query_input = _FakeQueryInput()
         self._suppress_autocomplete_once = False
+        self.current_provider = SimpleNamespace(
+            dialect=SimpleNamespace(qualified_name=lambda database, schema, name: name),
+        )
 
     def _get_active_results_context(self) -> tuple[Any, list, list, bool]:
         return self._table, self._columns, [], False

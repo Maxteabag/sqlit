@@ -46,8 +46,13 @@ def test_postgresql_qualified_name_uses_schema_only() -> None:
     for cross-reference within the connected database."""
     dialect = _get_dialect("postgresql")
     # No db segment expected when schema is present.
-    assert dialect.qualified_name(None, "public", "users") == '"public"."users"'
+    assert dialect.qualified_name(None, "test", "users") == '"test"."users"'
 
+def test_postgresql_qualified_name_uses_table_only() -> None:
+    """PostgreSQL uses public as default schema. Only table makes sense."""
+    dialect = _get_dialect("postgresql")
+    # No db segment expected when schema is present.
+    assert dialect.qualified_name(None, "public", "users") == '"users"'
 
 def test_sqlserver_qualified_name_is_three_part() -> None:
     """SQL Server explicitly uses [db].[schema].[table]."""
