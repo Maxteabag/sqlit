@@ -36,6 +36,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
+completion = ["argcomplete>=3.0"]
 all = [
     "psycopg2-binary>=2.9.0",
     "mssql-python>=1.1.0",
