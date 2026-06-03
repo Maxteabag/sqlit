@@ -94,6 +94,7 @@ def build_mock_provider(db_type: str, adapter: MockDatabaseAdapter) -> DatabaseP
         supports_sequences=bool(getattr(adapter, "supports_sequences", False)),
         default_schema=str(getattr(adapter, "default_schema", "")),
         system_databases=frozenset(getattr(adapter, "system_databases", frozenset())),
+        supports_foreign_keys=bool(getattr(adapter, "supports_foreign_keys", False)),
     )
 
     def apply_database_override(config: ConnectionConfig, database: str | None) -> ConnectionConfig:

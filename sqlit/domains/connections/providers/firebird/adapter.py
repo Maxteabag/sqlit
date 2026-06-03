@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -50,6 +51,10 @@ class FirebirdAdapter(CursorBasedAdapter):
     @property
     def supports_sequences(self) -> bool:
         # NOTE: Firebird refers to sequences as 'generators'
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     @property
@@ -170,6 +175,90 @@ class FirebirdAdapter(CursorBasedAdapter):
         cursor = conn.cursor()
         cursor.execute("SELECT rdb$generator_name FROM rdb$generators WHERE rdb$system_flag = 0")
         return [SequenceInfo(name=row[0].rstrip()) for row in cursor.fetchall()]
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs via RDB$REF_CONSTRAINTS + RDB$INDEX_SEGMENTS.
+
+        Firebird folds unquoted identifiers to UPPERCASE, so bind .upper().
+        FK column ordinals live in RDB$INDEX_SEGMENTS keyed by the FK's
+        supporting index; the parent columns are reached via the unique-
+        key constraint name in RDB$REF_CONSTRAINTS.RDB$CONST_NAME_UQ.
+        """
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT TRIM(rc.RDB$CONSTRAINT_NAME), fk_seg.RDB$FIELD_POSITION + 1, "
+            "       TRIM(fk_seg.RDB$FIELD_NAME), TRIM(pk_rc.RDB$RELATION_NAME), "
+            "       TRIM(pk_seg.RDB$FIELD_NAME) "
+            "FROM RDB$RELATION_CONSTRAINTS rc "
+            "JOIN RDB$REF_CONSTRAINTS ref "
+            "  ON ref.RDB$CONSTRAINT_NAME = rc.RDB$CONSTRAINT_NAME "
+            "JOIN RDB$INDEX_SEGMENTS fk_seg "
+            "  ON fk_seg.RDB$INDEX_NAME = rc.RDB$INDEX_NAME "
+            "JOIN RDB$RELATION_CONSTRAINTS pk_rc "
+            "  ON pk_rc.RDB$CONSTRAINT_NAME = ref.RDB$CONST_NAME_UQ "
+            "JOIN RDB$INDEX_SEGMENTS pk_seg "
+            "  ON pk_seg.RDB$INDEX_NAME = pk_rc.RDB$INDEX_NAME "
+            "  AND pk_seg.RDB$FIELD_POSITION = fk_seg.RDB$FIELD_POSITION "
+            "WHERE rc.RDB$CONSTRAINT_TYPE = 'FOREIGN KEY' "
+            "  AND rc.RDB$RELATION_NAME = ? "
+            "ORDER BY rc.RDB$CONSTRAINT_NAME, fk_seg.RDB$FIELD_POSITION",
+            (table.upper(),),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[3],
+                referenced_column=row[4],
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT TRIM(rc.RDB$CONSTRAINT_NAME), fk_seg.RDB$FIELD_POSITION + 1, "
+            "       TRIM(rc.RDB$RELATION_NAME), TRIM(fk_seg.RDB$FIELD_NAME), "
+            "       TRIM(pk_seg.RDB$FIELD_NAME) "
+            "FROM RDB$REF_CONSTRAINTS ref "
+            "JOIN RDB$RELATION_CONSTRAINTS rc "
+            "  ON rc.RDB$CONSTRAINT_NAME = ref.RDB$CONSTRAINT_NAME "
+            "JOIN RDB$RELATION_CONSTRAINTS pk_rc "
+            "  ON pk_rc.RDB$CONSTRAINT_NAME = ref.RDB$CONST_NAME_UQ "
+            "JOIN RDB$INDEX_SEGMENTS fk_seg "
+            "  ON fk_seg.RDB$INDEX_NAME = rc.RDB$INDEX_NAME "
+            "JOIN RDB$INDEX_SEGMENTS pk_seg "
+            "  ON pk_seg.RDB$INDEX_NAME = pk_rc.RDB$INDEX_NAME "
+            "  AND pk_seg.RDB$FIELD_POSITION = fk_seg.RDB$FIELD_POSITION "
+            "WHERE pk_rc.RDB$RELATION_NAME = ? "
+            "ORDER BY rc.RDB$RELATION_NAME, rc.RDB$CONSTRAINT_NAME, fk_seg.RDB$FIELD_POSITION",
+            (table.upper(),),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[2],
+                column=row[3],
+                referenced_table=table,
+                referenced_column=row[4],
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_sequence_definition(
         self,

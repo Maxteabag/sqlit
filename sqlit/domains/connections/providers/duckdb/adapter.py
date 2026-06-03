@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -59,6 +60,10 @@ class DuckDBAdapter(DatabaseAdapter):
     @property
     def supports_sequences(self) -> bool:
         """DuckDB supports sequences."""
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     @property
@@ -208,6 +213,86 @@ class DuckDBAdapter(DatabaseAdapter):
             "SELECT sequence_name FROM duckdb_sequences() ORDER BY sequence_name"
         )
         return [SequenceInfo(name=row[0]) for row in result.fetchall()]
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs via duckdb_constraints().
+
+        Each FK constraint appears as a single row with arrays for the
+        local/referenced columns. We expand it into one ForeignKeyInfo
+        per column pair so composite FKs are represented uniformly.
+        """
+        schema = schema or self.default_schema
+        result = conn.execute(
+            "SELECT constraint_index, schema_name, "
+            "       constraint_column_names, referenced_table, "
+            "       referenced_column_names "
+            "FROM duckdb_constraints() "
+            "WHERE constraint_type = 'FOREIGN KEY' "
+            "  AND schema_name = ? AND table_name = ? "
+            "ORDER BY constraint_index",
+            (schema, table),
+        )
+        out: list[ForeignKeyInfo] = []
+        for row in result.fetchall():
+            local_cols = list(row[2] or [])
+            ref_cols = list(row[4] or [])
+            for i, (col, ref_col) in enumerate(zip(local_cols, ref_cols)):
+                out.append(
+                    ForeignKeyInfo(
+                        owner_table=table,
+                        column=col,
+                        referenced_table=row[3],
+                        referenced_column=ref_col,
+                        owner_schema=row[1] or schema,
+                        referenced_schema=row[1] or schema,
+                        constraint_name=f"fk_{row[0]}",
+                        ordinal=i + 1,
+                    )
+                )
+        return out
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List FKs whose referenced_table is `table`."""
+        schema = schema or self.default_schema
+        result = conn.execute(
+            "SELECT constraint_index, schema_name, table_name, "
+            "       constraint_column_names, referenced_column_names "
+            "FROM duckdb_constraints() "
+            "WHERE constraint_type = 'FOREIGN KEY' "
+            "  AND referenced_table = ? "
+            "ORDER BY schema_name, table_name, constraint_index",
+            (table,),
+        )
+        out: list[ForeignKeyInfo] = []
+        for row in result.fetchall():
+            local_cols = list(row[3] or [])
+            ref_cols = list(row[4] or [])
+            for i, (col, ref_col) in enumerate(zip(local_cols, ref_cols)):
+                out.append(
+                    ForeignKeyInfo(
+                        owner_table=row[2],
+                        column=col,
+                        referenced_table=table,
+                        referenced_column=ref_col,
+                        owner_schema=row[1] or "",
+                        referenced_schema=schema,
+                        constraint_name=f"{row[2]}_fk_{row[0]}",
+                        ordinal=i + 1,
+                    )
+                )
+        return out
 
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None

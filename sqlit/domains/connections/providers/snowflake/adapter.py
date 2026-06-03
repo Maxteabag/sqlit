@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -46,6 +47,10 @@ class SnowflakeAdapter(CursorBasedAdapter):
 
     @property
     def supports_stored_procedures(self) -> bool:
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     def apply_database_override(self, config: ConnectionConfig, database: str) -> ConnectionConfig:
@@ -233,6 +238,95 @@ class SnowflakeAdapter(CursorBasedAdapter):
         sql = f"SELECT sequence_name FROM {db_prefix}information_schema.sequences WHERE sequence_schema != 'INFORMATION_SCHEMA'"
         cursor.execute(sql)
         return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Outgoing FKs via standard information_schema joins.
+
+        Snowflake FKs are informational only (not enforced) but are widely
+        declared for tooling. Snowflake stores identifiers upper-case
+        unless quoted on creation.
+        """
+        cursor = conn.cursor()
+        db_prefix = f"{self.quote_identifier(database)}." if database else ""
+        schema = schema or self.default_schema
+        cursor.execute(
+            f"SELECT tc.constraint_name, kcu.ordinal_position, "
+            f"       kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name "
+            f"FROM {db_prefix}information_schema.table_constraints tc "
+            f"JOIN {db_prefix}information_schema.key_column_usage kcu "
+            f"  ON tc.constraint_name = kcu.constraint_name "
+            f"  AND tc.constraint_schema = kcu.constraint_schema "
+            f"JOIN {db_prefix}information_schema.constraint_column_usage ccu "
+            f"  ON ccu.constraint_name = tc.constraint_name "
+            f"  AND ccu.constraint_schema = tc.constraint_schema "
+            f"WHERE tc.constraint_type = 'FOREIGN KEY' "
+            f"  AND tc.table_schema = %s AND tc.table_name = %s "
+            f"ORDER BY tc.constraint_name, kcu.ordinal_position",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=schema,
+                owner_database=database or "",
+                referenced_schema=row[3] or "",
+                referenced_database=database or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        cursor = conn.cursor()
+        db_prefix = f"{self.quote_identifier(database)}." if database else ""
+        schema = schema or self.default_schema
+        cursor.execute(
+            f"SELECT tc.constraint_name, kcu.ordinal_position, "
+            f"       tc.table_schema, tc.table_name, kcu.column_name, ccu.column_name "
+            f"FROM {db_prefix}information_schema.table_constraints tc "
+            f"JOIN {db_prefix}information_schema.key_column_usage kcu "
+            f"  ON tc.constraint_name = kcu.constraint_name "
+            f"  AND tc.constraint_schema = kcu.constraint_schema "
+            f"JOIN {db_prefix}information_schema.constraint_column_usage ccu "
+            f"  ON ccu.constraint_name = tc.constraint_name "
+            f"  AND ccu.constraint_schema = tc.constraint_schema "
+            f"WHERE tc.constraint_type = 'FOREIGN KEY' "
+            f"  AND ccu.table_schema = %s AND ccu.table_name = %s "
+            f"ORDER BY tc.table_schema, tc.table_name, "
+            f"         tc.constraint_name, kcu.ordinal_position",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[3],
+                column=row[4],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[2] or "",
+                owner_database=database or "",
+                referenced_schema=schema,
+                referenced_database=database or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute query."""

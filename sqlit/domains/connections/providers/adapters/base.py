@@ -69,6 +69,41 @@ class SequenceInfo:
     name: str
 
 
+@dataclass(frozen=True)
+class ForeignKeyInfo:
+    """A single foreign-key relationship between two columns.
+
+    The FK is declared on the *owner* (child) side, which has `column`,
+    and points to the *referenced* (parent) side, which has
+    `referenced_column` on `referenced_table`.
+
+    For outgoing FKs returned by `get_foreign_keys(T)`, every entry has
+    `owner_table == T`. For incoming refs returned by
+    `get_referencing_foreign_keys(T)`, every entry has
+    `referenced_table == T` and `owner_table` is whatever table is
+    pointing in.
+
+    Composite FKs are represented as multiple entries sharing
+    `constraint_name`, ordered by `ordinal`. The navigation UI only
+    auto-jumps single-column FKs; composite ones surface but require
+    user disambiguation.
+
+    Schema/database fields are empty strings on engines that don't
+    expose them (e.g. SQLite).
+    """
+
+    owner_table: str
+    column: str
+    referenced_table: str
+    referenced_column: str
+    owner_schema: str = ""
+    owner_database: str = ""
+    referenced_schema: str = ""
+    referenced_database: str = ""
+    constraint_name: str = ""
+    ordinal: int = 1
+
+
 # Type alias for table/view info: (schema, name)
 TableInfo = tuple[str, str]
 
@@ -191,6 +226,16 @@ class DatabaseAdapter(ABC):
         """Whether this database supports sequences.
 
         Override in subclasses. Defaults to False since many databases use auto-increment instead.
+        """
+        return False
+
+    @property
+    def supports_foreign_keys(self) -> bool:
+        """Whether this database exposes foreign-key relationships via catalog queries.
+
+        Override in subclasses that implement `get_foreign_keys` /
+        `get_referencing_foreign_keys`. Defaults to False so the FK
+        navigation UI is hidden for adapters without an implementation.
         """
         return False
 
@@ -343,6 +388,36 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Get outgoing foreign keys defined on `table` (FKs whose owner is this table).
+
+        Default returns []. Override in adapters that support FK introspection
+        and also set `supports_foreign_keys = True`.
+        """
+        return []
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Get incoming foreign keys that reference `table`.
+
+        Each entry's `column` is the FK column on the *referring* table;
+        `referenced_table` and `referenced_column` point back to this table.
+
+        Default returns []. Override in adapters that support FK introspection.
+        """
+        return []
+
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None
     ) -> dict[str, Any]:
@@ -416,6 +491,27 @@ class DatabaseAdapter(ABC):
     def quote_identifier(self, name: str) -> str:
         """Quote an identifier (table name, column name, etc.)."""
         pass
+
+    def quote_literal(self, value: Any) -> str:
+        """Render a Python value as a SQL literal.
+
+        Used by the FK-navigation feature to build WHERE clauses against
+        cell values. Default handles None, bool, int/float, str, and bytes
+        with single-quote escaping (the SQL-standard form supported by
+        SQLite, Postgres, MySQL with NO_BACKSLASH_ESCAPES, and MSSQL).
+        Subclasses can override for engines with different conventions
+        (e.g. mysql backslash escaping, mssql bytes as 0x...).
+        """
+        if value is None:
+            return "NULL"
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, int | float):
+            return repr(value) if isinstance(value, float) else str(value)
+        if isinstance(value, bytes | bytearray | memoryview):
+            return "X'" + bytes(value).hex() + "'"
+        text = str(value)
+        return "'" + text.replace("'", "''") + "'"
 
     def qualified_name(self, database: str | None, schema: str | None, name: str) -> str:
         """Build a quoted qualified identifier, skipping empty segments.
