@@ -403,12 +403,12 @@ class AutocompleteSchemaMixin:
             try:
                 entries: list[tuple[str, list[tuple[str, tuple[str, str, str | None]]]]] = []
                 for schema_name, table_name in tables:
+                    display_name = dialect.format_table_name(schema_name, table_name)
                     if single_db:
-                        full_name = table_name
+                        full_name = display_name
                     else:
                         full_name = dialect.qualified_name(database, schema_name, table_name)
 
-                    display_name = dialect.format_table_name(schema_name, table_name)
                     metadata = [
                         (display_name.lower(), (schema_name, table_name, database)),
                         (table_name.lower(), (schema_name, table_name, database)),
@@ -486,12 +486,12 @@ class AutocompleteSchemaMixin:
             try:
                 entries: list[tuple[str, list[tuple[str, tuple[str, str, str | None]]]]] = []
                 for schema_name, view_name in views:
+                    display_name = dialect.format_table_name(schema_name, view_name)
                     if single_db:
-                        full_name = view_name
+                        full_name = display_name
                     else:
                         full_name = dialect.qualified_name(database, schema_name, view_name)
 
-                    display_name = dialect.format_table_name(schema_name, view_name)
                     metadata = [
                         (display_name.lower(), (schema_name, view_name, database)),
                         (view_name.lower(), (schema_name, view_name, database)),
@@ -799,16 +799,16 @@ class AutocompleteSchemaMixin:
                         db_arg = self._get_metadata_db_arg(database)
                     tables = await run_db_call(inspector.get_tables, connection, db_arg)
                     for schema_name, table_name in tables:
+                        display_name = dialect.format_table_name(schema_name, table_name)
                         # Use simple name if we have a default database, full qualifier otherwise
                         if len(databases) == 1:
-                            # Single database - use simple table name
-                            schema_cache["tables"].append(table_name)
+                            # Single database - omit only the provider's default schema
+                            schema_cache["tables"].append(display_name)
                         else:
                             # Multiple databases - use qualified identifier
                             full_name = dialect.qualified_name(database, schema_name, table_name)
                             schema_cache["tables"].append(full_name)
                         # Keep metadata for column loading (multiple keys for flexible lookup)
-                        display_name = dialect.format_table_name(schema_name, table_name)
                         table_metadata[display_name.lower()] = (schema_name, table_name, database)
                         table_metadata[table_name.lower()] = (schema_name, table_name, database)
                         if database:
@@ -820,16 +820,16 @@ class AutocompleteSchemaMixin:
                     # Get views
                     views = await run_db_call(inspector.get_views, connection, db_arg)
                     for schema_name, view_name in views:
+                        display_name = dialect.format_table_name(schema_name, view_name)
                         # Use simple name if we have a default database, full qualifier otherwise
                         if len(databases) == 1:
-                            # Single database - use simple view name
-                            schema_cache["views"].append(view_name)
+                            # Single database - omit only the provider's default schema
+                            schema_cache["views"].append(display_name)
                         else:
                             # Multiple databases - use qualified identifier
                             full_name = dialect.qualified_name(database, schema_name, view_name)
                             schema_cache["views"].append(full_name)
                         # Keep metadata for column loading (multiple keys for flexible lookup)
-                        display_name = dialect.format_table_name(schema_name, view_name)
                         table_metadata[display_name.lower()] = (schema_name, view_name, database)
                         table_metadata[view_name.lower()] = (schema_name, view_name, database)
                         if database:
