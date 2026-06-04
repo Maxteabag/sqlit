@@ -490,6 +490,7 @@ def main() -> int:
         connection_url, filtered_argv = _extract_connection_url(filtered_argv)
 
     log_startup_step("cli_parser_start")
+    from sqlit import __version__
     parser = argparse.ArgumentParser(
         prog="sqlit",
         description="A terminal UI for SQL databases",
@@ -501,6 +502,12 @@ def main() -> int:
             "<project>/.sqlit/ instead of the global config."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
 
     parser.add_argument(

@@ -15,7 +15,12 @@ def _run_cli_with_stdin(*args: str, stdin: str, env_config_dir: Path) -> subproc
         input=stdin,
         capture_output=True,
         text=True,
-        env={"SQLIT_CONFIG_DIR": str(env_config_dir), "PATH": __import__("os").environ.get("PATH", "")},
+        cwd=str(env_config_dir),
+        env={
+            "SQLIT_CONFIG_DIR": str(env_config_dir),
+            "PATH": __import__("os").environ.get("PATH", ""),
+            "PYTHONPATH": __import__("os").environ.get("PYTHONPATH", ""),
+        },
     )
 
 
@@ -118,3 +123,23 @@ def test_password_stdin_eof_errors_cleanly(tmp_path: Path):
 
     assert result.returncode != 0
     assert "EOF" in (result.stderr + result.stdout)
+
+
+def test_cli_version_option(tmp_path: Path):
+    result = _run_cli_with_stdin(
+        "--version",
+        stdin="",
+        env_config_dir=tmp_path,
+    )
+    assert result.returncode == 0
+    assert "sqlit" in result.stdout
+
+
+def test_cli_version_short_option(tmp_path: Path):
+    result = _run_cli_with_stdin(
+        "-v",
+        stdin="",
+        env_config_dir=tmp_path,
+    )
+    assert result.returncode == 0
+    assert "sqlit" in result.stdout
