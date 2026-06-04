@@ -171,6 +171,84 @@ def fuzzy_match(text: str, candidates: list[str], max_results: int = 50) -> list
     return [r[2] for r in results[:max_results]]
 
 
+def split_identifier_parts(identifier: str) -> list[str]:
+    """Split a possibly quoted qualified identifier into unquoted parts."""
+    parts: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    bracketed = False
+
+    for char in identifier:
+        if bracketed:
+            if char == "]":
+                bracketed = False
+            else:
+                current.append(char)
+            continue
+
+        if quote:
+            if char == quote:
+                quote = None
+            else:
+                current.append(char)
+            continue
+
+        if char == "[":
+            bracketed = True
+            continue
+        if char in {'"', "`"}:
+            quote = char
+            continue
+        if char == ".":
+            part = "".join(current).strip()
+            if part:
+                parts.append(part)
+            current = []
+            continue
+
+        current.append(char)
+
+    part = "".join(current).strip()
+    if part:
+        parts.append(part)
+    return parts
+
+
+def get_identifier_namespaces(identifiers: list[str]) -> list[str]:
+    """Return first qualifier parts from schema/database-qualified names."""
+    namespaces: list[str] = []
+    seen: set[str] = set()
+    for identifier in identifiers:
+        parts = split_identifier_parts(identifier)
+        if len(parts) < 2:
+            continue
+        namespace = parts[0]
+        key = namespace.lower()
+        if key not in seen:
+            seen.add(key)
+            namespaces.append(namespace)
+    return namespaces
+
+
+def get_names_for_namespace(namespace: str, identifiers: list[str]) -> list[str]:
+    """Return final identifier parts that belong to the requested namespace."""
+    namespace_lower = namespace.lower()
+    names: list[str] = []
+    seen: set[str] = set()
+
+    for identifier in identifiers:
+        parts = split_identifier_parts(identifier)
+        if len(parts) < 2 or parts[0].lower() != namespace_lower:
+            continue
+        name = parts[-1]
+        key = name.lower()
+        if key not in seen:
+            seen.add(key)
+            names.append(name)
+
+    return names
+
+
 def extract_table_refs(sql: str) -> list[TableRef]:
     """Extract table references and aliases from SQL.
 
