@@ -1,4 +1,4 @@
-"""PostgreSQL adapter using psycopg2."""
+"""PostgreSQL adapter using psycopg (v3)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,12 @@ if TYPE_CHECKING:
 
 
 class PostgreSQLAdapter(PostgresBaseAdapter):
-    """Adapter for PostgreSQL using psycopg2."""
+    """Adapter for PostgreSQL using psycopg (v3).
+
+    psycopg3 delegates TLS to libpq instead of bundling libssl, which avoids
+    pulling Security.framework into the parent process at import time on
+    macOS — one of the crash classes covered by issue #189.
+    """
 
     @property
     def name(self) -> str:
@@ -30,16 +35,16 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
 
     @property
     def install_package(self) -> str:
-        return "psycopg2-binary"
+        return "psycopg[binary]"
 
     @property
     def driver_import_names(self) -> tuple[str, ...]:
-        return ("psycopg2",)
+        return ("psycopg",)
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to PostgreSQL database."""
-        psycopg2 = self._import_driver_module(
-            "psycopg2",
+        psycopg = self._import_driver_module(
+            "psycopg",
             driver_name=self.name,
             extra_name=self.install_extra,
             package_name=self.install_package,
@@ -50,7 +55,7 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
             raise ValueError("PostgreSQL connections require a TCP-style endpoint.")
         connect_args: dict[str, Any] = {
             "connect_timeout": 10,
-            "database": endpoint.database or "postgres",
+            "dbname": endpoint.database or "postgres",
         }
         host = endpoint.host
         # If the user only set a port (e.g. Postgres on a non-default port
@@ -82,7 +87,7 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
                 connect_args["sslpassword"] = tls_key_password
 
         connect_args.update(config.extra_options)
-        conn = psycopg2.connect(**connect_args)
+        conn = psycopg.connect(**connect_args)
         # Enable autocommit to avoid "transaction aborted" errors on failed statements
         conn.autocommit = True
         return conn

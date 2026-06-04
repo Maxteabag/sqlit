@@ -39,15 +39,15 @@ def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
         pytest.skip("CockroachDB is not available")
 
     try:
-        import psycopg2
+        import psycopg
     except ImportError:
-        pytest.skip("psycopg2 is not installed")
+        pytest.skip("psycopg is not installed")
 
     try:
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             host=COCKROACHDB_HOST,
             port=COCKROACHDB_PORT,
-            database="defaultdb",
+            dbname="defaultdb",
             user=COCKROACHDB_USER,
             password=COCKROACHDB_PASSWORD or None,
             connect_timeout=10,
@@ -60,10 +60,10 @@ def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
         cursor.execute(f"CREATE DATABASE {COCKROACHDB_DATABASE}")
         conn.close()
 
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             host=COCKROACHDB_HOST,
             port=COCKROACHDB_PORT,
-            database=COCKROACHDB_DATABASE,
+            dbname=COCKROACHDB_DATABASE,
             user=COCKROACHDB_USER,
             password=COCKROACHDB_PASSWORD or None,
             connect_timeout=10,
@@ -139,10 +139,10 @@ def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
     yield COCKROACHDB_DATABASE
 
     try:
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             host=COCKROACHDB_HOST,
             port=COCKROACHDB_PORT,
-            database="defaultdb",
+            dbname="defaultdb",
             user=COCKROACHDB_USER,
             password=COCKROACHDB_PASSWORD or None,
             connect_timeout=10,

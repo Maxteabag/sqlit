@@ -1,4 +1,4 @@
-"""CockroachDB adapter using psycopg2 (PostgreSQL wire-compatible)."""
+"""CockroachDB adapter using psycopg v3 (PostgreSQL wire-compatible)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class CockroachDBAdapter(PostgresBaseAdapter):
-    """Adapter for CockroachDB using psycopg2 (PostgreSQL wire-compatible)."""
+    """Adapter for CockroachDB using psycopg v3 (PostgreSQL wire-compatible)."""
 
     @property
     def name(self) -> str:
@@ -30,11 +30,11 @@ class CockroachDBAdapter(PostgresBaseAdapter):
 
     @property
     def install_package(self) -> str:
-        return "psycopg2-binary"
+        return "psycopg[binary]"
 
     @property
     def driver_import_names(self) -> tuple[str, ...]:
-        return ("psycopg2",)
+        return ("psycopg",)
 
     @property
     def supports_stored_procedures(self) -> bool:
@@ -47,8 +47,8 @@ class CockroachDBAdapter(PostgresBaseAdapter):
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to CockroachDB database."""
-        psycopg2 = self._import_driver_module(
-            "psycopg2",
+        psycopg = self._import_driver_module(
+            "psycopg",
             driver_name=self.name,
             extra_name=self.install_extra,
             package_name=self.install_package,
@@ -61,7 +61,7 @@ class CockroachDBAdapter(PostgresBaseAdapter):
         connect_args: dict[str, Any] = {
             "host": endpoint.host,
             "port": port,
-            "database": endpoint.database or "defaultdb",
+            "dbname": endpoint.database or "defaultdb",
             "user": endpoint.username,
             "password": endpoint.password,
             "connect_timeout": 10,
@@ -88,7 +88,7 @@ class CockroachDBAdapter(PostgresBaseAdapter):
                 connect_args["sslpassword"] = tls_key_password
 
         connect_args.update(config.extra_options)
-        conn = psycopg2.connect(**connect_args)
+        conn = psycopg.connect(**connect_args)
         # Enable autocommit to avoid transaction issues
         conn.autocommit = True
         return conn
