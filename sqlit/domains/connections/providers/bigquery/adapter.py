@@ -375,3 +375,8 @@ class BigQueryAdapter(CursorBasedAdapter):
                 return f"SELECT * FROM `{dataset}.{table}` LIMIT {limit}"
             return f"SELECT * FROM `{dataset}`.`{table}` LIMIT {limit}"
         return f"SELECT * FROM `{table}` LIMIT {limit}"
+
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        dataset = schema or database
+        return f"DROP TABLE IF EXISTS `{dataset}.{table}`"

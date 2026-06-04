@@ -319,6 +319,9 @@ class SSMSTUI(
             has_results=has_results,
             stacked_result_count=stacked_result_count,
             count_buffer=self._count_buffer,
+            current_provider_supports_drop_table=bool(
+                self.current_provider and self.current_provider.capabilities.support_drop_table
+            ),
         )
 
     def _debug_screen_label(self, screen: Any | None) -> str:

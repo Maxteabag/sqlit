@@ -148,6 +148,12 @@ class MySQLBaseAdapter(CursorBasedAdapter):
             return f"SELECT * FROM `{database}`.`{table}` LIMIT {limit}"
         return f"SELECT * FROM `{table}` LIMIT {limit}"
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        db = database or schema
+        return f"DROP TABLE IF EXISTS `{db}`.`{table}`" if db else f"DROP TABLE IF EXISTS `{table}`"
+
+
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes from MySQL/MariaDB."""
         cursor = conn.cursor()

@@ -358,6 +358,14 @@ class FlightSQLAdapter(DatabaseAdapter):
             return f"SELECT * FROM {quoted_schema}.{quoted_table} LIMIT {limit}"
         return f"SELECT * FROM {quoted_table} LIMIT {limit}"
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        quoted_table = self.quote_identifier(table)
+        if schema:
+            quoted_schema = self.quote_identifier(schema)
+            return f'DROP TABLE IF EXISTS {quoted_schema}.{quoted_table}'
+        return f'DROP TABLE IF EXISTS {quoted_table}'
+
     def _arrow_table_to_tuples(
         self, table: Any
     ) -> tuple[list[str], list[tuple[Any, ...]]]:

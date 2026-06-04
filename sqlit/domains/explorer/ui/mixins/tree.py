@@ -357,6 +357,38 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             tree_object_info.show_sequence_info(self, data)
             return
 
+    def action_drop_table(self: TreeMixinHost) -> None:
+        """Generate DROP TABLE query for selected table."""
+        if not self.current_provider or not self._session:
+            return
+
+        if not self.current_provider.capabilities.support_drop_table:
+            return
+
+        node = self.object_tree.cursor_node
+
+        if not node or not node.data:
+            return
+
+        data = node.data
+
+        if self._get_node_kind(node) == "table":
+            self._last_query_table = {
+                "database": data.database,
+                "schema": data.schema,
+                "name": data.name,
+                "columns": [],
+            }
+
+            self.query_input.text = self.current_provider.dialect.build_drop_table_query(
+                data.name,
+                data.database,
+                data.schema,
+            )
+            self._query_target_database = data.database
+            self.query_input.focus()
+            return
+
     def action_use_database(self: TreeMixinHost) -> None:
         """Toggle the selected database as the default for the current connection."""
         node = self.object_tree.cursor_node

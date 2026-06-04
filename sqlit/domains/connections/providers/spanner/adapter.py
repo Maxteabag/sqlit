@@ -376,3 +376,8 @@ class SpannerAdapter(CursorBasedAdapter):
         """Build SELECT query with LIMIT using connection-aware quoting."""
         quoted = self._quote_identifier_for_conn(conn, table)
         return f"SELECT * FROM {quoted} LIMIT {limit}"
+
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        quoted_table = self._quote_identifier_for_dialect(DIALECT_GOOGLESQL, table)
+        return f'DROP TABLE IF EXISTS {quoted_table}'
