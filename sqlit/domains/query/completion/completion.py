@@ -21,7 +21,9 @@ from .core import (
     get_all_functions,
     get_all_keywords,
     get_current_word,
+    get_identifier_namespaces,
     get_last_token_info,
+    get_names_for_namespace,
     is_inside_string,
     remove_comments,
     remove_string_literals,
@@ -256,8 +258,11 @@ def get_completions(
 
     # Schema.table prefix → suggest tables after schema name
     # Pattern: FROM/JOIN schema. or schema.partial
-    if re.search(r"\b(FROM|JOIN)\s+\w+\.\w*$", clean_before, re.IGNORECASE):
-        return fuzzy_match(current_word, tables)
+    namespace_match = re.search(r"\b(?:FROM|JOIN)\s+(\w+)\.\w*$", clean_before, re.IGNORECASE)
+    if namespace_match:
+        namespace = namespace_match.group(1)
+        names = get_names_for_namespace(namespace, tables)
+        return fuzzy_match(current_word, names if names else tables)
 
     # ANY/ALL/SOME ( → suggest SELECT for subquery
     if re.search(r"\b(ANY|ALL|SOME)\s*\(\s*\w*$", clean_before, re.IGNORECASE):
@@ -326,6 +331,7 @@ def get_completions(
 
     for suggestion in suggestions:
         if suggestion.type == SuggestionType.TABLE:
+            results.extend(get_identifier_namespaces(tables))
             results.extend(tables)
             results.extend(cte_names)
 
