@@ -296,6 +296,15 @@ class ClickHouseAdapter(DatabaseAdapter):
             return f"SELECT * FROM {quoted_db}.{quoted_table} LIMIT {limit}"
         return f"SELECT * FROM {quoted_table} LIMIT {limit}"
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        db = database or schema
+        quoted_table = self.quote_identifier(table)
+        if db:
+            quoted_db = self.quote_identifier(db)
+            return f"DROP TABLE IF EXISTS {quoted_db}.{quoted_table}"
+        return f"DROP TABLE IF EXISTS {quoted_table}"
+
     def execute_query(
         self, conn: Any, query: str, max_rows: int | None = None
     ) -> tuple[list[str], list[tuple], bool]:

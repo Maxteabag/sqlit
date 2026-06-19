@@ -200,6 +200,10 @@ class DatabaseAdapter(ABC):
         return True
 
     @property
+    def supports_drop_table(self) -> bool:
+        return True
+
+    @property
     def test_query(self) -> str:
         """A simple query to test the connection.
 
@@ -442,6 +446,17 @@ class DatabaseAdapter(ABC):
         Args:
             table: Table name.
             limit: Maximum rows to return.
+            database: Database name (if supported).
+            schema: Schema name (if supported).
+        """
+        pass
+
+    @abstractmethod
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build a SELECT query with limit.
+
+        Args:
+            table: Table name.
             database: Database name (if supported).
             schema: Schema name (if supported).
         """

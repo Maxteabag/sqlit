@@ -347,6 +347,10 @@ class FirebirdAdapter(CursorBasedAdapter):
         """Build SELECT LIMIT query."""
         return f'SELECT * FROM "{table}" ROWS {limit}'
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        return f'DROP TABLE "{table}"'
+
     def execute_non_query(self, conn: Any, query: str) -> int:
         # Firebird has no autocommit mode, so we need to guarantee it ourselves.
         try:
