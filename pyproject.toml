@@ -62,6 +62,7 @@ all = [
     "impyla>=0.18.0",
     "osquery>=3.0.0",
     "surrealdb>=1.0.0",
+    "databricks-sql-connector>=3.0.0",
 ]
 postgres = ["psycopg2-binary>=2.9.0"]
 cockroachdb = ["psycopg2-binary>=2.9.0"]
@@ -88,6 +89,7 @@ flight = ["adbc-driver-flightsql>=1.0.0"]
 impala = ["impyla>=0.18.0"]
 osquery = ["osquery>=3.0.0"]
 surrealdb = ["surrealdb>=1.0.0"]
+databricks = ["databricks-sql-connector>=3.0.0"]
 ssh = [
     "sshtunnel>=0.4.0",
     "paramiko>=2.0.0,<4.0.0",
@@ -254,6 +256,10 @@ module = [
     "impala.dbapi",
     "osquery",
     "surrealdb",
+    "databricks",
+    "databricks.sql",
+    "databricks.sdk",
+    "databricks.sdk.core",
     "google.cloud",
     "google.cloud.bigquery",
     "google.cloud.bigquery.dbapi",
