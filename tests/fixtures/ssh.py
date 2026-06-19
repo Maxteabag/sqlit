@@ -41,19 +41,19 @@ def ssh_postgres_db(ssh_server_ready: bool) -> str:
         pytest.skip("SSH server is not available")
 
     try:
-        import psycopg2
+        import psycopg
     except ImportError:
-        pytest.skip("psycopg2 is not installed")
+        pytest.skip("psycopg is not installed")
 
     # postgres-ssh container is accessible on port 5433
     pg_host = os.environ.get("SSH_DIRECT_PG_HOST", "localhost")
     pg_port = int(os.environ.get("SSH_DIRECT_PG_PORT", "5433"))
 
     try:
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             host=pg_host,
             port=pg_port,
-            database=POSTGRES_DATABASE,
+            dbname=POSTGRES_DATABASE,
             user=POSTGRES_USER,
             password=POSTGRES_PASSWORD,
             connect_timeout=10,
@@ -109,10 +109,10 @@ def ssh_postgres_db(ssh_server_ready: bool) -> str:
     yield POSTGRES_DATABASE
 
     try:
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             host=pg_host,
             port=pg_port,
-            database=POSTGRES_DATABASE,
+            dbname=POSTGRES_DATABASE,
             user=POSTGRES_USER,
             password=POSTGRES_PASSWORD,
             connect_timeout=10,

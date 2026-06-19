@@ -38,15 +38,15 @@ def postgres_db(postgres_server_ready: bool) -> str:
         pytest.skip("PostgreSQL is not available")
 
     try:
-        import psycopg2
+        import psycopg
     except ImportError:
-        pytest.skip("psycopg2 is not installed")
+        pytest.skip("psycopg is not installed")
 
     try:
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             host=POSTGRES_HOST,
             port=POSTGRES_PORT,
-            database=POSTGRES_DATABASE,
+            dbname=POSTGRES_DATABASE,
             user=POSTGRES_USER,
             password=POSTGRES_PASSWORD,
             connect_timeout=10,
@@ -122,10 +122,10 @@ def postgres_db(postgres_server_ready: bool) -> str:
     yield POSTGRES_DATABASE
 
     try:
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             host=POSTGRES_HOST,
             port=POSTGRES_PORT,
-            database=POSTGRES_DATABASE,
+            dbname=POSTGRES_DATABASE,
             user=POSTGRES_USER,
             password=POSTGRES_PASSWORD,
             connect_timeout=10,

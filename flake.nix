@@ -36,8 +36,8 @@
         # here; install with `pipx inject` or a custom derivation.
         nixpkgsExtras = {
           ssh = [ pyPkgs.sshtunnel pyPkgs.paramiko ];
-          postgres = [ pyPkgs.psycopg2 ];
-          cockroachdb = [ pyPkgs.psycopg2 ];
+          postgres = [ pyPkgs.psycopg ];
+          cockroachdb = [ pyPkgs.psycopg ];
           mysql = [ pyPkgs.pymysql ];
           duckdb = [ pyPkgs.duckdb ];
           bigquery = [ pyPkgs.google-cloud-bigquery ];

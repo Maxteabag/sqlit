@@ -9,8 +9,8 @@ from tests.helpers import ConnectionConfig
 
 
 def test_postgresql_tls_args_include_files():
-    mock_psycopg2 = MagicMock()
-    with patch.dict("sys.modules", {"psycopg2": mock_psycopg2}):
+    mock_psycopg = MagicMock()
+    with patch.dict("sys.modules", {"psycopg": mock_psycopg}):
         from sqlit.domains.connections.providers.postgresql.adapter import PostgreSQLAdapter
 
         adapter = PostgreSQLAdapter()
@@ -33,7 +33,7 @@ def test_postgresql_tls_args_include_files():
 
         adapter.connect(config)
 
-        kwargs = mock_psycopg2.connect.call_args.kwargs
+        kwargs = mock_psycopg.connect.call_args.kwargs
         assert kwargs["sslmode"] == "verify-full"
         assert kwargs["sslrootcert"] == "/ca.pem"
         assert kwargs["sslcert"] == "/client.pem"
@@ -42,8 +42,8 @@ def test_postgresql_tls_args_include_files():
 
 
 def test_cockroachdb_defaults_to_insecure_without_tls():
-    mock_psycopg2 = MagicMock()
-    with patch.dict("sys.modules", {"psycopg2": mock_psycopg2}):
+    mock_psycopg = MagicMock()
+    with patch.dict("sys.modules", {"psycopg": mock_psycopg}):
         from sqlit.domains.connections.providers.cockroachdb.adapter import CockroachDBAdapter
 
         adapter = CockroachDBAdapter()
@@ -59,7 +59,7 @@ def test_cockroachdb_defaults_to_insecure_without_tls():
 
         adapter.connect(config)
 
-        kwargs = mock_psycopg2.connect.call_args.kwargs
+        kwargs = mock_psycopg.connect.call_args.kwargs
         assert kwargs["sslmode"] == "disable"
 
 

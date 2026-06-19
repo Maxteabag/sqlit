@@ -116,12 +116,12 @@ class TestExtraOptionsPassthrough:
         from sqlit.domains.connections.domain.config import ConnectionConfig, TcpEndpoint
         from sqlit.domains.connections.providers.postgresql.adapter import PostgreSQLAdapter
 
-        mock_psycopg2 = MagicMock()
+        mock_psycopg = MagicMock()
         mock_conn = MagicMock()
         mock_conn.autocommit = False
-        mock_psycopg2.connect.return_value = mock_conn
+        mock_psycopg.connect.return_value = mock_conn
 
-        with patch.dict("sys.modules", {"psycopg2": mock_psycopg2}):
+        with patch.dict("sys.modules", {"psycopg": mock_psycopg}):
             adapter = PostgreSQLAdapter()
             config = ConnectionConfig(
                 name="test_pg",
@@ -141,7 +141,7 @@ class TestExtraOptionsPassthrough:
 
             adapter.connect(config)
 
-            call_kwargs = mock_psycopg2.connect.call_args[1]
+            call_kwargs = mock_psycopg.connect.call_args[1]
             assert call_kwargs.get("application_name") == "my_app"
             assert call_kwargs.get("connect_timeout") == "30"
 
