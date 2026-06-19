@@ -398,6 +398,8 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             import asyncio
 
             columns: list[Any] = []
+            outgoing_fks: list[Any] = []
+            incoming_fks: list[Any] = []
             try:
                 runtime = getattr(self.services, "runtime", None)
                 use_worker = bool(getattr(runtime, "process_worker", False)) and not bool(
@@ -421,17 +423,39 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
                     if error:
                         raise RuntimeError(error)
                     columns = outcome.columns or []
-                else:
-                    schema_service = self._get_schema_service()
-                    if schema_service:
+
+                # FKs always come through the schema service. When the worker is
+                # in use the call still goes through the main connection, which
+                # is safe because FK lookups are short.
+                schema_service = self._get_schema_service()
+                if schema_service:
+                    if not columns:
                         columns = await asyncio.to_thread(
                             schema_service.list_columns,
                             database,
                             schema,
                             name,
-                        )
+                        ) or []
+                    try:
+                        outgoing_fks = await asyncio.to_thread(
+                            schema_service.list_foreign_keys,
+                            database,
+                            schema,
+                            name,
+                        ) or []
+                    except Exception:
+                        outgoing_fks = []
+                    try:
+                        incoming_fks = await asyncio.to_thread(
+                            schema_service.list_referencing_foreign_keys,
+                            database,
+                            schema,
+                            name,
+                        ) or []
+                    except Exception:
+                        incoming_fks = []
             except Exception:
-                columns = []
+                pass
 
             self._schedule_timer(
                 MIN_TIMER_DELAY_S,
@@ -441,6 +465,8 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
                     schema,
                     name,
                     columns,
+                    outgoing_fks,
+                    incoming_fks,
                 ),
             )
 
@@ -453,6 +479,8 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         schema: str | None,
         name: str,
         columns: list[Any],
+        foreign_keys: list[Any] | None = None,
+        referencing_foreign_keys: list[Any] | None = None,
     ) -> None:
         if token != self._last_query_table_token:
             return
@@ -466,6 +494,10 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         ):
             return
         table_info["columns"] = columns
+        if foreign_keys is not None:
+            table_info["foreign_keys"] = foreign_keys
+        if referencing_foreign_keys is not None:
+            table_info["referencing_foreign_keys"] = referencing_foreign_keys
 
     def _schedule_expanded_state_persist(self: TreeMixinHost) -> None:
         timer = getattr(self, "_expanded_state_save_timer", None)

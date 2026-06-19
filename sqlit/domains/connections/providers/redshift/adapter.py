@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -57,6 +58,11 @@ class RedshiftAdapter(CursorBasedAdapter):
     @property
     def supports_indexes(self) -> bool:
         return False  # Redshift uses sort keys instead of indexes
+
+    @property
+    def supports_foreign_keys(self) -> bool:
+        # FKs are informational only (not enforced) but queryable via pg_catalog.
+        return True
 
     @property
     def supports_cross_database_queries(self) -> bool:
@@ -222,6 +228,88 @@ class RedshiftAdapter(CursorBasedAdapter):
             "ORDER BY sequence_name"
         )
         return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Outgoing FKs via pg_catalog.
+
+        Redshift's `information_schema` is often incomplete; query pg_catalog
+        directly. `generate_series` over conkey/confkey expands composite FKs
+        into one row per column pair.
+        """
+        cursor = conn.cursor()
+        schema = (schema or "public").lower()
+        cursor.execute(
+            "SELECT c.conname, k.n, af.attname, "
+            "       rn.nspname, rt.relname, ar.attname "
+            "FROM pg_constraint c "
+            "JOIN pg_class t  ON t.oid  = c.conrelid "
+            "JOIN pg_namespace n ON n.oid = t.relnamespace "
+            "JOIN pg_class rt ON rt.oid = c.confrelid "
+            "JOIN pg_namespace rn ON rn.oid = rt.relnamespace "
+            "JOIN generate_series(1, array_upper(c.conkey, 1)) AS k(n) ON TRUE "
+            "JOIN pg_attribute af ON af.attrelid = t.oid  AND af.attnum = c.conkey[k.n] "
+            "JOIN pg_attribute ar ON ar.attrelid = rt.oid AND ar.attnum = c.confkey[k.n] "
+            "WHERE c.contype = 'f' AND n.nspname = %s AND t.relname = %s "
+            "ORDER BY c.conname, k.n",
+            (schema, table.lower()),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=schema,
+                referenced_schema=row[3] or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        cursor = conn.cursor()
+        schema = (schema or "public").lower()
+        cursor.execute(
+            "SELECT c.conname, k.n, af.attname, "
+            "       n.nspname, t.relname, ar.attname "
+            "FROM pg_constraint c "
+            "JOIN pg_class t  ON t.oid  = c.conrelid "
+            "JOIN pg_namespace n ON n.oid = t.relnamespace "
+            "JOIN pg_class rt ON rt.oid = c.confrelid "
+            "JOIN pg_namespace rn ON rn.oid = rt.relnamespace "
+            "JOIN generate_series(1, array_upper(c.conkey, 1)) AS k(n) ON TRUE "
+            "JOIN pg_attribute af ON af.attrelid = t.oid  AND af.attnum = c.conkey[k.n] "
+            "JOIN pg_attribute ar ON ar.attrelid = rt.oid AND ar.attnum = c.confkey[k.n] "
+            "WHERE c.contype = 'f' AND rn.nspname = %s AND rt.relname = %s "
+            "ORDER BY n.nspname, t.relname, c.conname, k.n",
+            (schema, table.lower()),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[4],
+                column=row[2],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[3] or "",
+                referenced_schema=schema,
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def quote_identifier(self, name: str) -> str:
         """Quote an identifier for Redshift."""

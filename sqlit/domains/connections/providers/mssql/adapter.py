@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -149,6 +150,10 @@ class SQLServerAdapter(DatabaseAdapter):
     @property
     def supports_sequences(self) -> bool:
         """SQL Server 2012+ supports sequences."""
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     def normalize_config(self, config: ConnectionConfig) -> ConnectionConfig:
@@ -419,6 +424,85 @@ class SQLServerAdapter(DatabaseAdapter):
         cursor = self._get_cursor_for_database(conn, database)
         cursor.execute("SELECT name FROM sys.sequences ORDER BY name")
         return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs via sys.foreign_keys + sys.foreign_key_columns."""
+        cursor = self._get_cursor_for_database(conn, database)
+        schema = schema or self.default_schema
+        cursor.execute(
+            "SELECT fk.name, fkc.constraint_column_id, "
+            "       pc.name, SCHEMA_NAME(rt.schema_id), rt.name, rc.name "
+            "FROM sys.foreign_keys fk "
+            "JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id "
+            "JOIN sys.tables pt ON fk.parent_object_id = pt.object_id "
+            "JOIN sys.columns pc ON pc.object_id = pt.object_id "
+            "  AND pc.column_id = fkc.parent_column_id "
+            "JOIN sys.tables rt ON fk.referenced_object_id = rt.object_id "
+            "JOIN sys.columns rc ON rc.object_id = rt.object_id "
+            "  AND rc.column_id = fkc.referenced_column_id "
+            "WHERE SCHEMA_NAME(pt.schema_id) = ? AND pt.name = ? "
+            "ORDER BY fk.name, fkc.constraint_column_id",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=schema,
+                referenced_schema=row[3] or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List FKs from other tables that reference `table`."""
+        cursor = self._get_cursor_for_database(conn, database)
+        schema = schema or self.default_schema
+        cursor.execute(
+            "SELECT fk.name, fkc.constraint_column_id, "
+            "       SCHEMA_NAME(pt.schema_id), pt.name, pc.name, rc.name "
+            "FROM sys.foreign_keys fk "
+            "JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id "
+            "JOIN sys.tables pt ON fk.parent_object_id = pt.object_id "
+            "JOIN sys.columns pc ON pc.object_id = pt.object_id "
+            "  AND pc.column_id = fkc.parent_column_id "
+            "JOIN sys.tables rt ON fk.referenced_object_id = rt.object_id "
+            "JOIN sys.columns rc ON rc.object_id = rt.object_id "
+            "  AND rc.column_id = fkc.referenced_column_id "
+            "WHERE SCHEMA_NAME(rt.schema_id) = ? AND rt.name = ? "
+            "ORDER BY SCHEMA_NAME(pt.schema_id), pt.name, "
+            "         fk.name, fkc.constraint_column_id",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[3],
+                column=row[4],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[2] or "",
+                referenced_schema=schema,
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None

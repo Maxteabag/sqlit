@@ -38,6 +38,7 @@ class SchemaCapabilities:
     supports_sequences: bool
     default_schema: str
     system_databases: frozenset[str]
+    supports_foreign_keys: bool = False
 
 
 @runtime_checkable
@@ -113,6 +114,25 @@ class SequenceInspector(Protocol):
 
     def get_sequence_definition(self, conn: Any, sequence_name: str, database: str | None = None) -> dict[str, Any]:
         ...
+
+
+@runtime_checkable
+class ForeignKeyInspector(Protocol):
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[Any]: ...
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[Any]: ...
 
 
 @runtime_checkable

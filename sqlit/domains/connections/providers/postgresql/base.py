@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -30,6 +31,10 @@ class PostgresBaseAdapter(CursorBasedAdapter):
 
     @property
     def supports_stored_procedures(self) -> bool:
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     @property
@@ -245,6 +250,91 @@ class PostgresBaseAdapter(CursorBasedAdapter):
             "event": None,
             "definition": None,
         }
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs of `table` via information_schema.
+
+        Uses key_column_usage + referential_constraints + constraint_column_usage
+        to assemble (owner_col, ref_table, ref_col). Joining on the constraint
+        catalog handles composite FKs in column order.
+        """
+        cursor = conn.cursor()
+        schema = schema or "public"
+        cursor.execute(
+            "SELECT tc.constraint_name, kcu.ordinal_position, "
+            "       kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "  AND tc.table_schema = kcu.table_schema "
+            "JOIN information_schema.constraint_column_usage ccu "
+            "  ON ccu.constraint_name = tc.constraint_name "
+            "  AND ccu.table_schema = tc.table_schema "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' "
+            "  AND tc.table_schema = %s AND tc.table_name = %s "
+            "ORDER BY tc.constraint_name, kcu.ordinal_position",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=schema,
+                referenced_schema=row[3] or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List FKs from other tables that reference `table`."""
+        cursor = conn.cursor()
+        schema = schema or "public"
+        cursor.execute(
+            "SELECT tc.constraint_name, kcu.ordinal_position, "
+            "       tc.table_schema, tc.table_name, kcu.column_name, "
+            "       ccu.column_name "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "  AND tc.table_schema = kcu.table_schema "
+            "JOIN information_schema.constraint_column_usage ccu "
+            "  ON ccu.constraint_name = tc.constraint_name "
+            "  AND ccu.table_schema = tc.table_schema "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' "
+            "  AND ccu.table_schema = %s AND ccu.table_name = %s "
+            "ORDER BY tc.table_schema, tc.table_name, "
+            "         tc.constraint_name, kcu.ordinal_position",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[3],
+                column=row[4],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[2] or "",
+                referenced_schema=schema,
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_sequence_definition(
         self, conn: Any, sequence_name: str, database: str | None = None

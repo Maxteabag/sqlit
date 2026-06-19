@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     TableInfo,
     TriggerInfo,
@@ -47,6 +48,10 @@ class TeradataAdapter(CursorBasedAdapter):
 
     @property
     def supports_stored_procedures(self) -> bool:
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     _TERADATA_SELECT_KEYWORDS = frozenset(
@@ -254,6 +259,74 @@ class TeradataAdapter(CursorBasedAdapter):
         Auto-increment behaviour is provided by IDENTITY columns instead.
         """
         return []
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs via DBC.All_RI_ChildrenV (denormalized).
+
+        Teradata stores identifiers preserving case but matches case-
+        insensitively by default (NOT CASESPECIFIC). The `schema` arg
+        here maps to Teradata's database name.
+        """
+        cursor = conn.cursor()
+        owner_db = schema or database or ""
+        cursor.execute(
+            "SELECT TRIM(IndexName), KeyPosition, TRIM(ChildKeyColumn), "
+            "       TRIM(ParentDB), TRIM(ParentTable), TRIM(ParentKeyColumn) "
+            "FROM DBC.All_RI_ChildrenV "
+            "WHERE ChildDB = ? AND ChildTable = ? "
+            "ORDER BY IndexID, KeyPosition",
+            (owner_db, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=owner_db,
+                referenced_schema=row[3] or "",
+                constraint_name=row[0] or f"fk_{row[1]}",
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        cursor = conn.cursor()
+        parent_db = schema or database or ""
+        cursor.execute(
+            "SELECT TRIM(IndexName), KeyPosition, TRIM(ChildKeyColumn), "
+            "       TRIM(ChildDB), TRIM(ChildTable), TRIM(ParentKeyColumn) "
+            "FROM DBC.All_RI_ParentsV "
+            "WHERE ParentDB = ? AND ParentTable = ? "
+            "ORDER BY ChildDB, ChildTable, IndexID, KeyPosition",
+            (parent_db, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[4],
+                column=row[2],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[3] or "",
+                referenced_schema=parent_db,
+                constraint_name=row[0] or f"fk_{row[1]}",
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def quote_identifier(self, name: str) -> str:
         escaped = name.replace('"', '""')
