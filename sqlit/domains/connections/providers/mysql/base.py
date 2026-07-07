@@ -265,3 +265,29 @@ class MySQLBaseAdapter(CursorBasedAdapter):
             "event": None,
             "definition": None,
         }
+
+    def get_procedure_definition(
+        self, conn: Any, procedure_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a MySQL/MariaDB stored procedure."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                f"SHOW CREATE PROCEDURE {self.quote_identifier(database)}.{self.quote_identifier(procedure_name)}"
+            )
+        else:
+            cursor.execute(f"SHOW CREATE PROCEDURE {self.quote_identifier(procedure_name)}")
+        row = cursor.fetchone()
+        if row:
+            return {
+                "name": procedure_name,
+                "schema": database or "",
+                "language": "SQL",
+                "definition": row[2] if len(row) > 2 else None,
+            }
+        return {
+            "name": procedure_name,
+            "schema": database or "",
+            "language": None,
+            "definition": None,
+        }

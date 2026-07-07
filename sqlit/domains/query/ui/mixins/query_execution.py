@@ -27,6 +27,10 @@ _SCHEMA_CHANGE_RE = re.compile(
     r"\b(create|alter|drop|truncate|rename|comment|grant|revoke)\b",
     re.IGNORECASE,
 )
+_PROCEDURE_DDL_RE = re.compile(
+    r"\b(create|alter|drop)(\s+or\s+replace)?(\s+definer\s*=\s*[^;]+?)?\s+(procedure|function|trigger|event)\b",
+    re.IGNORECASE,
+)
 _SQL_COMMENT_RE = re.compile(r"(--[^\n]*|/\*.*?\*/)", re.DOTALL)
 _SQL_LITERAL_RE = re.compile(r"('([^']|'')*'|\"([^\"]|\"\")*\"|`[^`]*`|\[[^\]]*\])", re.DOTALL)
 
@@ -34,6 +38,20 @@ _SQL_LITERAL_RE = re.compile(r"('([^']|'')*'|\"([^\"]|\"\")*\"|`[^`]*`|\[[^\]]*\
 def _strip_sql_comments_and_literals(sql: str) -> str:
     sql = _SQL_COMMENT_RE.sub(" ", sql)
     return _SQL_LITERAL_RE.sub(" ", sql)
+
+
+def _sql_changes_schema(sql: str) -> bool:
+    """Return True if SQL changes table/database structure.
+
+    DDL for procedures, functions, triggers, and events is excluded because
+    it does not change table structure and should not trigger an explorer refresh.
+    """
+    cleaned = _strip_sql_comments_and_literals(sql)
+    if not _SCHEMA_CHANGE_RE.search(cleaned):
+        return False
+
+    remaining = _PROCEDURE_DDL_RE.sub("", cleaned)
+    return bool(_SCHEMA_CHANGE_RE.search(remaining))
 
 
 class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
@@ -258,8 +276,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         )
 
     def _query_changes_schema(self: QueryMixinHost, query: str) -> bool:
-        cleaned = _strip_sql_comments_and_literals(query)
-        return bool(_SCHEMA_CHANGE_RE.search(cleaned))
+        return _sql_changes_schema(query)
 
     def _maybe_refresh_explorer_after_query(self: QueryMixinHost, query: str) -> None:
         if not self._query_changes_schema(query):
@@ -522,7 +539,8 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                     use_process_worker = False
 
                 if use_process_worker:
-                    outcome = await asyncio.to_thread(client.execute, query, config, max_rows)
+                    single_statement = executable_statements[0] if executable_statements else query
+                    outcome = await asyncio.to_thread(client.execute, single_statement, config, max_rows)
                     if outcome.cancelled:
                         return
                     if outcome.error:
@@ -569,9 +587,10 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
                 self._maybe_refresh_explorer_after_query(query)
             else:
                 # Single statement - existing behavior
+                single_statement = executable_statements[0] if executable_statements else query
                 result = await asyncio.to_thread(
                     executor.execute,
-                    query,
+                    single_statement,
                     max_rows,
                 )
                 elapsed_ms = (time.perf_counter() - start_time) * 1000

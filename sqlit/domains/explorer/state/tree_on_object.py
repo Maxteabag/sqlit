@@ -7,7 +7,7 @@ from sqlit.core.state_base import DisplayBinding, State, resolve_display_key
 
 
 class TreeOnObjectState(State):
-    """Tree focused on index, trigger, or sequence node."""
+    """Tree focused on index, trigger, sequence, or procedure node."""
 
     help_category = "Explorer"
 
@@ -45,4 +45,4 @@ class TreeOnObjectState(State):
         return left, []
 
     def is_active(self, app: InputContext) -> bool:
-        return app.focus == "explorer" and app.tree_node_kind in ("index", "trigger", "sequence")
+        return app.focus == "explorer" and app.tree_node_kind in ("index", "trigger", "sequence", "procedure")

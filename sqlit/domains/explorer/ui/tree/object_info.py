@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlit.domains.explorer.domain.tree_nodes import IndexNode, SequenceNode, TriggerNode
+from sqlit.domains.explorer.domain.tree_nodes import IndexNode, ProcedureNode, SequenceNode, TriggerNode
 from sqlit.shared.ui.protocols import TreeMixinHost
 
 
@@ -56,7 +56,49 @@ def show_sequence_info(host: TreeMixinHost, data: SequenceNode) -> None:
         host.notify(f"Error getting sequence info: {error}", severity="error")
 
 
-def display_object_info(host: TreeMixinHost, object_type: str, info: dict[str, Any]) -> None:
+def show_procedure_info(host: TreeMixinHost, data: ProcedureNode) -> None:
+    """Show stored procedure definition in the results panel and load it into the query editor."""
+    schema_service = host._get_schema_service()
+    if not schema_service:
+        return
+
+    try:
+        info = schema_service.get_procedure_definition(data.database, data.name)
+        if info is None:
+            host.notify("Stored procedures not supported for this database.", severity="warning")
+            return
+        _prepare_procedure_for_edit(host, data, info)
+        display_object_info(host, "Procedure", info, editable_definition=True)
+    except Exception as error:
+        host.notify(f"Error getting procedure info: {error}", severity="error")
+
+
+def _prepare_procedure_for_edit(host: TreeMixinHost, data: ProcedureNode, info: dict[str, Any]) -> None:
+    """Prepend DROP statement and wrap MySQL/MariaDB DDL in DELIMITER blocks."""
+    definition = info.get("definition")
+    if not definition:
+        return
+
+    provider = getattr(host, "current_provider", None)
+    db_type = provider.metadata.db_type if provider else ""
+    if db_type in ("mysql", "mariadb"):
+        quoted_name = f"`{data.name.replace('`', '``')}`"
+        info["definition"] = (
+            f"DROP PROCEDURE IF EXISTS {quoted_name};\n"
+            "DELIMITER $$\n"
+            f"{definition}\n"
+            "$$\n"
+            "DELIMITER ;"
+        )
+
+
+def display_object_info(
+    host: TreeMixinHost,
+    object_type: str,
+    info: dict[str, Any],
+    *,
+    editable_definition: bool = False,
+) -> None:
     """Display object info in the results table as a Property/Value view."""
     rows: list[tuple[str, str]] = []
     for key, value in info.items():
@@ -81,4 +123,7 @@ def display_object_info(host: TreeMixinHost, object_type: str, info: dict[str, A
 
     definition = info.get("definition")
     if definition:
-        host.query_input.text = f"/*\n{definition}\n*/"
+        if editable_definition:
+            host.query_input.text = str(definition)
+        else:
+            host.query_input.text = f"/*\n{definition}\n*/"

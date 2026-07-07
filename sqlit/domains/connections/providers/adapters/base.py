@@ -412,6 +412,26 @@ class DatabaseAdapter(ABC):
             "cycle": None,
         }
 
+    def get_procedure_definition(
+        self, conn: Any, procedure_name: str, database: str | None = None
+    ) -> dict[str, Any]:
+        """Get detailed information about a stored procedure.
+
+        Returns a dict with keys like:
+        - name: Procedure name
+        - schema: Schema/database the procedure belongs to
+        - language: Implementation language (e.g. SQL)
+        - definition: Procedure source code/DDL
+
+        Default implementation returns minimal info. Override in subclasses.
+        """
+        return {
+            "name": procedure_name,
+            "schema": database or "",
+            "language": None,
+            "definition": None,
+        }
+
     @abstractmethod
     def quote_identifier(self, name: str) -> str:
         """Quote an identifier (table name, column name, etc.)."""

@@ -206,3 +206,13 @@ class ExplorerSchemaService:
             lambda: inspector.get_sequence_definition(self.session.connection, name, db_arg),
             database,
         )
+
+    def get_procedure_definition(self, database: str | None, name: str) -> dict[str, Any] | None:
+        inspector = self.session.provider.schema_inspector
+        if not isinstance(inspector, ProcedureInspector):
+            return None
+        db_arg = self._resolve_db_arg(database)
+        return self._run_with_retry(
+            lambda: inspector.get_procedure_definition(self.session.connection, name, db_arg),
+            database,
+        )
