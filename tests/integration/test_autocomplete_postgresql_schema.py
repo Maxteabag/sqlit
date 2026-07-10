@@ -79,8 +79,82 @@ def postgres_schema_table(postgres_server_ready: bool, postgres_db: str):
     conn.close()
 
 
+@pytest.fixture
+def postgres_mixed_case_table(postgres_server_ready: bool, postgres_db: str):
+    """Create mixed-case PostgreSQL identifiers that require double quotes."""
+    if not postgres_server_ready:
+        pytest.skip("PostgreSQL is not available")
+
+    try:
+        import psycopg2
+    except ImportError:
+        pytest.skip("psycopg2 is not installed")
+
+    conn = psycopg2.connect(
+        host=POSTGRES_HOST,
+        port=POSTGRES_PORT,
+        database=postgres_db,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
+        connect_timeout=10,
+    )
+    conn.autocommit = True
+    cursor = conn.cursor()
+    cursor.execute('DROP TABLE IF EXISTS "UserProfile" CASCADE')
+    cursor.execute("""
+        CREATE TABLE "UserProfile" (
+            id INTEGER PRIMARY KEY,
+            "createdAt" TIMESTAMP NOT NULL,
+            "displayName" TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        INSERT INTO "UserProfile" (id, "createdAt", "displayName")
+        VALUES (1, NOW(), 'Ada')
+    """)
+    conn.close()
+
+    yield
+
+    conn = psycopg2.connect(
+        host=POSTGRES_HOST,
+        port=POSTGRES_PORT,
+        database=postgres_db,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
+        connect_timeout=10,
+    )
+    conn.autocommit = True
+    cursor = conn.cursor()
+    cursor.execute('DROP TABLE IF EXISTS "UserProfile" CASCADE')
+    conn.close()
+
+
 def _suggestions(app: SSMSTUI, sql: str) -> list[str]:
     return app._get_autocomplete_suggestions(sql, len(sql))
+
+
+def _assert_postgres_requires_quotes_for_mixed_case(postgres_db: str) -> None:
+    """Sanity-check the real PostgreSQL behavior behind the autocomplete regression."""
+    psycopg2 = pytest.importorskip("psycopg2")
+
+    conn = psycopg2.connect(
+        host=POSTGRES_HOST,
+        port=POSTGRES_PORT,
+        database=postgres_db,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
+        connect_timeout=10,
+    )
+    conn.autocommit = True
+    cursor = conn.cursor()
+    cursor.execute('SELECT "createdAt", "displayName" FROM "UserProfile"')
+    assert cursor.fetchone()[1] == "Ada"
+
+    with pytest.raises(psycopg2.Error):
+        cursor.execute("SELECT createdAt FROM UserProfile")
+
+    conn.close()
 
 
 @pytest.mark.asyncio
@@ -155,4 +229,80 @@ async def test_postgresql_schema_table_autocomplete(
             alias_columns = _suggestions(app, "SELECT * FROM test.hello_world h WHERE h.")
 
         assert {"id", "greeting"}.issubset({item.lower() for item in alias_columns})
+        assert "Loading..." not in alias_columns
+
+
+@pytest.mark.asyncio
+async def test_postgresql_mixed_case_identifier_autocomplete_quotes_suggestions(
+    postgres_server_ready: bool,
+    postgres_db: str,
+    postgres_mixed_case_table,
+    temp_config_dir: str,
+) -> None:
+    """Autocomplete should emit executable quoted identifiers for mixed-case PostgreSQL names."""
+    if not postgres_server_ready:
+        pytest.skip("PostgreSQL is not available")
+
+    _assert_postgres_requires_quotes_for_mixed_case(postgres_db)
+
+    config = ConnectionConfig(
+        name="test-postgres-quoted-autocomplete",
+        db_type="postgresql",
+        server=POSTGRES_HOST,
+        port=str(POSTGRES_PORT),
+        database=postgres_db,
+        username=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
+    )
+
+    app = SSMSTUI()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.1)
+
+        app.connections = [config]
+        app.refresh_tree()
+        await wait_for_condition(
+            pilot,
+            lambda: len(app.object_tree.root.children) > 0,
+            timeout_seconds=5.0,
+            description="tree to be populated with connections",
+        )
+
+        app.connect_to_server(config)
+        await wait_for_condition(
+            pilot,
+            lambda: app.current_connection is not None,
+            timeout_seconds=15.0,
+            description="connection to be established",
+        )
+
+        load_schema_async = getattr(app, "_load_schema_cache_async", None)
+        if callable(load_schema_async):
+            await load_schema_async()
+
+        await wait_for_condition(
+            pilot,
+            lambda: "userprofile" in getattr(app, "_table_metadata", {}),
+            timeout_seconds=20.0,
+            description="mixed-case table metadata to be loaded",
+        )
+
+        table_suggestions = _suggestions(app, "SELECT * FROM User")
+        assert '"UserProfile"' in table_suggestions
+        assert "UserProfile" not in table_suggestions
+
+        alias_columns = _suggestions(app, 'SELECT * FROM "UserProfile" u WHERE u.')
+        if alias_columns == ["Loading..."]:
+            await wait_for_condition(
+                pilot,
+                lambda: bool(app._schema_cache.get("columns", {}).get("userprofile")),
+                timeout_seconds=10.0,
+                description="mixed-case table columns to load",
+            )
+            alias_columns = _suggestions(app, 'SELECT * FROM "UserProfile" u WHERE u.')
+
+        assert '"createdAt"' in alias_columns
+        assert '"displayName"' in alias_columns
+        assert "createdAt" not in alias_columns
+        assert "displayName" not in alias_columns
         assert "Loading..." not in alias_columns

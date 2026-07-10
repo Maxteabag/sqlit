@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,8 @@ from sqlit.domains.connections.providers.adapters.base import (
 
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
+
+_POSTGRES_SAFE_UNQUOTED_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
 class PostgresBaseAdapter(CursorBasedAdapter):
@@ -118,6 +121,12 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         """
         escaped = name.replace('"', '""')
         return f'"{escaped}"'
+
+    def format_autocomplete_identifier(self, name: str) -> str:
+        """Quote autocomplete identifiers that PostgreSQL would otherwise fold."""
+        if _POSTGRES_SAFE_UNQUOTED_IDENTIFIER.fullmatch(name):
+            return name
+        return self.quote_identifier(name)
 
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT LIMIT query for PostgreSQL."""

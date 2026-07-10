@@ -417,6 +417,15 @@ class DatabaseAdapter(ABC):
         """Quote an identifier (table name, column name, etc.)."""
         pass
 
+    def format_autocomplete_identifier(self, name: str) -> str:
+        """Format an identifier for insertion from autocomplete.
+
+        Most dialects keep the raw name for backwards-compatible suggestions.
+        Dialects with case-sensitive quoted identifiers can override this to
+        return executable SQL for names that need quoting.
+        """
+        return name
+
     def qualified_name(self, database: str | None, schema: str | None, name: str) -> str:
         """Build a quoted qualified identifier, skipping empty segments.
 
