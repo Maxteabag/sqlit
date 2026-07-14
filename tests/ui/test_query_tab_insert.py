@@ -150,3 +150,50 @@ class TestQueryTabInsertion:
                 assert app.query_input.text == "sel\t"
         finally:
             reset_keymap()
+
+    @pytest.mark.asyncio
+    async def test_tab_honors_other_autocomplete_action_rebinding(self) -> None:
+        app = _make_app()
+
+        try:
+            async with app.run_test(size=(100, 35)) as pilot:
+                app.action_focus_query()
+                await pilot.press("i")
+                await pilot.pause()
+
+                defaults = DefaultKeymapProvider()
+                action_keys = [
+                    binding
+                    for binding in defaults.get_action_keys()
+                    if not (
+                        binding.key == "tab"
+                        and binding.context == "autocomplete"
+                    )
+                ]
+                action_keys.append(
+                    ActionKeyDef("tab", "autocomplete_next", "autocomplete")
+                )
+                set_keymap(
+                    FileBasedKeymapProvider(
+                        "rebound-autocomplete-next",
+                        defaults.get_leader_commands(),
+                        action_keys,
+                    )
+                )
+
+                app.query_input.text = "s"
+                app.query_input.cursor_location = (0, 1)
+                app._show_autocomplete(
+                    ["select", "set", "session", "sequence", "security"],
+                    "s",
+                )
+                await pilot.pause()
+                assert app.autocomplete_dropdown.selected_index == 0
+
+                await pilot.press("tab")
+                await pilot.pause()
+
+                assert app.query_input.text == "s"
+                assert app.autocomplete_dropdown.selected_index == 1
+        finally:
+            reset_keymap()
