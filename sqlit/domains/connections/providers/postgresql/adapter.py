@@ -17,6 +17,42 @@ if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
 
 
+def _fallback_to_text_caster(psycopg2: Any, default_caster: Any) -> Any:
+    """Preserve psycopg2 temporal conversion, falling back for unsupported years."""
+
+    def cast(value: str | None, cursor: Any) -> Any:
+        try:
+            return default_caster(value, cursor)
+        except (ValueError, OverflowError, psycopg2.DataError):
+            return value
+
+    return cast
+
+
+def _register_temporal_typecasters(psycopg2: Any, conn: Any) -> None:
+    """Keep PostgreSQL temporal values readable when Python cannot represent them."""
+    extensions = psycopg2.extensions
+    temporal_types = (
+        ("DATE", extensions.PYDATE, extensions.PYDATEARRAY),
+        ("TIMESTAMP", extensions.PYDATETIME, extensions.PYDATETIMEARRAY),
+        ("TIMESTAMPTZ", extensions.PYDATETIMETZ, extensions.PYDATETIMETZARRAY),
+    )
+
+    for name, default_caster, default_array_caster in temporal_types:
+        caster = extensions.new_type(
+            default_caster.values,
+            f"SQLIT_{name}",
+            _fallback_to_text_caster(psycopg2, default_caster),
+        )
+        extensions.register_type(caster, conn)
+        array_caster = extensions.new_array_type(
+            default_array_caster.values,
+            f"SQLIT_{name}_ARRAY",
+            caster,
+        )
+        extensions.register_type(array_caster, conn)
+
+
 class PostgreSQLAdapter(PostgresBaseAdapter):
     """Adapter for PostgreSQL using psycopg2."""
 
@@ -83,6 +119,7 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
 
         connect_args.update(config.extra_options)
         conn = psycopg2.connect(**connect_args)
+        _register_temporal_typecasters(psycopg2, conn)
         # Enable autocommit to avoid "transaction aborted" errors on failed statements
         conn.autocommit = True
         return conn
