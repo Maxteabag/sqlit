@@ -150,12 +150,27 @@ class QueryTextArea(TextArea):
             if not self._is_insert_mode():
                 return
             # If the autocomplete dropdown is open, let the app's key router
-            # accept the suggestion instead of inserting a tab character.
+            # accept the suggestion only when Tab is actually bound to the
+            # autocomplete_accept action. Otherwise Tab should insert a tab.
             app = cast("AutocompleteProtocol", self.app)
             if getattr(app, "_autocomplete_visible", False):
-                return
+                from sqlit.core.keymap import get_keymap
+
+                keymap = get_keymap()
+                if "tab" in keymap.keys_for_action("autocomplete_accept"):
+                    return
             self._push_undo_if_changed()
-            self.insert(self._tab_insert_string())
+            tab = self._tab_insert_string()
+            selection = self.selection
+            if selection.start != selection.end:
+                self.replace(
+                    tab,
+                    selection.start,
+                    selection.end,
+                    maintain_selection_offset=False,
+                )
+            else:
+                self.insert(tab)
             event.prevent_default()
             event.stop()
             return
