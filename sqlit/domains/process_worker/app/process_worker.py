@@ -140,7 +140,14 @@ class _WorkerState:
             )
             return
 
-        if len(split_statements(query)) > 1:
+        from sqlit.domains.query.editing.comments import is_comment_only_statement
+
+        executable_statements = [
+            statement
+            for statement in split_statements(query)
+            if not is_comment_only_statement(statement)
+        ]
+        if len(executable_statements) > 1:
             self.send(
                 {
                     "type": "error",
