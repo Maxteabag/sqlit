@@ -83,7 +83,18 @@ class OracleAdapter(DatabaseAdapter):
             sid = config.get_option("oracle_sid") or endpoint.database
             dsn = oracledb.makedsn(endpoint.host, port, sid=sid)
         else:
-            dsn = f"{endpoint.host}:{port}/{endpoint.database}"
+            protocol = str(config.get_option("oracle_protocol", "default")).strip().lower()
+            if protocol not in {"", "default", "tcp", "tcps"}:
+                raise ValueError("Oracle protocol must be Default, TCP, or TCPS")
+            protocol_prefix = f"{protocol}://" if protocol in {"tcp", "tcps"} else ""
+            dsn = f"{protocol_prefix}{endpoint.host}:{port}/{endpoint.database}"
+
+            parameters = str(
+                config.get_option("oracle_easy_connect_parameters", "") or ""
+            ).strip()
+            parameters = parameters.lstrip("?")
+            if parameters:
+                dsn = f"{dsn}?{parameters}"
 
         # Determine connection mode based on oracle_role
         oracle_role = config.get_option("oracle_role", "normal")
