@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from rich.segment import Segment
 from textual.color import Color
@@ -22,6 +22,18 @@ class QueryTextArea(TextArea):
     _terminal_cursor_active: bool = False
     _relative_line_numbers: bool = False
     _last_cursor_row: int = -1
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize with focus-friendly tab behavior and real tab characters."""
+        kwargs.setdefault("tab_behavior", "focus")
+        super().__init__(*args, **kwargs)
+        self.indent_type = "tabs"
+
+    def _tab_insert_string(self) -> str:
+        """Return the string to insert when Tab is pressed."""
+        if self.indent_type == "spaces":
+            return " " * self._find_columns_to_next_tab_stop()
+        return "\t"
 
     # Normalize OS-variant shortcuts to canonical forms
     # Maps: super → ctrl for common operations, strips shift where irrelevant
@@ -128,8 +140,40 @@ class QueryTextArea(TextArea):
         self._sync_terminal_cursor()
 
     async def _on_key(self, event: Key) -> None:
-        """Intercept clipboard, undo/redo, and Enter keys."""
+        """Intercept clipboard, undo/redo, Enter, and Tab keys."""
         normalized_key = self._normalize_key(event.key)
+
+        # Tab inserts a real tab character in INSERT mode. We do this manually
+        # so the widget can keep the default tab_behavior='focus' and not let
+        # Textual's indent-aware TextArea consume Escape for focus navigation.
+        if event.key == "tab":
+            if not self._is_insert_mode():
+                return
+            # If the autocomplete dropdown is open, let the app's key router
+            # accept the suggestion only when Tab is actually bound to the
+            # autocomplete_accept action. Otherwise Tab should insert a tab.
+            app = cast("AutocompleteProtocol", self.app)
+            if getattr(app, "_autocomplete_visible", False):
+                from sqlit.core.keymap import get_keymap
+
+                keymap = get_keymap()
+                if "tab" in keymap.keys_for_action("autocomplete_accept"):
+                    return
+            self._push_undo_if_changed()
+            tab = self._tab_insert_string()
+            selection = self.selection
+            if selection.start != selection.end:
+                self.replace(
+                    tab,
+                    selection.start,
+                    selection.end,
+                    maintain_selection_offset=False,
+                )
+            else:
+                self.insert(tab)
+            event.prevent_default()
+            event.stop()
+            return
 
         from sqlit.core.keymap import get_keymap
         keymap = get_keymap()
