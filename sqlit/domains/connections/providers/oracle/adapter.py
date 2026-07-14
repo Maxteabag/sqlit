@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.adapters.base import (
@@ -16,6 +17,31 @@ from sqlit.domains.connections.providers.registry import get_default_port
 
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
+
+
+_LEADING_SQL_COMMENTS = re.compile(
+    r"^\s*(?:(?:--[^\n]*(?:\n|$))|(?:/\*.*?\*/\s*))*",
+    re.DOTALL,
+)
+_PLSQL_START = re.compile(
+    r"^(?:BEGIN|DECLARE)\b|^CREATE\s+(?:OR\s+REPLACE\s+)?"
+    r"(?:(?:NON)?EDITIONABLE\s+)?"
+    r"(?:FUNCTION|PACKAGE|PROCEDURE|TRIGGER|TYPE\s+BODY)\b",
+    re.IGNORECASE,
+)
+
+
+def _prepare_statement(query: str) -> str:
+    """Remove SQL*Plus terminators that python-oracledb does not accept."""
+    statement = query.rstrip()
+    if not statement.endswith(";"):
+        return query
+
+    without_leading_comments = _LEADING_SQL_COMMENTS.sub("", statement)
+    if _PLSQL_START.match(without_leading_comments):
+        return query
+
+    return statement[:-1].rstrip()
 
 
 class OracleAdapter(DatabaseAdapter):
@@ -339,7 +365,7 @@ class OracleAdapter(DatabaseAdapter):
         """Execute a query on Oracle with optional row limit."""
         cursor = conn.cursor()
         try:
-            cursor.execute(query)
+            cursor.execute(_prepare_statement(query))
             if cursor.description:
                 columns = [col[0] for col in cursor.description]
                 if max_rows is not None:
@@ -359,7 +385,7 @@ class OracleAdapter(DatabaseAdapter):
         """Execute a non-query on Oracle."""
         cursor = conn.cursor()
         try:
-            cursor.execute(query)
+            cursor.execute(_prepare_statement(query))
             rowcount = int(cursor.rowcount)
             conn.commit()
             return rowcount
