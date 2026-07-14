@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
 
-SELECT_KEYWORDS = frozenset(["SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA"])
+SELECT_KEYWORDS = frozenset(["SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA", "CALL", "EXEC", "EXECUTE"])
 
 
 def resolve_file_path(path_str: str) -> Path:

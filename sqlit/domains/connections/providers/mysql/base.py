@@ -14,6 +14,7 @@ from sqlit.domains.connections.providers.adapters.base import (
     SequenceInfo,
     TableInfo,
     TriggerInfo,
+    _sanitize_row,
 )
 
 
@@ -37,7 +38,40 @@ class MySQLBaseAdapter(CursorBasedAdapter):
     def supports_stored_procedures(self) -> bool:
         return True
 
-    def apply_database_override(self, config: "ConnectionConfig", database: str) -> "ConnectionConfig":
+    def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
+        """Execute a row-returning query, handling MySQL stored procedure result sets.
+
+        MySQL/MariaDB stored procedures can produce multiple result sets. The base
+        implementation only reads the first one and may leave the connection in a
+        "commands out of sync" state. This override skips status-only result sets,
+        returns the first result set that has columns, and consumes the rest.
+        """
+        cursor = conn.cursor()
+        cursor.execute(query)
+
+        # Stored procedures may produce a status-only result set before the data.
+        # Advance to the first result set that actually has columns.
+        while cursor.description is None and getattr(cursor, "nextset", lambda: False)():
+            pass
+
+        if cursor.description:
+            columns = [col[0] for col in cursor.description]
+            if max_rows is not None:
+                rows = cursor.fetchmany(max_rows + 1)
+                truncated = len(rows) > max_rows
+                if truncated:
+                    rows = rows[:max_rows]
+            else:
+                rows = cursor.fetchall()
+                truncated = False
+            # Consume any remaining result sets to keep the connection clean.
+            while getattr(cursor, "nextset", lambda: False)():
+                pass
+            return columns, [_sanitize_row(row) for row in rows], truncated
+
+        return [], [], False
+
+    def apply_database_override(self, config: ConnectionConfig, database: str) -> ConnectionConfig:
         """Apply a default database for unqualified queries."""
         if not database:
             return config
