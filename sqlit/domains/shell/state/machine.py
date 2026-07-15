@@ -121,7 +121,7 @@ class UIStateMachine:
             self.tree_on_database,  # For database nodes (multi-database servers)
             self.tree_on_table,
             self.tree_on_folder,
-            self.tree_on_object,  # For index/trigger/sequence nodes
+            self.tree_on_object,  # For index/trigger/sequence/procedure nodes
             self.tree_focused,
             self.autocomplete_active,  # Before query_insert (more specific)
             self.query_visual,  # Before query_normal (more specific)

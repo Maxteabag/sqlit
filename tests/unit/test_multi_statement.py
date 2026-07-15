@@ -6,8 +6,6 @@ in a single query, including error handling and result collection.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestStatementSplitting:
     """Tests for splitting multi-statement queries."""
@@ -469,3 +467,109 @@ WHERE id = 1"""
 
         assert normalized == query
         assert ";" not in normalized
+
+    def test_preserves_delimiter_commands(self):
+        """SQL with DELIMITER commands should not be normalized."""
+        from sqlit.domains.query.app.multi_statement import normalize_for_execution
+
+        query = """DELIMITER $$
+CREATE PROCEDURE p() BEGIN SELECT 1; END $$
+DELIMITER ;"""
+        normalized = normalize_for_execution(query)
+
+        assert normalized == query
+
+
+class TestDelimiterSplitting:
+    """Tests for MySQL/MariaDB-style DELIMITER splitting."""
+
+    def test_split_procedure_body_with_delimiter(self):
+        """Procedure body containing semicolons should stay as one statement."""
+        from sqlit.domains.query.app.multi_statement import split_statements
+
+        query = """DROP PROCEDURE IF EXISTS p;
+DELIMITER $$
+CREATE PROCEDURE p()
+BEGIN
+    SELECT 1;
+    SELECT 2;
+END $$
+DELIMITER ;"""
+        statements = split_statements(query)
+
+        assert len(statements) == 2
+        assert statements[0] == "DROP PROCEDURE IF EXISTS p"
+        assert "CREATE PROCEDURE p()" in statements[1]
+        assert "SELECT 1;" in statements[1]
+        assert "SELECT 2;" in statements[1]
+        assert "END" in statements[1]
+
+    def test_split_with_custom_delimiter_and_restore(self):
+        """Delimiter should switch back to semicolon after DELIMITER ;."""
+        from sqlit.domains.query.app.multi_statement import split_statements
+
+        query = """DELIMITER //
+CREATE FUNCTION f() RETURNS INT BEGIN RETURN 1; END //
+DELIMITER ;
+SELECT 1;
+SELECT 2;"""
+        statements = split_statements(query)
+
+        assert len(statements) == 3
+        assert "CREATE FUNCTION f()" in statements[0]
+        assert statements[1] == "SELECT 1"
+        assert statements[2] == "SELECT 2"
+
+    def test_delimiter_commands_are_excluded(self):
+        """The DELIMITER lines themselves should not be executable statements."""
+        from sqlit.domains.query.app.multi_statement import split_statements
+
+        query = """DELIMITER $$
+CREATE PROCEDURE p() BEGIN SELECT 1; END $$
+DELIMITER ;"""
+        statements = split_statements(query)
+
+        for stmt in statements:
+            assert not stmt.strip().upper().startswith("DELIMITER")
+
+    def test_semicolons_inside_strings_with_delimiter(self):
+        """Semicolons inside string literals should not split procedure body."""
+        from sqlit.domains.query.app.multi_statement import split_statements
+
+        query = """DELIMITER $$
+CREATE PROCEDURE p()
+BEGIN
+    SELECT 'a;b';
+END $$
+DELIMITER ;"""
+        statements = split_statements(query)
+
+        assert len(statements) == 1
+        assert "'a;b'" in statements[0]
+
+    def test_real_mysql_procedure_with_double_quote_string(self):
+        """Procedure body with double-quoted string and semicolons splits correctly."""
+        from sqlit.domains.query.app.multi_statement import split_statements
+
+        query = '''DROP PROCEDURE IF EXISTS `getallpositivecache`;
+DELIMITER $$
+CREATE DEFINER=`root`@`%` PROCEDURE `getallpositivecache`()
+BEGIN
+\tSELECT
+\t\tCOALESCE(id, 0),
+\t\tCOALESCE(sentence_id, 0),
+\t\tCOALESCE(answer, "")
+\tFROM
+\t\tpositivecache;
+END
+$$
+DELIMITER ;'''
+        statements = split_statements(query)
+
+        assert len(statements) == 2
+        assert statements[0] == "DROP PROCEDURE IF EXISTS `getallpositivecache`"
+        assert "CREATE DEFINER=`root`@`%` PROCEDURE `getallpositivecache`()" in statements[1]
+        assert "COALESCE(answer, \"\")" in statements[1]
+        assert "positivecache;" in statements[1]
+        assert "END" in statements[1]
+        assert "$$" not in statements[1]
