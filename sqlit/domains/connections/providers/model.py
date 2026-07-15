@@ -36,6 +36,7 @@ class SchemaCapabilities:
     supports_indexes: bool
     supports_triggers: bool
     supports_sequences: bool
+    support_drop_table: bool
     default_schema: str
     system_databases: frozenset[str]
 
@@ -58,6 +59,9 @@ class Dialect(Protocol):
     def quote_identifier(self, name: str) -> str: ...
 
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
+        ...
+
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
         ...
 
     def format_table_name(self, schema: str | None, table: str) -> str: ...

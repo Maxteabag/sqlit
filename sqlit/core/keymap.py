@@ -347,6 +347,7 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("d", "delete_connection_folder", "tree"),
             ActionKeyDef("delete", "delete_connection_folder", "tree", primary=False),
             ActionKeyDef("d", "delete_connection", "tree"),
+            ActionKeyDef("d", "drop_table", "tree"),
             ActionKeyDef("delete", "delete_connection", "tree", primary=False),
             ActionKeyDef("D", "duplicate_connection", "tree"),
             ActionKeyDef("m", "move_connection_to_folder", "tree"),

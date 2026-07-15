@@ -275,6 +275,10 @@ class DuckDBAdapter(DatabaseAdapter):
         schema = schema or "main"
         return f'SELECT * FROM "{schema}"."{table}" LIMIT {limit}'
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        schema = schema or "main"
+        return f'DROP TABLE IF EXISTS "{schema}"."{table}"'
+
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on DuckDB with optional row limit."""
         result = conn.execute(query)

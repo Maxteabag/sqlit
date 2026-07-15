@@ -90,6 +90,7 @@ def build_adapter_provider(spec: ProviderSpec, schema: ConnectionSchema, adapter
         supports_indexes=bool(getattr(adapter, "supports_indexes", False)),
         supports_triggers=bool(getattr(adapter, "supports_triggers", False)),
         supports_sequences=bool(getattr(adapter, "supports_sequences", False)),
+        support_drop_table=(bool(getattr(adapter, "supports_drop_table", False))),
         default_schema=str(getattr(adapter, "default_schema", "")),
         system_databases=frozenset(getattr(adapter, "system_databases", frozenset())),
     )

@@ -133,6 +133,11 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         schema = schema or "public"
         return f'SELECT * FROM "{schema}"."{table}" LIMIT {limit}'
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        schema = schema or "public"
+        return f'DROP TABLE IF EXISTS "{schema}"."{table}"'
+
     @property
     def supports_sequences(self) -> bool:
         """PostgreSQL supports sequences."""
