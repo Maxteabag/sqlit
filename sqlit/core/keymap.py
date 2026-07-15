@@ -15,6 +15,9 @@ KEY_DISPLAY_OVERRIDES: dict[str, str] = {
     "circumflex_accent": "^",
     "dollar_sign": "$",
     "percent_sign": "%",
+    "equals_sign": "=",
+    "minus": "-",
+    "plus": "+",
     "space": "<space>",
     "escape": "<esc>",
     "enter": "<enter>",
@@ -191,6 +194,8 @@ class DefaultKeymapProvider(KeymapProvider):
             # View
             LeaderCommandDef("e", "toggle_explorer", "Toggle Explorer", "View"),
             LeaderCommandDef("f", "toggle_fullscreen", "Toggle Maximize", "View"),
+            LeaderCommandDef("equals_sign", "grow_active_pane", "Grow Pane", "View"),
+            LeaderCommandDef("minus", "shrink_active_pane", "Shrink Pane", "View"),
             # Connection
             LeaderCommandDef("c", "show_connection_picker", "Connect", "Connection"),
             LeaderCommandDef("x", "disconnect", "Disconnect", "Connection", guard="has_connection"),
@@ -471,6 +476,10 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("e", "focus_explorer", "navigation"),
             ActionKeyDef("q", "focus_query", "navigation"),
             ActionKeyDef("r", "focus_results", "navigation"),
+            # Pane resize is driven by the leader menu (space =/-) and mouse drag
+            # by default. The grow_sidebar/shrink_sidebar/grow_split/shrink_split
+            # actions stay rebindable via the keymap editor for users who want
+            # direct keys (no default binding avoids the macOS ctrl+arrow clash).
             # Query (autocomplete)
             ActionKeyDef("ctrl+j", "autocomplete_next", "autocomplete"),
             ActionKeyDef("down", "autocomplete_next", "autocomplete", primary=False),

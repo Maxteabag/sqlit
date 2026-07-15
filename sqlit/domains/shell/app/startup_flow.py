@@ -74,6 +74,7 @@ def run_on_mount(app: AppProtocol) -> None:
         mode = parse_alert_mode(settings.get("query_alert_mode"))
         if mode is not None:
             app.services.runtime.query_alert_mode = int(mode)
+    _apply_persisted_pane_sizes(app, settings)
     app._startup_stamp("settings_applied")
 
     apply_mock_settings(app, settings)
@@ -131,6 +132,24 @@ def run_on_mount(app: AppProtocol) -> None:
 
         app.call_after_refresh(_connect_startup)
     log_startup_timing(app)
+
+
+def _apply_persisted_pane_sizes(app: AppProtocol, settings: dict) -> None:
+    """Restore user-chosen pane sizes saved from a previous session."""
+    def _as_int(value: object) -> int | None:
+        try:
+            return int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+
+    app._sidebar_width = _as_int(settings.get("sidebar_width"))
+    app._query_height = _as_int(settings.get("query_area_height"))
+    applier = getattr(app, "apply_persisted_pane_sizes", None)
+    if callable(applier):
+        try:
+            applier()
+        except Exception:
+            pass
 
 
 def _warn_on_missing_actions(app: AppProtocol, is_headless: bool) -> None:
