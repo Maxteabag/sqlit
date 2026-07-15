@@ -64,7 +64,6 @@ class TreeFilterMixin:
     _tree_filter_text: str = ""
     _tree_filter_query: str = ""
     _tree_filter_fuzzy: bool = False
-    _tree_filter_typing: bool = False
     _tree_filter_matches: list[Any] = []
     _tree_filter_match_index: int = 0
     _tree_original_labels: dict[int, str] = {}
@@ -79,7 +78,6 @@ class TreeFilterMixin:
         self._tree_filter_text = ""
         self._tree_filter_query = ""
         self._tree_filter_fuzzy = False
-        self._tree_filter_typing = True
         self._tree_filter_matches = []
         self._tree_filter_match_index = 0
         self._tree_original_labels = {}
@@ -100,7 +98,6 @@ class TreeFilterMixin:
         self._tree_filter_text = ""
         self._tree_filter_query = ""
         self._tree_filter_fuzzy = False
-        self._tree_filter_typing = False
         self.tree_filter_input.hide()
         self._restore_tree_labels()
         self._restore_tree_from_snapshot()
@@ -212,40 +209,33 @@ class TreeFilterMixin:
             return
 
         key = event.key
+
         if key == "enter":
             self.action_tree_filter_accept()
             event.prevent_default()
             event.stop()
             return
 
-        if not self._tree_filter_typing:
-            if key in ("n", "j"):
-                self.action_tree_filter_next()
-                event.prevent_default()
-                event.stop()
-                return
-
-            if key in ("N", "k"):
-                self.action_tree_filter_prev()
-                event.prevent_default()
-                event.stop()
-                return
-
-            if key == "/":
-                self.action_tree_filter()
-                event.prevent_default()
-                event.stop()
-                return
-
         # Handle backspace
         if key == "backspace":
-            if self._tree_filter_typing:
-                if self._tree_filter_text:
-                    self._tree_filter_text = self._tree_filter_text[:-1]
-                    self._update_tree_filter()
-                else:
-                    # Exit filter when backspacing with no text
-                    self.action_tree_filter_close()
+            if self._tree_filter_text:
+                self._tree_filter_text = self._tree_filter_text[:-1]
+                self._update_tree_filter()
+            else:
+                # Exit filter when backspacing with no text
+                self.action_tree_filter_close()
+            event.prevent_default()
+            event.stop()
+            return
+
+        if key == "up":
+            self.action_tree_filter_prev()
+            event.prevent_default()
+            event.stop()
+            return
+
+        if key == "down":
+            self.action_tree_filter_next()
             event.prevent_default()
             event.stop()
             return
@@ -254,14 +244,6 @@ class TreeFilterMixin:
         # event.key might be "shift+?" but event.character will be "?"
         char = getattr(event, "character", None)
         if char and char.isprintable():
-            if char == "/" and not self._tree_filter_typing:
-                self.action_tree_filter()
-                event.prevent_default()
-                event.stop()
-                return
-            if not self._tree_filter_typing:
-                super().on_key(event)  # type: ignore[misc]
-                return
             self._tree_filter_text += char
             self._update_tree_filter()
             event.prevent_default()
