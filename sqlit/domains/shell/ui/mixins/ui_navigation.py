@@ -21,6 +21,14 @@ class UINavigationMixin(UIStatusMixin, UILeaderMixin):
     _notification_timer: Timer | None = None
     _leader_timer: Timer | None = None
     _last_active_pane: str | None = None
+    _sidebar_width: int | None = None
+    _query_height: int | None = None
+
+    # Pane resize bounds (cells)
+    _SIDEBAR_MIN = 15
+    _SIDEBAR_MAX = 80
+    _QUERY_MIN = 5
+    _RESIZE_STEP = 4
 
     def _set_fullscreen_mode(self: UINavigationMixinHost, mode: str) -> None:
         """Set fullscreen mode: none|explorer|query|results."""
@@ -29,12 +37,33 @@ class UINavigationMixin(UIStatusMixin, UILeaderMixin):
         self.screen.remove_class("query-fullscreen")
         self.screen.remove_class("explorer-fullscreen")
 
+        if mode == "none":
+            # Restore any user-chosen pane sizes; inline styles were cleared
+            # when entering fullscreen so the fullscreen CSS rules could win.
+            self.apply_persisted_pane_sizes()
+        else:
+            # Inline .styles beat stylesheet rules, so a resized pane would
+            # ignore the fullscreen layout. Drop the inline sizes while
+            # maximized; they are re-applied on the way back to "none".
+            self._clear_inline_pane_sizes()
+
         if mode == "results":
             self.screen.add_class("results-fullscreen")
         elif mode == "query":
             self.screen.add_class("query-fullscreen")
         elif mode == "explorer":
             self.screen.add_class("explorer-fullscreen")
+
+    def _clear_inline_pane_sizes(self: UINavigationMixinHost) -> None:
+        """Remove inline width/height so fullscreen CSS rules apply cleanly."""
+        try:
+            self.sidebar.styles.clear_rule("width")
+        except Exception:
+            pass
+        try:
+            self.query_area.styles.clear_rule("height")
+        except Exception:
+            pass
 
     def action_focus_explorer(self: UINavigationMixinHost) -> None:
         """Focus the Explorer pane."""
@@ -163,6 +192,126 @@ class UINavigationMixin(UIStatusMixin, UILeaderMixin):
 
         self._update_section_labels()
         self._update_footer_bindings()
+
+    # ========================================================================
+    # Pane resizing
+    # ========================================================================
+
+    def _pane_cells(self: UINavigationMixinHost, widget: Any, dim: str, fallback: int) -> int:
+        """Return the current size of a pane dimension in cells.
+
+        Reads the inline style value when it is already expressed in cells,
+        otherwise falls back to the rendered size (handles the initial CSS
+        rules that use ``%``/``fr`` units).
+        """
+        from textual.css.scalar import Unit
+
+        scalar = getattr(widget.styles, dim, None)
+        if scalar is not None and getattr(scalar, "unit", None) == Unit.CELLS:
+            try:
+                return int(scalar.value)
+            except (TypeError, ValueError):
+                pass
+        size = getattr(widget, "size", None)
+        measured = getattr(size, dim, None) if size is not None else None
+        try:
+            measured = int(measured)
+        except (TypeError, ValueError):
+            measured = 0
+        return measured if measured > 0 else fallback
+
+    def _resize_step_amount(self: UINavigationMixinHost, base: int) -> int:
+        """Multiply the base step by any pending vim count prefix."""
+        count = self._get_and_clear_count() or 1
+        return base * count
+
+    def _resize_sidebar(self: UINavigationMixinHost, delta: int, *, persist: bool = True) -> None:
+        """Grow/shrink the explorer sidebar width by ``delta`` cells."""
+        if self._fullscreen_mode != "none" or self.screen.has_class("explorer-hidden"):
+            return
+        current = self._pane_cells(self.sidebar, "width", 35)
+        new = max(self._SIDEBAR_MIN, min(self._SIDEBAR_MAX, current + delta))
+        if new == current:
+            return
+        self.sidebar.styles.width = new
+        self._sidebar_width = new
+        if persist:
+            self._persist_pane_sizes()
+
+    def _resize_split(self: UINavigationMixinHost, delta: int, *, persist: bool = True) -> None:
+        """Move the query/results split by ``delta`` cells (query pane height)."""
+        if self._fullscreen_mode != "none":
+            return
+        panel = getattr(self.main_panel, "size", None)
+        panel_height = int(getattr(panel, "height", 0) or 0)
+        upper = max(self._QUERY_MIN, panel_height - self._QUERY_MIN)
+        current = self._pane_cells(self.query_area, "height", 10)
+        new = max(self._QUERY_MIN, min(upper, current + delta))
+        if new == current:
+            return
+        self.query_area.styles.height = new
+        self._query_height = new
+        if persist:
+            self._persist_pane_sizes()
+
+    def _resize_active_pane(self: UINavigationMixinHost, delta: int) -> None:
+        """Resize whichever boundary belongs to the focused pane."""
+        if self.object_tree.has_focus:
+            self._resize_sidebar(delta)
+        else:
+            self._resize_split(delta)
+
+    def action_grow_active_pane(self: UINavigationMixinHost) -> None:
+        """Grow the focused pane (leader command)."""
+        self._resize_active_pane(self._RESIZE_STEP)
+
+    def action_shrink_active_pane(self: UINavigationMixinHost) -> None:
+        """Shrink the focused pane (leader command)."""
+        self._resize_active_pane(-self._RESIZE_STEP)
+
+    def action_grow_sidebar(self: UINavigationMixinHost) -> None:
+        """Widen the explorer sidebar."""
+        self._resize_sidebar(self._resize_step_amount(self._RESIZE_STEP))
+
+    def action_shrink_sidebar(self: UINavigationMixinHost) -> None:
+        """Narrow the explorer sidebar."""
+        self._resize_sidebar(self._resize_step_amount(-self._RESIZE_STEP))
+
+    def action_grow_split(self: UINavigationMixinHost) -> None:
+        """Give the query pane more height (results shrinks)."""
+        self._resize_split(self._resize_step_amount(self._RESIZE_STEP))
+
+    def action_shrink_split(self: UINavigationMixinHost) -> None:
+        """Give the results pane more height (query shrinks)."""
+        self._resize_split(self._resize_step_amount(-self._RESIZE_STEP))
+
+    def _persist_pane_sizes(self: UINavigationMixinHost) -> None:
+        """Save the current pane sizes so they survive a restart."""
+        try:
+            store = self.services.settings_store
+            if self._sidebar_width is not None:
+                store.set("sidebar_width", self._sidebar_width)
+            if self._query_height is not None:
+                store.set("query_area_height", self._query_height)
+        except Exception:
+            pass
+
+    def apply_persisted_pane_sizes(self: UINavigationMixinHost) -> None:
+        """Re-apply stored pane sizes on startup, clamped to current bounds."""
+        width = self._sidebar_width
+        if width is not None:
+            clamped = max(self._SIDEBAR_MIN, min(self._SIDEBAR_MAX, int(width)))
+            self._sidebar_width = clamped
+            try:
+                self.sidebar.styles.width = clamped
+            except Exception:
+                pass
+        height = self._query_height
+        if height is not None:
+            try:
+                self.query_area.styles.height = max(self._QUERY_MIN, int(height))
+            except Exception:
+                pass
 
     def action_quit(self: UINavigationMixinHost) -> None:
         """Quit the application."""
