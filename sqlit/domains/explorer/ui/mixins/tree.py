@@ -294,23 +294,54 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         self._expanded_paths.clear()
         self._schedule_expanded_state_persist()
 
+    def _refresh_tree_visual_selection(self: TreeMixinHost) -> None:
+        """Update visual-mode selection after a cursor move, if in visual mode."""
+        update_visual = getattr(self, "_update_visual_selection", None)
+        if callable(update_visual):
+            update_visual()
+
     def action_tree_cursor_down(self: TreeMixinHost) -> None:
         """Move tree cursor down (vim j)."""
         if self.object_tree.has_focus:
             self.object_tree.action_cursor_down()
-            # Update visual selection if in visual mode
-            update_visual = getattr(self, "_update_visual_selection", None)
-            if callable(update_visual):
-                update_visual()
+            self._refresh_tree_visual_selection()
 
     def action_tree_cursor_up(self: TreeMixinHost) -> None:
         """Move tree cursor up (vim k)."""
         if self.object_tree.has_focus:
             self.object_tree.action_cursor_up()
-            # Update visual selection if in visual mode
-            update_visual = getattr(self, "_update_visual_selection", None)
-            if callable(update_visual):
-                update_visual()
+            self._refresh_tree_visual_selection()
+
+    def action_tree_page_down(self: TreeMixinHost) -> None:
+        """Scroll the tree down one page (vim Ctrl+D)."""
+        if self.object_tree.has_focus:
+            self.object_tree.action_page_down()
+            self._refresh_tree_visual_selection()
+
+    def action_tree_page_up(self: TreeMixinHost) -> None:
+        """Scroll the tree up one page (vim Ctrl+U)."""
+        if self.object_tree.has_focus:
+            self.object_tree.action_page_up()
+            self._refresh_tree_visual_selection()
+
+    def action_tg_leader_key(self: TreeMixinHost) -> None:
+        """Show the tree g motion leader menu (first press of gg)."""
+        self._start_leader_pending("tg")
+
+    def action_tg_first_node(self: TreeMixinHost) -> None:
+        """Jump to the first node in the tree (vim gg)."""
+        self._clear_leader_pending()
+        if self.object_tree.has_focus:
+            self.object_tree.move_cursor_to_line(0)
+            self._refresh_tree_visual_selection()
+
+    def action_tree_cursor_last(self: TreeMixinHost) -> None:
+        """Jump to the last node in the tree (vim G)."""
+        if self.object_tree.has_focus:
+            last_line = self.object_tree.last_line
+            if last_line >= 0:
+                self.object_tree.move_cursor_to_line(last_line)
+                self._refresh_tree_visual_selection()
 
     def action_select_table(self: TreeMixinHost) -> None:
         """Generate and execute SELECT query for selected table/view, or show info for indexes/triggers/sequences."""
