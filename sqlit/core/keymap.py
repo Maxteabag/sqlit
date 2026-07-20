@@ -325,6 +325,8 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("o", "columns", "Columns as CSV...", "Copy as", menu="ryfc"),
             # rg results g motion menu (vim-style gg)
             LeaderCommandDef("g", "first_row", "Go to first row", "Go to", menu="rg"),
+            # tg tree g motion menu (vim-style gg)
+            LeaderCommandDef("g", "first_node", "Go to first node", "Go to", menu="tg"),
             # vy value view yank menu (tree mode)
             LeaderCommandDef("y", "value", "Copy value", "Copy", menu="vy"),
             LeaderCommandDef("f", "field", "Copy field", "Copy", menu="vy"),
@@ -356,6 +358,10 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("down", "tree_cursor_down", "tree", primary=False),
             ActionKeyDef("k", "tree_cursor_up", "tree"),
             ActionKeyDef("up", "tree_cursor_up", "tree", primary=False),
+            ActionKeyDef("ctrl+d", "tree_page_down", "tree"),
+            ActionKeyDef("ctrl+u", "tree_page_up", "tree"),
+            ActionKeyDef("g", "tg_leader_key", "tree"),
+            ActionKeyDef("G", "tree_cursor_last", "tree"),
             ActionKeyDef("slash", "tree_filter", "tree"),
             ActionKeyDef("escape", "tree_filter_close", "tree_filter"),
             ActionKeyDef("enter", "tree_filter_accept", "tree_filter"),

@@ -18,6 +18,11 @@ class TreeFocusedState(State):
         self.allows("collapse_tree", help="Collapse all")
         self.allows("tree_cursor_down")  # vim j
         self.allows("tree_cursor_up")  # vim k
+        self.allows("tree_page_down")  # vim Ctrl+D
+        self.allows("tree_page_up")  # vim Ctrl+U
+        self.allows("tg_leader_key")  # vim gg (first step)
+        self.allows("tg_first_node")  # vim gg (second step)
+        self.allows("tree_cursor_last")  # vim G
         self.allows("tree_filter", help="Filter items")
         self.allows(
             "enter_tree_visual_mode",
