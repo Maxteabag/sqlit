@@ -94,6 +94,13 @@ class OracleAdapter(DatabaseAdapter):
             package_name=self.install_package,
         )
 
+        # Fetch CLOB/BLOB values inline as str/bytes instead of LOB locators.
+        # Locators need a live connection to be read, but results are pickled
+        # across the process worker pipe after the query connection is closed,
+        # which raises DPY-1001 mid-serialization. Inline fetch also avoids
+        # one extra round trip per LOB per row.
+        oracledb.defaults.fetch_lobs = False
+
         endpoint = config.tcp_endpoint
         if endpoint is None:
             raise ValueError("Oracle connections require a TCP-style endpoint.")
@@ -376,6 +383,10 @@ class OracleAdapter(DatabaseAdapter):
         """Execute a query on Oracle with optional row limit."""
         cursor = conn.cursor()
         try:
+            # Larger fetch batches cut per-round-trip overhead on high-latency
+            # links (oracledb defaults: arraysize=100, prefetchrows=2).
+            cursor.arraysize = 1000
+            cursor.prefetchrows = 1001
             cursor.execute(_prepare_statement(query))
             if cursor.description:
                 columns = [col[0] for col in cursor.description]
