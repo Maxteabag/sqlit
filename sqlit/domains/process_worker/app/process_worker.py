@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import faulthandler
 import os
-import pickle
 import sys
 import tempfile
 import threading
@@ -80,9 +79,15 @@ class _WorkerState:
             try:
                 self.conn.send(payload)
                 return
-            except (TypeError, AttributeError, pickle.PickleError) as exc:
-                # Result isn't picklable. Replace with an error so the
-                # client surfaces it instead of hanging on recv().
+            except OSError:
+                # Pipe closed; nothing we can do.
+                return
+            except Exception as exc:
+                # Result couldn't be serialized: not picklable, or a driver
+                # error raised while pickling — e.g. oracledb LOB locators
+                # read from an already-closed connection (DPY-1001). Replace
+                # with an error so the client surfaces it instead of hanging
+                # on recv().
                 fallback = {
                     "type": "error",
                     "id": payload.get("id"),
@@ -95,9 +100,6 @@ class _WorkerState:
                     self.conn.send(fallback)
                 except Exception:
                     pass
-            except Exception:
-                # Pipe closed or similar; nothing we can do.
-                pass
 
     def _ensure_tunnel(self, config: ConnectionConfig) -> Any | None:
         key = _tunnel_key(config)
