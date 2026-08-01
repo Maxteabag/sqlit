@@ -325,6 +325,38 @@ class TestDetectDatabaseContainers:
             assert containers[0].database == "testdb"
             assert containers[0].connectable is True
 
+    def test_detected_mssql_container_uses_ipv4_loopback(self):
+        """Test MSSQL Docker connections use IPv4 loopback."""
+        mock_container = MagicMock()
+        mock_container.name = "test-mssql"
+        mock_container.short_id = "abc123"
+        mock_container.image.tags = ["mcr.microsoft.com/mssql/server:2022-latest"]
+        mock_container.attrs = {
+            "Config": {"Env": ["MSSQL_SA_PASSWORD=test-password"]},
+            "HostConfig": {"NetworkMode": "bridge"},
+            "NetworkSettings": {
+                "Ports": {
+                    "1433/tcp": [{"HostIp": "127.0.0.1", "HostPort": "1433"}],
+                }
+            },
+        }
+
+        mock_client = MagicMock()
+        mock_client.containers.list.side_effect = [[mock_container], []]
+
+        with (
+            patch(
+                "sqlit.domains.connections.discovery.docker_detector.get_docker_status",
+                return_value=DockerStatus.AVAILABLE,
+            ),
+            patch("docker.from_env", return_value=mock_client),
+        ):
+            _, containers = detect_database_containers()
+
+        assert len(containers) == 1
+        assert containers[0].host == "127.0.0.1"
+        assert container_to_connection_config(containers[0]).server == "127.0.0.1"
+
     def test_detect_container_tagless_image(self):
         """Test detection when image tags are missing."""
         mock_container = MagicMock()
