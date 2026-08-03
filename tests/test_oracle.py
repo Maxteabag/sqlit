@@ -150,6 +150,24 @@ class TestOracleIntegration(BaseDatabaseTests):
         assert "Bob" in result.stdout
         assert "2 row(s) returned" in result.stdout
 
+    def test_query_oracle_clob_returns_text(self, oracle_connection, cli_runner):
+        """CLOB values must be fetched inline as text, not LOB locators.
+
+        With oracledb's default fetch_lobs=True, rows contain LOB locator
+        objects: the CLI renders their repr instead of the value, and the
+        TUI's process worker hangs pickling them after the query connection
+        is closed (issue #276).
+        """
+        result = cli_runner(
+            "query",
+            "-c",
+            oracle_connection,
+            "-q",
+            "SELECT TO_CLOB('clob value ok') AS payload FROM DUAL",
+        )
+        assert result.returncode == 0
+        assert "clob value ok" in result.stdout
+
     def test_delete_oracle_connection(self, oracle_db, cli_runner):
         """Test deleting an Oracle connection."""
         from .conftest import ORACLE_HOST, ORACLE_PASSWORD, ORACLE_PORT, ORACLE_USER
