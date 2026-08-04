@@ -13,6 +13,12 @@ class TreeOnTableState(State):
 
     def _setup_actions(self) -> None:
         self.allows("select_table", label="Select TOP 100", help="Select TOP 100 (table/view)")
+        self.allows(
+            "drop_table",
+            guard=lambda app: app.tree_node_kind == "table" and app.current_provider_supports_drop_table,
+            label="Drop Table",
+            help="Drop selected Table",
+        )
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
@@ -28,6 +34,15 @@ class TreeOnTableState(State):
             )
         )
         seen.add("select_table")
+        if app.tree_node_kind == "table" and app.current_provider_supports_drop_table:
+            left.append(
+                DisplayBinding(
+                    key=resolve_display_key("drop_table") or "d",
+                    label="Drop Table",
+                    action="drop_table",
+                )
+            )
+            seen.add("drop_table")
         left.append(
             DisplayBinding(
                 key=resolve_display_key("refresh_tree") or "f",

@@ -190,3 +190,8 @@ class Db2Adapter(CursorBasedAdapter):
         if schema:
             return f'SELECT * FROM "{schema}"."{table}" FETCH FIRST {limit} ROWS ONLY'
         return f'SELECT * FROM "{table}" FETCH FIRST {limit} ROWS ONLY'
+
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        schema = schema or ""
+        return f'DROP TABLE "{schema}"."{table}"' if schema else f'DROP TABLE "{table}"'

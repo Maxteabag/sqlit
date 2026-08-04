@@ -199,6 +199,11 @@ class SnowflakeAdapter(CursorBasedAdapter):
         schema = schema or "PUBLIC"
         return f'SELECT * FROM "{schema}"."{table}" LIMIT {limit}'
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        schema = schema or "PUBLIC"
+        return f'DROP TABLE IF EXISTS "{schema}"."{table}"'
+
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures."""
         cursor = conn.cursor()

@@ -149,6 +149,10 @@ class AthenaAdapter(CursorBasedAdapter):
         target_db = database or schema or self.default_schema
         return f"SELECT * FROM {target_db}.{table} LIMIT {limit}"
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        return f'DROP TABLE IF EXISTS "{database or ""}.{table}"'
+
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         return []
 

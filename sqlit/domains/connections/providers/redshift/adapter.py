@@ -233,3 +233,8 @@ class RedshiftAdapter(CursorBasedAdapter):
         """Build SELECT query with LIMIT."""
         schema = schema or self.default_schema
         return f'SELECT * FROM "{schema}"."{table}" LIMIT {limit}'
+
+
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        schema = schema or self.default_schema
+        return f'DROP TABLE IF EXISTS "{schema}"."{table}"'

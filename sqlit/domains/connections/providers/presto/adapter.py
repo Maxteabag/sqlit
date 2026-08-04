@@ -190,3 +190,11 @@ class PrestoAdapter(CursorBasedAdapter):
         if schema_name:
             return f'SELECT * FROM "{schema_name}"."{table}" LIMIT {limit}'
         return f'SELECT * FROM "{table}" LIMIT {limit}'
+
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        schema_name = schema or self.default_schema
+        if database and schema_name:
+            return f'DROP TABLE IF EXISTS "{database}"."{schema_name}"."{table}"'
+        if db := database or schema:
+            return f'DROP TABLE IF EXISTS "{db}"."{table}"'
+        return f'DROP TABLE IF EXISTS "{table}"'

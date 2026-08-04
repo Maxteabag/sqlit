@@ -264,3 +264,7 @@ class TeradataAdapter(CursorBasedAdapter):
         if schema_name:
             return f'lock row for access select top {limit} * from "{schema_name}"."{table}"'
         return f'lock row for access select top {limit} * from "{table}"'
+
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        db = database or schema
+        return f'DROP TABLE "{db}"."{table}"' if db else f'DROP TABLE "{table}"'

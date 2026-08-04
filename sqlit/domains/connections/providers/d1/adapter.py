@@ -269,6 +269,10 @@ class D1Adapter(DatabaseAdapter):
         """Builds a standard SELECT ... LIMIT query."""
         return f"SELECT * FROM {self.quote_identifier(table)} LIMIT {limit}"
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        return f"DROP TABLE IF EXISTS {self.quote_identifier(table)}"
+
     def execute_query(
         self, conn: D1Connection, query: str, max_rows: int | None = None
     ) -> tuple[list[str], list[tuple], bool]:

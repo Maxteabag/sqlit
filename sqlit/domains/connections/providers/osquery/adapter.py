@@ -94,6 +94,10 @@ class OsqueryAdapter(DatabaseAdapter):
         return False
 
     @property
+    def supports_drop_table(self) -> bool:
+        return False
+
+    @property
     def default_schema(self) -> str:
         return ""
 
@@ -198,6 +202,10 @@ class OsqueryAdapter(DatabaseAdapter):
         self, table: str, limit: int, database: str | None = None, schema: str | None = None
     ) -> str:
         return f'SELECT * FROM "{table}" LIMIT {limit}'
+
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        return ''
 
     def execute_query(
         self, conn: Any, query: str, max_rows: int | None = None

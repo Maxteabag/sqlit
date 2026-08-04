@@ -214,6 +214,7 @@ class UIStateMachine:
         s.binding("<enter>", "Expand node / Connect")
         s.binding(k("new_connection", "n"), "New connection")
         s.binding(k("select_table", "s"), "SELECT TOP 100 (on table/view)")
+        s.binding(k("drop_table", "d"), "DROP TABLE (if supported by the database)")
         s.binding(k("tree_filter", "/"), "Filter tree")
         s.binding(k("collapse_tree", "z"), "Collapse all nodes")
         s.binding(k("refresh_tree", "f"), "Refresh tree")

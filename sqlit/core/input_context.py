@@ -34,3 +34,4 @@ class InputContext:
     has_results: bool
     stacked_result_count: int = 0
     count_buffer: str = ""
+    current_provider_supports_drop_table: bool = False

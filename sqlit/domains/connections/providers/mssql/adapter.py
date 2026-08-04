@@ -545,6 +545,11 @@ class SQLServerAdapter(DatabaseAdapter):
         schema = schema or "dbo"
         return f"SELECT TOP {limit} * FROM [{schema}].[{table}]"
 
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        """Build DROP TABLE query."""
+        schema = schema or "dbo"
+        return f'DROP TABLE IF EXISTS [{schema}].[{table}]'
+
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on SQL Server with optional row limit."""
         cursor = conn.cursor()

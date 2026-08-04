@@ -174,3 +174,6 @@ class ImpalaAdapter(CursorBasedAdapter):
         if database:
             return f"SELECT * FROM `{database}`.`{table}` LIMIT {limit}"
         return f"SELECT * FROM `{table}` LIMIT {limit}"
+
+    def build_drop_table_query(self, table: str, database: str | None = None, schema: str | None = None) -> str:
+        return f"DROP TABLE IF EXISTS `{database}`.`{table}`" if database else f"DROP TABLE IF EXISTS `{table}`"
