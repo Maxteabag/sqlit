@@ -384,9 +384,10 @@ class OracleAdapter(DatabaseAdapter):
         cursor = conn.cursor()
         try:
             # Larger fetch batches cut per-round-trip overhead on high-latency
-            # links (oracledb defaults: arraysize=100, prefetchrows=2).
-            cursor.arraysize = 1000
-            cursor.prefetchrows = 1001
+            # links without fetching beyond the requested result cap.
+            row_budget = max_rows + 1 if max_rows is not None else 1001
+            cursor.arraysize = min(1000, max(1, row_budget))
+            cursor.prefetchrows = min(1001, max(1, row_budget))
             cursor.execute(_prepare_statement(query))
             if cursor.description:
                 columns = [col[0] for col in cursor.description]

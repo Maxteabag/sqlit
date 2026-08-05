@@ -43,6 +43,30 @@ def test_execute_query_removes_sql_statement_terminator(
     mock_conn.cursor.return_value.execute.assert_called_once_with(expected)
 
 
+@pytest.mark.parametrize(
+    ("max_rows", "expected_arraysize", "expected_prefetchrows"),
+    [
+        (None, 1000, 1001),
+        (1, 2, 2),
+        (999, 1000, 1000),
+        (1000, 1000, 1001),
+    ],
+)
+def test_execute_query_caps_fetch_buffers_to_requested_rows(
+    adapter: OracleAdapter,
+    mock_conn: MagicMock,
+    max_rows: int | None,
+    expected_arraysize: int,
+    expected_prefetchrows: int,
+) -> None:
+    """Small result limits must not prefetch hundreds of discarded rows."""
+    adapter.execute_query(mock_conn, "SELECT 1 FROM DUAL", max_rows=max_rows)
+
+    cursor = mock_conn.cursor.return_value
+    assert cursor.arraysize == expected_arraysize
+    assert cursor.prefetchrows == expected_prefetchrows
+
+
 def test_execute_non_query_removes_sql_statement_terminator(
     adapter: OracleAdapter,
     mock_conn: MagicMock,
