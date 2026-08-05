@@ -18,6 +18,11 @@ def needs_db_password(config: ConnectionConfig) -> bool:
     if auth_type in ("ad_default", "ad_integrated", "windows"):
         return False
 
+    if config.db_type == "trino":
+        auth_method = str(config.options.get("trino_auth_method", config.extra_options.get("trino_auth_method", "basic"))).lower()
+        if auth_method in {"none", "kerberos", "gssapi"}:
+            return False
+
     endpoint = config.tcp_endpoint
     if not endpoint or endpoint.password is not None:
         return False

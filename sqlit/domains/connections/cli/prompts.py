@@ -32,6 +32,10 @@ def _needs_db_prompt(config: ConnectionConfig) -> bool:
     auth_type = config.get_option("auth_type")
     if auth_type in ("ad_default", "ad_integrated", "windows"):
         return False
+    if config.db_type == "trino":
+        auth_method = str(config.options.get("trino_auth_method", config.extra_options.get("trino_auth_method", "basic"))).lower()
+        if auth_method in {"none", "kerberos", "gssapi"}:
+            return False
     endpoint = config.tcp_endpoint
     return bool(endpoint and endpoint.password is None)
 

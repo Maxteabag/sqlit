@@ -21,6 +21,13 @@ if TYPE_CHECKING:
 class TrinoAdapter(CursorBasedAdapter):
     """Adapter for Trino (PrestoSQL) using trino client."""
 
+    _AUTH_OPTION_NAMES = {
+        "trino_auth_method",
+        "trino_kerberos_delegate",
+        "trino_kerberos_hostname_override",
+        "trino_kerberos_service_name",
+    }
+
     @property
     def name(self) -> str:
         return "Trino"
@@ -99,15 +106,76 @@ class TrinoAdapter(CursorBasedAdapter):
         if schema:
             connect_args["schema"] = schema
 
-        if endpoint.password:
+        auth = self._build_authentication(config, endpoint.username, endpoint.password)
+        if auth is not None:
+            connect_args["auth"] = auth
+
+        connect_args.update({key: value for key, value in config.extra_options.items() if key not in self._AUTH_OPTION_NAMES})
+        return trino_dbapi.connect(**connect_args)
+
+    def _build_authentication(self, config: ConnectionConfig, username: str, password: str | None) -> Any | None:
+        default_method = "basic" if password else "none"
+        auth_method = str(self._get_authentication_option(config, "trino_auth_method", default_method)).lower()
+
+        if auth_method == "none":
+            return None
+
+        if auth_method == "basic":
+            if not password:
+                return None
             try:
                 from trino.auth import BasicAuthentication
             except Exception as exc:
                 raise ValueError("Trino password authentication requires trino.auth.BasicAuthentication") from exc
-            connect_args["auth"] = BasicAuthentication(endpoint.username, endpoint.password)
+            return BasicAuthentication(username, password)
 
-        connect_args.update(config.extra_options)
-        return trino_dbapi.connect(**connect_args)
+        if auth_method not in {"kerberos", "gssapi"}:
+            raise ValueError(f"Unsupported Trino authentication method: {auth_method}")
+
+        package_extra = auth_method
+        try:
+            if auth_method == "kerberos":
+                import requests_kerberos  # type: ignore[import-untyped]  # noqa: F401
+                from trino.auth import KerberosAuthentication
+
+                auth_class = KerberosAuthentication
+            else:
+                import requests_gssapi  # type: ignore[import-untyped]  # noqa: F401
+                from trino.auth import GSSAPIAuthentication
+
+                auth_class = GSSAPIAuthentication
+        except ImportError as exc:
+            from sqlit.domains.connections.providers.exceptions import MissingDriverError
+
+            raise MissingDriverError(
+                f"Trino {auth_method.upper()} authentication",
+                f"trino-{package_extra}",
+                f"trino[{package_extra}]",
+                module_name=f"requests_{package_extra}",
+                import_error=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise ValueError(
+                f"Trino {auth_method.upper()} authentication requires `trino[{package_extra}]`. "
+                f"Install it with `pipx inject sqlit-tui 'trino[{package_extra}]'` or "
+                f"`python -m pip install 'trino[{package_extra}]'`."
+            ) from exc
+
+        auth_args: dict[str, Any] = {
+            "delegate": str(self._get_authentication_option(config, "trino_kerberos_delegate", "false")).lower() == "true",
+        }
+        service_name = self._get_authentication_option(config, "trino_kerberos_service_name")
+        hostname_override = self._get_authentication_option(config, "trino_kerberos_hostname_override")
+        if auth_method == "gssapi" and service_name and not hostname_override:
+            raise ValueError("Trino GSSAPI authentication requires a hostname override when a service name is set.")
+        if service_name:
+            auth_args["service_name"] = str(service_name)
+        if hostname_override:
+            auth_args["hostname_override"] = str(hostname_override)
+        return auth_class(**auth_args)
+
+    def _get_authentication_option(self, config: ConnectionConfig, name: str, default: Any = None) -> Any:
+        return config.options.get(name, config.extra_options.get(name, default))
 
     def get_databases(self, conn: Any) -> list[str]:
         cursor = conn.cursor()
