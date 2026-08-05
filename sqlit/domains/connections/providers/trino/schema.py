@@ -28,6 +28,14 @@ def _get_authentication_options() -> tuple[SelectOption, ...]:
     )
 
 
+def _get_kerberos_mutual_authentication_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("required", "Required"),
+        SelectOption("optional", "Optional"),
+        SelectOption("disabled", "Disabled"),
+    )
+
+
 def _trino_auth_is_basic(config: dict[str, str]) -> bool:
     return config.get("trino_auth_method", "basic") == "basic"
 
@@ -74,7 +82,7 @@ SCHEMA = ConnectionSchema(
             name="trino_kerberos_service_name",
             label="Kerberos Service Name",
             placeholder="HTTP",
-            description="Service principal name used by the Trino server",
+            description="Service principal name; blank uses HTTP for Kerberos",
             visible_when=_trino_auth_is_kerberos,
             advanced=True,
         ),
@@ -92,6 +100,15 @@ SCHEMA = ConnectionSchema(
             field_type=FieldType.SELECT,
             options=(SelectOption("false", "No"), SelectOption("true", "Yes")),
             default="false",
+            visible_when=_trino_auth_is_kerberos,
+            advanced=True,
+        ),
+        SchemaField(
+            name="trino_kerberos_mutual_authentication",
+            label="Mutual Authentication",
+            field_type=FieldType.SELECT,
+            options=_get_kerberos_mutual_authentication_options(),
+            default="optional",
             visible_when=_trino_auth_is_kerberos,
             advanced=True,
         ),

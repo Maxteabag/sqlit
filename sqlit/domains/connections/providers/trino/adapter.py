@@ -25,6 +25,7 @@ class TrinoAdapter(CursorBasedAdapter):
         "trino_auth_method",
         "trino_kerberos_delegate",
         "trino_kerberos_hostname_override",
+        "trino_kerberos_mutual_authentication",
         "trino_kerberos_service_name",
     }
 
@@ -135,12 +136,20 @@ class TrinoAdapter(CursorBasedAdapter):
         package_extra = auth_method
         try:
             if auth_method == "kerberos":
-                import requests_kerberos  # type: ignore[import-untyped]  # noqa: F401
+                from requests_kerberos import (  # type: ignore[import-untyped]
+                    DISABLED,
+                    OPTIONAL,
+                    REQUIRED,
+                )
                 from trino.auth import KerberosAuthentication
 
                 auth_class = KerberosAuthentication
             else:
-                import requests_gssapi  # type: ignore[import-untyped]  # noqa: F401
+                from requests_gssapi import (  # type: ignore[import-untyped]
+                    DISABLED,
+                    OPTIONAL,
+                    REQUIRED,
+                )
                 from trino.auth import GSSAPIAuthentication
 
                 auth_class = GSSAPIAuthentication
@@ -164,7 +173,18 @@ class TrinoAdapter(CursorBasedAdapter):
         auth_args: dict[str, Any] = {
             "delegate": str(self._get_authentication_option(config, "trino_kerberos_delegate", "false")).lower() == "true",
         }
+        mutual_authentication = str(self._get_authentication_option(config, "trino_kerberos_mutual_authentication", "optional")).lower()
+        mutual_authentication_values = {
+            "required": REQUIRED,
+            "optional": OPTIONAL,
+            "disabled": DISABLED,
+        }
+        if mutual_authentication not in mutual_authentication_values:
+            raise ValueError(f"Unsupported Trino Kerberos mutual authentication mode: {mutual_authentication}")
+        auth_args["mutual_authentication"] = mutual_authentication_values[mutual_authentication]
         service_name = self._get_authentication_option(config, "trino_kerberos_service_name")
+        if auth_method == "kerberos" and not service_name:
+            service_name = "HTTP"
         hostname_override = self._get_authentication_option(config, "trino_kerberos_hostname_override")
         if auth_method == "gssapi" and service_name and not hostname_override:
             raise ValueError("Trino GSSAPI authentication requires a hostname override when a service name is set.")

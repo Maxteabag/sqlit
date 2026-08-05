@@ -25,13 +25,17 @@ def _config(*, password: str | None = None, options: dict[str, str] | None = Non
 def _connect(config: ConnectionConfig) -> tuple[MagicMock, MagicMock]:
     dbapi = MagicMock()
     auth = MagicMock()
+    requests_kerberos = MagicMock()
+    requests_kerberos.REQUIRED = auth.KerberosAuthentication.MUTUAL_REQUIRED
+    requests_kerberos.OPTIONAL = auth.KerberosAuthentication.MUTUAL_OPTIONAL
+    requests_kerberos.DISABLED = auth.KerberosAuthentication.MUTUAL_DISABLED
     with patch.dict(
         "sys.modules",
         {
             "trino.dbapi": dbapi,
             "trino.auth": auth,
             "requests_gssapi": MagicMock(),
-            "requests_kerberos": MagicMock(),
+            "requests_kerberos": requests_kerberos,
         },
     ):
         TrinoAdapter().connect(config)
@@ -66,6 +70,7 @@ def test_trino_kerberos_authentication_passes_selected_options():
 
     auth.KerberosAuthentication.assert_called_once_with(
         delegate=True,
+        mutual_authentication=auth.KerberosAuthentication.MUTUAL_OPTIONAL,
         service_name="trino",
         hostname_override="coordinator.example.com",
     )
@@ -97,6 +102,7 @@ def test_trino_url_uses_kerberos_options_without_passing_them_to_driver():
 
     auth.KerberosAuthentication.assert_called_once_with(
         delegate=False,
+        mutual_authentication=auth.KerberosAuthentication.MUTUAL_OPTIONAL,
         service_name="trino",
         hostname_override="coordinator.example.com",
     )
@@ -121,5 +127,6 @@ def test_trino_schema_exposes_kerberos_authentication_options():
 
     assert [option.value for option in fields["trino_auth_method"].options] == ["none", "basic", "kerberos", "gssapi"]
     assert fields["trino_auth_method"].default == "basic"
+    assert fields["trino_kerberos_mutual_authentication"].default == "optional"
     assert fields["password"].visible_when is not None
     assert fields["trino_kerberos_service_name"].visible_when is not None

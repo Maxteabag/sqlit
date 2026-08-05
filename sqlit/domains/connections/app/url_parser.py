@@ -138,6 +138,7 @@ def parse_connection_url(
             "trino_auth_method",
             "trino_kerberos_delegate",
             "trino_kerberos_hostname_override",
+            "trino_kerberos_mutual_authentication",
             "trino_kerberos_service_name",
         ):
             if name in config.extra_options:
