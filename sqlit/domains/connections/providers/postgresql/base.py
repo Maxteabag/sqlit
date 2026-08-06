@@ -127,6 +127,13 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         escaped = name.replace('"', '""')
         return f'"{escaped}"'
 
+    def quote_literal(self, value: Any) -> str:
+        """Render text independently of PostgreSQL backslash-string settings."""
+        if not isinstance(value, str):
+            return super().quote_literal(value)
+        encoded = value.encode("utf-8").hex()
+        return f"convert_from(decode('{encoded}', 'hex'), 'UTF8')"
+
     def format_autocomplete_identifier(self, name: str) -> str:
         """Quote autocomplete identifiers that PostgreSQL would otherwise fold."""
         if _POSTGRES_SAFE_UNQUOTED_IDENTIFIER.fullmatch(name):

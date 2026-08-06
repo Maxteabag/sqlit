@@ -181,6 +181,22 @@ class TestBuildFkNavigationQuery:
         )
         assert q == 'SELECT * FROM "public"."users" WHERE "id" = 7 LIMIT 100'
 
+    def test_postgres_string_literal_is_independent_of_backslash_settings(self):
+        from sqlit.domains.connections.providers.postgresql.adapter import PostgreSQLAdapter
+        from sqlit.domains.results.ui.mixins.results import build_fk_navigation_query
+
+        value = "path\\' OR 1=1 --"
+        q = build_fk_navigation_query(
+            adapter=PostgreSQLAdapter(),
+            ref_table="users",
+            ref_column="external_id",
+            value=value,
+            ref_schema="public",
+        )
+        literal = f"convert_from(decode('{value.encode('utf-8').hex()}', 'hex'), 'UTF8')"
+
+        assert q == f'SELECT * FROM "public"."users" WHERE "external_id" = {literal} LIMIT 100'
+
     def test_sql_server_uses_bit_and_binary_literals(self):
         from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
         from sqlit.domains.results.ui.mixins.results import build_fk_navigation_query
