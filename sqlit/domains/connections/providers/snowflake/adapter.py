@@ -257,14 +257,18 @@ class SnowflakeAdapter(CursorBasedAdapter):
         schema = schema or self.default_schema
         cursor.execute(
             f"SELECT tc.constraint_name, kcu.ordinal_position, "
-            f"       kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name "
+            f"       kcu.column_name, ukcu.table_schema, ukcu.table_name, ukcu.column_name "
             f"FROM {db_prefix}information_schema.table_constraints tc "
             f"JOIN {db_prefix}information_schema.key_column_usage kcu "
             f"  ON tc.constraint_name = kcu.constraint_name "
             f"  AND tc.constraint_schema = kcu.constraint_schema "
-            f"JOIN {db_prefix}information_schema.constraint_column_usage ccu "
-            f"  ON ccu.constraint_name = tc.constraint_name "
-            f"  AND ccu.constraint_schema = tc.constraint_schema "
+            f"JOIN {db_prefix}information_schema.referential_constraints rc "
+            f"  ON rc.constraint_name = tc.constraint_name "
+            f"  AND rc.constraint_schema = tc.constraint_schema "
+            f"JOIN {db_prefix}information_schema.key_column_usage ukcu "
+            f"  ON ukcu.constraint_name = rc.unique_constraint_name "
+            f"  AND ukcu.constraint_schema = rc.unique_constraint_schema "
+            f"  AND ukcu.ordinal_position = kcu.position_in_unique_constraint "
             f"WHERE tc.constraint_type = 'FOREIGN KEY' "
             f"  AND tc.table_schema = %s AND tc.table_name = %s "
             f"ORDER BY tc.constraint_name, kcu.ordinal_position",
@@ -298,16 +302,20 @@ class SnowflakeAdapter(CursorBasedAdapter):
         schema = schema or self.default_schema
         cursor.execute(
             f"SELECT tc.constraint_name, kcu.ordinal_position, "
-            f"       tc.table_schema, tc.table_name, kcu.column_name, ccu.column_name "
+            f"       tc.table_schema, tc.table_name, kcu.column_name, ukcu.column_name "
             f"FROM {db_prefix}information_schema.table_constraints tc "
             f"JOIN {db_prefix}information_schema.key_column_usage kcu "
             f"  ON tc.constraint_name = kcu.constraint_name "
             f"  AND tc.constraint_schema = kcu.constraint_schema "
-            f"JOIN {db_prefix}information_schema.constraint_column_usage ccu "
-            f"  ON ccu.constraint_name = tc.constraint_name "
-            f"  AND ccu.constraint_schema = tc.constraint_schema "
+            f"JOIN {db_prefix}information_schema.referential_constraints rc "
+            f"  ON rc.constraint_name = tc.constraint_name "
+            f"  AND rc.constraint_schema = tc.constraint_schema "
+            f"JOIN {db_prefix}information_schema.key_column_usage ukcu "
+            f"  ON ukcu.constraint_name = rc.unique_constraint_name "
+            f"  AND ukcu.constraint_schema = rc.unique_constraint_schema "
+            f"  AND ukcu.ordinal_position = kcu.position_in_unique_constraint "
             f"WHERE tc.constraint_type = 'FOREIGN KEY' "
-            f"  AND ccu.table_schema = %s AND ccu.table_name = %s "
+            f"  AND ukcu.table_schema = %s AND ukcu.table_name = %s "
             f"ORDER BY tc.table_schema, tc.table_name, "
             f"         tc.constraint_name, kcu.ordinal_position",
             (schema, table),

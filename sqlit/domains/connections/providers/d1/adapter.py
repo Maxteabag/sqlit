@@ -287,19 +287,39 @@ class D1Adapter(DatabaseAdapter):
             ref_table = row.get("table")
             from_col = row.get("from")
             to_col = row.get("to")
-            if not isinstance(ref_table, str) or not isinstance(from_col, str) or not isinstance(to_col, str):
+            if not isinstance(ref_table, str) or not isinstance(from_col, str):
+                continue
+            ordinal = int(seq) if isinstance(seq, int) else 0
+            referenced_column = self._resolve_referenced_column(conn, ref_table, to_col, ordinal)
+            if not referenced_column:
                 continue
             out.append(
                 ForeignKeyInfo(
                     owner_table=table,
                     column=from_col,
                     referenced_table=ref_table,
-                    referenced_column=to_col,
+                    referenced_column=referenced_column,
                     constraint_name=f"fk_{fk_id}",
-                    ordinal=(int(seq) if isinstance(seq, int) else 0) + 1,
+                    ordinal=ordinal + 1,
                 )
             )
         return out
+
+    def _resolve_referenced_column(self, conn: D1Connection, table: str, column: Any, ordinal: int) -> str | None:
+        """Resolve SQLite's omitted REFERENCES column from the target primary key."""
+        if isinstance(column, str) and column:
+            return column
+        result = self._execute(conn, f"PRAGMA table_info({self.quote_identifier(table)});")
+        rows = result.get("results", [])
+        if not isinstance(rows, list):
+            return None
+        primary_key_columns = sorted(
+            ((int(row.get("pk", 0)), str(row.get("name", ""))) for row in rows if isinstance(row, dict) and int(row.get("pk", 0)) > 0),
+            key=lambda item: item[0],
+        )
+        if ordinal >= len(primary_key_columns):
+            return None
+        return primary_key_columns[ordinal][1]
 
     def get_referencing_foreign_keys(
         self,
@@ -335,18 +355,22 @@ class D1Adapter(DatabaseAdapter):
                     continue
                 from_col = row.get("from")
                 to_col = row.get("to")
-                if not isinstance(from_col, str) or not isinstance(to_col, str):
+                if not isinstance(from_col, str):
                     continue
                 fk_id = row.get("id")
                 seq = row.get("seq")
+                ordinal = int(seq) if isinstance(seq, int) else 0
+                referenced_column = self._resolve_referenced_column(conn, table, to_col, ordinal)
+                if not referenced_column:
+                    continue
                 results.append(
                     ForeignKeyInfo(
                         owner_table=other,
                         column=from_col,
                         referenced_table=table,
-                        referenced_column=to_col,
+                        referenced_column=referenced_column,
                         constraint_name=f"{other}_fk_{fk_id}",
-                        ordinal=(int(seq) if isinstance(seq, int) else 0) + 1,
+                        ordinal=ordinal + 1,
                     )
                 )
         return results
