@@ -302,12 +302,12 @@ class SSMSTUI(
         active_table_info: dict[str, Any] | None = None
         cursor_column_name: str | None = None
         try:
-            rt = self.results_table
-            active_table_info = getattr(rt, "result_table_info", None)
-            if rt.row_count > 0:
+            rt, columns, _rows, stacked = self._get_active_results_context()
+            active_table_info = self._get_active_results_table_info(rt, stacked) if rt else None
+            if rt and rt.row_count > 0:
                 col_index = rt.cursor_coordinate.column
-                if 0 <= col_index < len(self._last_result_columns):
-                    cursor_column_name = self._last_result_columns[col_index]
+                if 0 <= col_index < len(columns):
+                    cursor_column_name = columns[col_index]
         except Exception:
             active_table_info = None
             cursor_column_name = None

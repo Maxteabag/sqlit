@@ -476,6 +476,12 @@ class BigQueryAdapter(CursorBasedAdapter):
         """Quote an identifier for BigQuery."""
         return f"`{name}`"
 
+    def quote_literal(self, value: Any) -> str:
+        """Render BigQuery strings without allowing backslash escapes to alter quoting."""
+        if not isinstance(value, str):
+            return super().quote_literal(value)
+        return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
     def build_select_query(
         self, table: str, limit: int, database: str | None = None, schema: str | None = None
     ) -> str:
