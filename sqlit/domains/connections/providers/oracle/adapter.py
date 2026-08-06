@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -79,6 +80,10 @@ class OracleAdapter(DatabaseAdapter):
     @property
     def supports_sequences(self) -> bool:
         """Oracle supports sequences."""
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     @property
@@ -251,6 +256,89 @@ class OracleAdapter(DatabaseAdapter):
         finally:
             cursor.close()
 
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs via user_constraints / user_cons_columns.
+
+        Joins each FK's child column (uc) to its parent column (rc) via
+        r_constraint_name. Oracle stores identifiers upper-case in the
+        dictionary views unless quoted on creation.
+        """
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT c.constraint_name, ucc.position, "
+                "       ucc.column_name, rc.table_name, rcc.column_name "
+                "FROM user_constraints c "
+                "JOIN user_cons_columns ucc "
+                "  ON c.constraint_name = ucc.constraint_name "
+                "JOIN user_constraints rc "
+                "  ON c.r_constraint_name = rc.constraint_name "
+                "JOIN user_cons_columns rcc "
+                "  ON rc.constraint_name = rcc.constraint_name "
+                "  AND ucc.position = rcc.position "
+                "WHERE c.constraint_type = 'R' AND c.table_name = :1 "
+                "ORDER BY c.constraint_name, ucc.position",
+                (table.upper(),),
+            )
+            return [
+                ForeignKeyInfo(
+                    owner_table=table,
+                    column=row[2],
+                    referenced_table=row[3],
+                    referenced_column=row[4],
+                    constraint_name=row[0],
+                    ordinal=int(row[1]),
+                )
+                for row in cursor.fetchall()
+            ]
+        finally:
+            cursor.close()
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List FKs from other tables that reference `table`."""
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT c.constraint_name, ucc.position, "
+                "       c.table_name, ucc.column_name, rcc.column_name "
+                "FROM user_constraints c "
+                "JOIN user_cons_columns ucc "
+                "  ON c.constraint_name = ucc.constraint_name "
+                "JOIN user_constraints rc "
+                "  ON c.r_constraint_name = rc.constraint_name "
+                "JOIN user_cons_columns rcc "
+                "  ON rc.constraint_name = rcc.constraint_name "
+                "  AND ucc.position = rcc.position "
+                "WHERE c.constraint_type = 'R' AND rc.table_name = :1 "
+                "ORDER BY c.table_name, c.constraint_name, ucc.position",
+                (table.upper(),),
+            )
+            return [
+                ForeignKeyInfo(
+                    owner_table=row[2],
+                    column=row[3],
+                    referenced_table=table,
+                    referenced_column=row[4],
+                    constraint_name=row[0],
+                    ordinal=int(row[1]),
+                )
+                for row in cursor.fetchall()
+            ]
+        finally:
+            cursor.close()
+
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None
     ) -> dict[str, Any]:
@@ -378,6 +466,10 @@ class OracleAdapter(DatabaseAdapter):
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT query with FETCH FIRST for Oracle 12c+. Schema parameter is ignored."""
         return f'SELECT * FROM "{table}" FETCH FIRST {limit} ROWS ONLY'
+
+    def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
+        qualified = self.catalog_qualified_name(database, schema, table)
+        return f"SELECT * FROM {qualified} WHERE {self.quote_identifier(column)} = {self.quote_literal(value)} FETCH FIRST {limit} ROWS ONLY"
 
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on Oracle with optional row limit."""

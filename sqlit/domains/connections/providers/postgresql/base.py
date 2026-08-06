@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -33,6 +34,10 @@ class PostgresBaseAdapter(CursorBasedAdapter):
 
     @property
     def supports_stored_procedures(self) -> bool:
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     @property
@@ -121,6 +126,13 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         """
         escaped = name.replace('"', '""')
         return f'"{escaped}"'
+
+    def quote_literal(self, value: Any) -> str:
+        """Render text independently of PostgreSQL backslash-string settings."""
+        if not isinstance(value, str):
+            return super().quote_literal(value)
+        encoded = value.encode("utf-8").hex()
+        return f"convert_from(decode('{encoded}', 'hex'), 'UTF8')"
 
     def format_autocomplete_identifier(self, name: str) -> str:
         """Quote autocomplete identifiers that PostgreSQL would otherwise fold."""
@@ -254,6 +266,105 @@ class PostgresBaseAdapter(CursorBasedAdapter):
             "event": None,
             "definition": None,
         }
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs of `table` via information_schema.
+
+        Uses key_column_usage + referential_constraints + constraint_column_usage
+        to assemble (owner_col, ref_table, ref_col). Joining on the constraint
+        catalog handles composite FKs in column order.
+        """
+        cursor = conn.cursor()
+        schema = schema or "public"
+        cursor.execute(
+            "SELECT tc.constraint_name, kcu.ordinal_position, "
+            "       kcu.column_name, ukcu.table_schema, ukcu.table_name, ukcu.column_name "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "  AND tc.constraint_schema = kcu.constraint_schema "
+            "  AND tc.constraint_catalog = kcu.constraint_catalog "
+            "JOIN information_schema.referential_constraints rc "
+            "  ON rc.constraint_name = tc.constraint_name "
+            "  AND rc.constraint_schema = tc.constraint_schema "
+            "  AND rc.constraint_catalog = tc.constraint_catalog "
+            "JOIN information_schema.key_column_usage ukcu "
+            "  ON ukcu.constraint_name = rc.unique_constraint_name "
+            "  AND ukcu.constraint_schema = rc.unique_constraint_schema "
+            "  AND ukcu.constraint_catalog = rc.unique_constraint_catalog "
+            "  AND ukcu.ordinal_position = kcu.position_in_unique_constraint "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' "
+            "  AND tc.table_schema = %s AND tc.table_name = %s "
+            "ORDER BY tc.constraint_name, kcu.ordinal_position",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=schema,
+                referenced_schema=row[3] or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List FKs from other tables that reference `table`."""
+        cursor = conn.cursor()
+        schema = schema or "public"
+        cursor.execute(
+            "SELECT tc.constraint_name, kcu.ordinal_position, "
+            "       tc.table_schema, tc.table_name, kcu.column_name, "
+            "       ukcu.column_name "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "  AND tc.constraint_schema = kcu.constraint_schema "
+            "  AND tc.constraint_catalog = kcu.constraint_catalog "
+            "JOIN information_schema.referential_constraints rc "
+            "  ON rc.constraint_name = tc.constraint_name "
+            "  AND rc.constraint_schema = tc.constraint_schema "
+            "  AND rc.constraint_catalog = tc.constraint_catalog "
+            "JOIN information_schema.key_column_usage ukcu "
+            "  ON ukcu.constraint_name = rc.unique_constraint_name "
+            "  AND ukcu.constraint_schema = rc.unique_constraint_schema "
+            "  AND ukcu.constraint_catalog = rc.unique_constraint_catalog "
+            "  AND ukcu.ordinal_position = kcu.position_in_unique_constraint "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' "
+            "  AND ukcu.table_schema = %s AND ukcu.table_name = %s "
+            "ORDER BY tc.table_schema, tc.table_name, "
+            "         tc.constraint_name, kcu.ordinal_position",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[3],
+                column=row[4],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[2] or "",
+                referenced_schema=schema,
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_sequence_definition(
         self, conn: Any, sequence_name: str, database: str | None = None
