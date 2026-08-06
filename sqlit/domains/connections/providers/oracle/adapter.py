@@ -467,6 +467,10 @@ class OracleAdapter(DatabaseAdapter):
         """Build SELECT query with FETCH FIRST for Oracle 12c+. Schema parameter is ignored."""
         return f'SELECT * FROM "{table}" FETCH FIRST {limit} ROWS ONLY'
 
+    def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
+        qualified = self.qualified_name(database, schema, table)
+        return f"SELECT * FROM {qualified} WHERE {self.quote_identifier(column)} = {self.quote_literal(value)} FETCH FIRST {limit} ROWS ONLY"
+
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on Oracle with optional row limit."""
         cursor = conn.cursor()

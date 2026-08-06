@@ -208,8 +208,6 @@ class TursoAdapter(DatabaseAdapter):
         results: list[ForeignKeyInfo] = []
         for other_row in all_rows:
             other = other_row[0]
-            if other.lower() == target_lower:
-                continue
             quoted = self.quote_identifier(other)
             for row in conn.execute(f"PRAGMA foreign_key_list({quoted})").fetchall():
                 if row[2].lower() != target_lower:

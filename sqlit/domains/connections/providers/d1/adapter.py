@@ -323,8 +323,6 @@ class D1Adapter(DatabaseAdapter):
             other = tr.get("name", "")
             if not isinstance(other, str) or not other or other.startswith("sqlite_"):
                 continue
-            if other.lower() == target_lower:
-                continue
             fk_result = self._execute(conn, f"PRAGMA foreign_key_list({self.quote_identifier(other)});")
             fk_rows = fk_result.get("results", [])
             if not isinstance(fk_rows, list):

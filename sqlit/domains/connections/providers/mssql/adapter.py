@@ -629,6 +629,10 @@ class SQLServerAdapter(DatabaseAdapter):
         schema = schema or "dbo"
         return f"SELECT TOP {limit} * FROM [{schema}].[{table}]"
 
+    def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
+        qualified = self.qualified_name(database, schema, table)
+        return f"SELECT TOP {limit} * FROM {qualified} WHERE {self.quote_identifier(column)} = {self.quote_literal(value)}"
+
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on SQL Server with optional row limit."""
         cursor = conn.cursor()

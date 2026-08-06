@@ -33,9 +33,14 @@ def build_fk_navigation_query(
     and schema_inspector entries on a provider point at the same adapter
     instance.
     """
-    qualified = adapter.qualified_name(ref_database or None, ref_schema or None, ref_table)
-    quoted_col = adapter.quote_identifier(ref_column)
-    return f"SELECT * FROM {qualified} WHERE {quoted_col} = {adapter.quote_literal(value)} LIMIT {limit}"
+    return adapter.build_filtered_select_query(
+        ref_table,
+        ref_column,
+        value,
+        limit,
+        ref_database or None,
+        ref_schema or None,
+    )
 
 
 def _strip_table_markup(table: Any, value: Any) -> Any:
@@ -1178,7 +1183,7 @@ class ResultsMixin:
             self.notify("No results", severity="warning")
             return
         try:
-            cursor_row, cursor_col = table.cursor_coordinate
+            _cursor_row, cursor_col = table.cursor_coordinate
             value = _strip_table_markup(table, table.get_cell_at(table.cursor_coordinate))
         except Exception:
             return
@@ -1245,7 +1250,7 @@ class ResultsMixin:
             self.notify("No results", severity="warning")
             return
         try:
-            cursor_row, cursor_col = table.cursor_coordinate
+            _cursor_row, cursor_col = table.cursor_coordinate
             value = _strip_table_markup(table, table.get_cell_at(table.cursor_coordinate))
         except Exception:
             return

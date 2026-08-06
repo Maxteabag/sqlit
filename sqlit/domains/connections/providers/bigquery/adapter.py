@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Any, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
@@ -18,6 +19,7 @@ from sqlit.domains.connections.providers.adapters.base import (
 if TYPE_CHECKING:
     from google.cloud import bigquery
     from google.cloud.bigquery.dbapi import Connection as BigQueryConnection
+
     from sqlit.domains.connections.domain.config import ConnectionConfig
 
 
@@ -186,11 +188,11 @@ class BigQueryAdapter(CursorBasedAdapter):
                 client.default_query_job_config = job_config
 
         conn = dbapi.connect(client=client)
-        setattr(conn, "_sqlit_bq_client", client)
+        conn._sqlit_bq_client = client
         if default_dataset:
-            setattr(conn, "_sqlit_bq_default_dataset", default_dataset)
+            conn._sqlit_bq_default_dataset = default_dataset
         if job_config:
-            setattr(conn, "_sqlit_bq_job_config", job_config)
+            conn._sqlit_bq_job_config = job_config
 
         return conn
 
@@ -401,7 +403,7 @@ class BigQueryAdapter(CursorBasedAdapter):
             f"  AND tc.constraint_name = ccu.constraint_name "
             f"  AND kcu.position_in_unique_constraint = ccu.ordinal_position "
             f"WHERE tc.constraint_type = 'FOREIGN KEY' "
-            f"  AND tc.table_name = @table_name "
+            f"  AND tc.table_name = %(table_name)s "
             f"ORDER BY kcu.constraint_name, kcu.ordinal_position",
             {"table_name": table},
         )
@@ -445,7 +447,7 @@ class BigQueryAdapter(CursorBasedAdapter):
             f"  AND tc.constraint_name = kcu.constraint_name "
             f"  AND kcu.position_in_unique_constraint = ccu.ordinal_position "
             f"WHERE tc.constraint_type = 'FOREIGN KEY' "
-            f"  AND ccu.table_name = @table_name",
+            f"  AND ccu.table_name = %(table_name)s",
             {"table_name": table},
         )
         return [

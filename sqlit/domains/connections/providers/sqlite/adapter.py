@@ -177,8 +177,6 @@ class SQLiteAdapter(DatabaseAdapter):
         target_lower = table.lower()
         results: list[ForeignKeyInfo] = []
         for other in all_tables:
-            if other.lower() == target_lower:
-                continue
             quoted = self.quote_identifier(other)
             cursor.execute(f"PRAGMA foreign_key_list({quoted})")
             for row in cursor.fetchall():

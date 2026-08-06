@@ -73,3 +73,8 @@ class OracleLegacyAdapter(OracleAdapter):
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT query with ROWNUM for Oracle 11g. Schema parameter is ignored."""
         return f'SELECT * FROM (SELECT * FROM "{table}") WHERE ROWNUM <= {limit}'
+
+    def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
+        qualified = self.qualified_name(database, schema, table)
+        predicate = f"{self.quote_identifier(column)} = {self.quote_literal(value)}"
+        return f"SELECT * FROM (SELECT * FROM {qualified} WHERE {predicate}) WHERE ROWNUM <= {limit}"

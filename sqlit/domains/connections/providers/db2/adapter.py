@@ -292,3 +292,7 @@ class Db2Adapter(CursorBasedAdapter):
         if schema:
             return f'SELECT * FROM "{schema}"."{table}" FETCH FIRST {limit} ROWS ONLY'
         return f'SELECT * FROM "{table}" FETCH FIRST {limit} ROWS ONLY'
+
+    def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
+        qualified = self.qualified_name(database, schema, table)
+        return f"SELECT * FROM {qualified} WHERE {self.quote_identifier(column)} = {self.quote_literal(value)} FETCH FIRST {limit} ROWS ONLY"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -76,6 +77,15 @@ class TestSQLiteForeignKeys:
     def test_incoming_refs_to_isolated_table(self, blog_db: sqlite3.Connection):
         # comments has no incoming refs in this schema
         assert SQLiteAdapter().get_referencing_foreign_keys(blog_db, "comments") == []
+
+    def test_incoming_refs_include_self_referential_foreign_key(self, blog_db: sqlite3.Connection):
+        blog_db.execute("CREATE TABLE employees (id INTEGER PRIMARY KEY, manager_id INTEGER REFERENCES employees(id))")
+
+        fks = SQLiteAdapter().get_referencing_foreign_keys(blog_db, "employees")
+
+        assert [(fk.owner_table, fk.column, fk.referenced_column) for fk in fks] == [
+            ("employees", "manager_id", "id")
+        ]
 
 
 class TestForeignKeyInfo:
@@ -182,6 +192,39 @@ class TestBuildFkNavigationQuery:
             limit=5,
         )
         assert q.endswith("LIMIT 5")
+
+    @pytest.mark.parametrize(
+        ("adapter_path", "expected"),
+        [
+            ("sqlit.domains.connections.providers.mssql.adapter.SQLServerAdapter", 'SELECT TOP 100 * FROM [users] WHERE [id] = 7'),
+            ("sqlit.domains.connections.providers.oracle.adapter.OracleAdapter", 'SELECT * FROM "users" WHERE "id" = 7 FETCH FIRST 100 ROWS ONLY'),
+            ("sqlit.domains.connections.providers.db2.adapter.Db2Adapter", 'SELECT * FROM "users" WHERE "id" = 7 FETCH FIRST 100 ROWS ONLY'),
+            ("sqlit.domains.connections.providers.firebird.adapter.FirebirdAdapter", 'SELECT * FROM "users" WHERE "id" = 7 ROWS 100'),
+        ],
+    )
+    def test_uses_adapter_specific_limit_syntax(self, adapter_path: str, expected: str):
+        from importlib import import_module
+
+        from sqlit.domains.results.ui.mixins.results import build_fk_navigation_query
+
+        module_name, class_name = adapter_path.rsplit(".", 1)
+        adapter = getattr(import_module(module_name), class_name)()
+
+        assert build_fk_navigation_query(adapter=adapter, ref_table="users", ref_column="id", value=7) == expected
+
+
+def test_bigquery_foreign_key_query_uses_dbapi_named_placeholder():
+    from sqlit.domains.connections.providers.bigquery.adapter import BigQueryAdapter
+
+    conn = MagicMock()
+    conn.cursor.return_value.fetchall.return_value = []
+
+    BigQueryAdapter().get_foreign_keys(conn, "orders", schema="analytics")
+
+    query, params = conn.cursor.return_value.execute.call_args.args
+    assert "%(table_name)s" in query
+    assert "@table_name" not in query
+    assert params == {"table_name": "orders"}
 
 
 class TestBaseAdapterDefaults:
