@@ -15,6 +15,8 @@ from sqlit.domains.connections.providers.adapters.base import (
     SequenceInfo,
     TableInfo,
     TriggerInfo,
+    _first_keyword,
+    _sanitize_row,
 )
 
 
@@ -41,6 +43,44 @@ class MySQLBaseAdapter(CursorBasedAdapter):
     @property
     def supports_foreign_keys(self) -> bool:
         return True
+
+    def classify_query(self, query: str) -> bool:
+        """Treat MySQL/MariaDB CALL statements as potentially row-returning."""
+        return _first_keyword(query) == "CALL" or super().classify_query(query)
+
+    def execute_query(
+        self, conn: Any, query: str, max_rows: int | None = None
+    ) -> tuple[list[str], list[tuple], bool]:
+        """Return the first row-bearing result from a stored procedure call.
+
+        MySQL-compatible drivers expose procedure output as multiple DB-API
+        result sets, which can include leading and trailing status-only sets.
+        Every set must be consumed before the connection can be reused.
+        """
+        if _first_keyword(query) != "CALL":
+            return super().execute_query(conn, query, max_rows)
+
+        cursor = conn.cursor()
+        cursor.execute(query)
+        result: tuple[list[str], list[tuple], bool] | None = None
+
+        while True:
+            if cursor.description and result is None:
+                columns = [col[0] for col in cursor.description]
+                if max_rows is None:
+                    rows = cursor.fetchall()
+                    truncated = False
+                else:
+                    rows = cursor.fetchmany(max_rows + 1)
+                    truncated = len(rows) > max_rows
+                    rows = rows[:max_rows]
+                result = (columns, [_sanitize_row(row) for row in rows], truncated)
+
+            nextset = getattr(cursor, "nextset", None)
+            if not callable(nextset) or not nextset():
+                break
+
+        return result or ([], [], False)
 
     def apply_database_override(self, config: ConnectionConfig, database: str) -> ConnectionConfig:
         """Apply a default database for unqualified queries."""

@@ -13,6 +13,33 @@ if TYPE_CHECKING:
 SELECT_KEYWORDS = frozenset(["SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA"])
 
 
+def _strip_leading_sql_comments(query: str) -> str:
+    """Strip whitespace and consecutive SQL comments from a statement."""
+    remaining = query.lstrip()
+    while remaining:
+        if remaining.startswith("--") or remaining.startswith("#"):
+            newline = remaining.find("\n")
+            if newline < 0:
+                return ""
+            remaining = remaining[newline + 1 :].lstrip()
+            continue
+        if remaining.startswith("/*"):
+            end = remaining.find("*/", 2)
+            if end < 0:
+                return ""
+            remaining = remaining[end + 2 :].lstrip()
+            continue
+        break
+    return remaining
+
+
+def _first_keyword(query: str) -> str:
+    """Return the first SQL token, ignoring whitespace and leading comments."""
+    remaining = _strip_leading_sql_comments(query)
+    parts = remaining.split(maxsplit=1)
+    return parts[0].rstrip(";").upper() if parts else ""
+
+
 def resolve_file_path(path_str: str) -> Path:
     """Resolve a file path for file-based databases (SQLite, DuckDB).
 
@@ -254,8 +281,7 @@ class DatabaseAdapter(ABC):
 
     def classify_query(self, query: str) -> bool:
         """Return True if the query is expected to return rows."""
-        query_type = query.strip().upper().split()[0] if query.strip() else ""
-        return query_type in SELECT_KEYWORDS
+        return _first_keyword(query) in SELECT_KEYWORDS
 
     def execute_test_query(self, conn: Any) -> None:
         """Execute a simple query to verify the connection works.
