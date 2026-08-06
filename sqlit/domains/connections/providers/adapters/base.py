@@ -523,8 +523,18 @@ class DatabaseAdapter(ABC):
         schema: str | None = None,
     ) -> str:
         """Build a limited SELECT filtered to one column value."""
-        qualified = self.qualified_name(database, schema, table)
+        qualified = self.catalog_qualified_name(database, schema, table)
         return f"SELECT * FROM {qualified} WHERE {self.quote_identifier(column)} = {self.quote_literal(value)} LIMIT {limit}"
+
+    def catalog_qualified_name(self, database: str | None, schema: str | None, name: str) -> str:
+        """Quote an exact catalog identity without omitting the default schema."""
+        parts: list[str] = []
+        if database and self.supports_cross_database_queries:
+            parts.append(self.quote_identifier(database))
+        if schema:
+            parts.append(self.quote_identifier(schema))
+        parts.append(self.quote_identifier(name))
+        return ".".join(parts)
 
     def format_autocomplete_identifier(self, name: str) -> str:
         """Format an identifier for insertion from autocomplete.

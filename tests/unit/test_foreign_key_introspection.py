@@ -179,7 +179,16 @@ class TestBuildFkNavigationQuery:
             value=7,
             ref_schema="public",
         )
-        assert q == 'SELECT * FROM "users" WHERE "id" = 7 LIMIT 100'
+        assert q == 'SELECT * FROM "public"."users" WHERE "id" = 7 LIMIT 100'
+
+    def test_sql_server_uses_bit_and_binary_literals(self):
+        from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
+        from sqlit.domains.results.ui.mixins.results import build_fk_navigation_query
+
+        adapter = SQLServerAdapter()
+
+        assert build_fk_navigation_query(adapter=adapter, ref_table="flags", ref_column="enabled", value=True) == "SELECT TOP 100 * FROM [flags] WHERE [enabled] = 1"
+        assert build_fk_navigation_query(adapter=adapter, ref_table="blobs", ref_column="id", value=b"\x00\xff") == "SELECT TOP 100 * FROM [blobs] WHERE [id] = 0x00ff"
 
     def test_mysql_uses_backticks(self):
         from sqlit.domains.connections.providers.mysql.adapter import MySQLAdapter

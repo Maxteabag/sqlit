@@ -271,9 +271,9 @@ class DuckDBAdapter(DatabaseAdapter):
             "       constraint_column_names, referenced_column_names "
             "FROM duckdb_constraints() "
             "WHERE constraint_type = 'FOREIGN KEY' "
-            "  AND referenced_table = ? "
+            "  AND referenced_table = ? AND schema_name = ? "
             "ORDER BY schema_name, table_name, constraint_index",
-            (table,),
+            (table, schema),
         )
         out: list[ForeignKeyInfo] = []
         for row in result.fetchall():

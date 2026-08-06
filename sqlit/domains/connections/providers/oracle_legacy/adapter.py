@@ -75,6 +75,6 @@ class OracleLegacyAdapter(OracleAdapter):
         return f'SELECT * FROM (SELECT * FROM "{table}") WHERE ROWNUM <= {limit}'
 
     def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
-        qualified = self.qualified_name(database, schema, table)
+        qualified = self.catalog_qualified_name(database, schema, table)
         predicate = f"{self.quote_identifier(column)} = {self.quote_literal(value)}"
         return f"SELECT * FROM (SELECT * FROM {qualified} WHERE {predicate}) WHERE ROWNUM <= {limit}"

@@ -339,5 +339,5 @@ class TeradataAdapter(CursorBasedAdapter):
         return f'lock row for access select top {limit} * from "{table}"'
 
     def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
-        qualified = self.qualified_name(database, schema, table)
+        qualified = self.catalog_qualified_name(database, schema, table)
         return f"lock row for access select top {limit} * from {qualified} where {self.quote_identifier(column)} = {self.quote_literal(value)}"

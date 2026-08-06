@@ -630,8 +630,16 @@ class SQLServerAdapter(DatabaseAdapter):
         return f"SELECT TOP {limit} * FROM [{schema}].[{table}]"
 
     def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
-        qualified = self.qualified_name(database, schema, table)
+        qualified = self.catalog_qualified_name(database, schema, table)
         return f"SELECT TOP {limit} * FROM {qualified} WHERE {self.quote_identifier(column)} = {self.quote_literal(value)}"
+
+    def quote_literal(self, value: Any) -> str:
+        """Render SQL Server bit and binary literals using T-SQL syntax."""
+        if isinstance(value, bool):
+            return "1" if value else "0"
+        if isinstance(value, bytes | bytearray | memoryview):
+            return "0x" + bytes(value).hex()
+        return super().quote_literal(value)
 
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on SQL Server with optional row limit."""
