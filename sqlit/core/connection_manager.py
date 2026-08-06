@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlit.domains.connections.domain.config import ConnectionConfig
+from sqlit.domains.connections.domain.passwords import uses_db_password
 from sqlit.shared.app.services import AppServices
 
 
@@ -31,7 +32,7 @@ class ConnectionManager:
             return config
 
         service = self._services.credentials_service
-        if endpoint and endpoint.password is None:
+        if endpoint and endpoint.password is None and uses_db_password(config):
             password = service.get_password(config.name)
             if password is not None:
                 endpoint.password = password

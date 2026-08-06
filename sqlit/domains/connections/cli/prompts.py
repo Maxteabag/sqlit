@@ -10,6 +10,7 @@ from sqlit.domains.connections.domain.password_command import (
     PasswordCommandError,
     run_password_command,
 )
+from sqlit.domains.connections.domain.passwords import uses_db_password
 
 
 def _needs_ssh_prompt(config: ConnectionConfig) -> bool:
@@ -58,7 +59,7 @@ def prompt_for_password(config: ConnectionConfig) -> ConnectionConfig:
 
     # DB password
     endpoint = config.tcp_endpoint
-    if endpoint and endpoint.password is None:
+    if endpoint and endpoint.password is None and uses_db_password(config):
         if endpoint.password_command:
             try:
                 db_password = run_password_command(endpoint.password_command)
