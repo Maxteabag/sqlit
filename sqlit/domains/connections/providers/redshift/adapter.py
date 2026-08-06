@@ -243,7 +243,7 @@ class RedshiftAdapter(CursorBasedAdapter):
         into one row per column pair.
         """
         cursor = conn.cursor()
-        schema = (schema or "public").lower()
+        schema = schema or "public"
         cursor.execute(
             "SELECT c.conname, k.n, af.attname, "
             "       rn.nspname, rt.relname, ar.attname "
@@ -257,7 +257,7 @@ class RedshiftAdapter(CursorBasedAdapter):
             "JOIN pg_attribute ar ON ar.attrelid = rt.oid AND ar.attnum = c.confkey[k.n] "
             "WHERE c.contype = 'f' AND n.nspname = %s AND t.relname = %s "
             "ORDER BY c.conname, k.n",
-            (schema, table.lower()),
+            (schema, table),
         )
         return [
             ForeignKeyInfo(
@@ -281,7 +281,7 @@ class RedshiftAdapter(CursorBasedAdapter):
         schema: str | None = None,
     ) -> list[ForeignKeyInfo]:
         cursor = conn.cursor()
-        schema = (schema or "public").lower()
+        schema = schema or "public"
         cursor.execute(
             "SELECT c.conname, k.n, af.attname, "
             "       n.nspname, t.relname, ar.attname "
@@ -295,7 +295,7 @@ class RedshiftAdapter(CursorBasedAdapter):
             "JOIN pg_attribute ar ON ar.attrelid = rt.oid AND ar.attnum = c.confkey[k.n] "
             "WHERE c.contype = 'f' AND rn.nspname = %s AND rt.relname = %s "
             "ORDER BY n.nspname, t.relname, c.conname, k.n",
-            (schema, table.lower()),
+            (schema, table),
         )
         return [
             ForeignKeyInfo(
