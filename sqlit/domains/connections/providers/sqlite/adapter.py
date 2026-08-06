@@ -141,17 +141,34 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor = conn.cursor()
         quoted = self.quote_identifier(table)
         cursor.execute(f"PRAGMA foreign_key_list({quoted})")
-        return [
-            ForeignKeyInfo(
+        results: list[ForeignKeyInfo] = []
+        for row in cursor.fetchall():
+            referenced_column = self._resolve_referenced_column(conn, row[2], row[4], int(row[1]))
+            if not referenced_column:
+                continue
+            results.append(ForeignKeyInfo(
                 owner_table=table,
                 column=row[3],
                 referenced_table=row[2],
-                referenced_column=row[4],
+                referenced_column=referenced_column,
                 constraint_name=f"fk_{row[0]}",
                 ordinal=int(row[1]) + 1,
-            )
-            for row in cursor.fetchall()
-        ]
+            ))
+        return results
+
+    def _resolve_referenced_column(self, conn: Any, table: str, column: Any, ordinal: int) -> str | None:
+        """Resolve SQLite's omitted REFERENCES column from the target primary key."""
+        if isinstance(column, str) and column:
+            return column
+        cursor = conn.cursor()
+        cursor.execute(f"PRAGMA table_info({self.quote_identifier(table)})")
+        primary_key_columns = sorted(
+            ((int(row[5]), str(row[1])) for row in cursor.fetchall() if int(row[5]) > 0),
+            key=lambda item: item[0],
+        )
+        if ordinal >= len(primary_key_columns):
+            return None
+        return primary_key_columns[ordinal][1]
 
     def get_referencing_foreign_keys(
         self,
@@ -182,12 +199,15 @@ class SQLiteAdapter(DatabaseAdapter):
             for row in cursor.fetchall():
                 if row[2].lower() != target_lower:
                     continue
+                referenced_column = self._resolve_referenced_column(conn, table, row[4], int(row[1]))
+                if not referenced_column:
+                    continue
                 results.append(
                     ForeignKeyInfo(
                         owner_table=other,
                         column=row[3],
                         referenced_table=table,
-                        referenced_column=row[4],
+                        referenced_column=referenced_column,
                         constraint_name=f"{other}_fk_{row[0]}",
                         ordinal=int(row[1]) + 1,
                     )

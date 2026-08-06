@@ -1267,18 +1267,20 @@ class ResultsMixin:
             self.notify("No tables reference this table", severity="warning")
             return
 
+        # Count complete constraints before filtering to the selected referenced column.
+        # Otherwise each row of a composite FK appears single-column after filtering.
+        def constraint_identity(fk: Any) -> tuple[str, str, str, str]:
+            return (fk.owner_database, fk.owner_schema, fk.owner_table, fk.constraint_name)
+
+        from collections import Counter
+        counts = Counter(constraint_identity(fk) for fk in incoming)
+
         # Filter to FKs that reference the current column (skip composite — single-col only)
         candidates = [
             fk for fk in incoming
             if self._normalize_column_name(fk.referenced_column) == column_name
+            and counts[constraint_identity(fk)] == 1
         ]
-        # Group by constraint to drop composite FKs (multi-row constraints)
-        from collections import Counter
-        def constraint_identity(fk: Any) -> tuple[str, str, str, str]:
-            return (fk.owner_database, fk.owner_schema, fk.owner_table, fk.constraint_name)
-
-        counts = Counter(constraint_identity(fk) for fk in candidates)
-        candidates = [fk for fk in candidates if counts[constraint_identity(fk)] == 1]
         if not candidates:
             self.notify(f"No incoming references on '{columns[cursor_col]}'", severity="warning")
             return

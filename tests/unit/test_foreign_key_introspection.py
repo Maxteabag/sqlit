@@ -87,6 +87,18 @@ class TestSQLiteForeignKeys:
             ("employees", "manager_id", "id")
         ]
 
+    def test_implicit_referenced_column_resolves_to_primary_key(self, blog_db: sqlite3.Connection):
+        blog_db.executescript(
+            "CREATE TABLE categories (id INTEGER PRIMARY KEY, name TEXT);"
+            "CREATE TABLE products (id INTEGER PRIMARY KEY, category_id INTEGER REFERENCES categories);"
+        )
+
+        outgoing = SQLiteAdapter().get_foreign_keys(blog_db, "products")
+        incoming = SQLiteAdapter().get_referencing_foreign_keys(blog_db, "categories")
+
+        assert outgoing[0].referenced_column == "id"
+        assert incoming[0].referenced_column == "id"
+
 
 class TestForeignKeyInfo:
     def test_minimum_fields(self):
