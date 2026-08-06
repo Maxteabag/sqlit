@@ -513,18 +513,29 @@ class DatabaseAdapter(ABC):
         text = str(value)
         return "'" + text.replace("'", "''") + "'"
 
+    def format_autocomplete_identifier(self, name: str) -> str:
+        """Format an identifier for insertion from autocomplete.
+
+        Most dialects keep the raw name for backwards-compatible suggestions.
+        Dialects with case-sensitive quoted identifiers can override this to
+        return executable SQL for names that need quoting.
+        """
+        return name
+
     def qualified_name(self, database: str | None, schema: str | None, name: str) -> str:
         """Build a quoted qualified identifier, skipping empty segments.
 
         Default handles SQL Server-style `[db].[schema].[name]`, PostgreSQL-
         style `"schema"."name"`, and single-part `"name"` by omitting any
-        empty/None component. Dialects that want different composition
-        (e.g. MySQL, which has no schemas within databases) can override.
+        empty/None component, removing database component if provider
+        doesn't support cross-database queries and remove default schema name.
+        Dialects that want different composition (e.g. MySQL, which has
+        no schemas within databases) can override.
         """
         parts: list[str] = []
-        if database:
+        if database and self.supports_cross_database_queries:
             parts.append(self.quote_identifier(database))
-        if schema:
+        if schema and (schema != self.default_schema or parts):
             parts.append(self.quote_identifier(schema))
         parts.append(self.quote_identifier(name))
         return ".".join(parts)

@@ -182,18 +182,44 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         from sqlit.domains.query.app.alerts import (
             AlertMode,
             AlertSeverity,
+            CONNECTION_ALERT_OPTION,
+            DATABASE_ALERT_SETTING,
             classify_query_alert,
             format_alert_mode,
+            lookup_database_override,
+            resolve_alert_mode,
             should_confirm,
         )
         from sqlit.domains.query.app.multi_statement import get_executable_sql
         from sqlit.shared.ui.screens.confirm import ConfirmScreen
 
-        raw_mode = getattr(self.services.runtime, "query_alert_mode", 0) or 0
+        global_mode = getattr(self.services.runtime, "query_alert_mode", 0) or 0
+        connection_option = None
+        config = getattr(self, "current_config", None)
+        if config is not None:
+            connection_option = config.get_option(CONNECTION_ALERT_OPTION)
+        database: str | None = None
+        get_db = getattr(self, "_get_effective_database", None)
+        if callable(get_db):
+            try:
+                value = get_db()
+                database = str(value) if value else None
+            except Exception:
+                database = None
+        overrides: dict[str, Any] = {}
         try:
-            mode = AlertMode(int(raw_mode))
-        except ValueError:
-            mode = AlertMode.OFF
+            raw_overrides = self.services.settings_store.get(DATABASE_ALERT_SETTING)
+            if isinstance(raw_overrides, dict):
+                overrides = raw_overrides
+        except Exception:
+            overrides = {}
+        connection_name = getattr(config, "name", None) if config is not None else None
+        database_override = lookup_database_override(overrides, connection_name, database)
+        mode, _ = resolve_alert_mode(
+            global_mode=global_mode,
+            connection_option=connection_option,
+            database_override=database_override,
+        )
 
         if mode == AlertMode.OFF:
             proceed()

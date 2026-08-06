@@ -100,9 +100,16 @@ class SSMSTUI(
         runtime: RuntimeConfig | None = None,
         startup_connection: ConnectionConfig | None = None,
         exclusive_connection: bool = False,
+        process_worker_client: Any | None = None,
     ):
         super().__init__()
         self.services = services or build_app_services(runtime or RuntimeConfig.from_env())
+        # A pre-spawned worker handed in from cli.py, before Textual's
+        # FD set was contaminated. ProcessWorkerLifecycleMixin already
+        # checks self._process_worker_client first, so seeding it here
+        # short-circuits the lazy spawn path.
+        if process_worker_client is not None:
+            self._process_worker_client = process_worker_client
         from sqlit.core.connection_manager import ConnectionManager
 
         self._connection_manager = ConnectionManager(self.services)

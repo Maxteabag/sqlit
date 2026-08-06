@@ -121,3 +121,15 @@ class SettingsStoreProtocol(Protocol):
     def save_all(self, settings: dict) -> None:
         """Save settings."""
         ...
+
+    def get(self, key: str, default: object = None) -> object:
+        """Get a setting by key."""
+        ...
+
+    def set(self, key: str, value: object) -> None:
+        """Set a setting by key."""
+        ...
+
+    def delete(self, key: str) -> bool:
+        """Delete a setting by key."""
+        ...

@@ -132,9 +132,18 @@ def parse_connection_url(
     if schema.is_file_based:
         strategy = FILE_BASED_STRATEGY
 
-    return normalize_connection_config(
-        strategy.parse(parsed, db_type, config_name, url, extra_options)
-    )
+    config = strategy.parse(parsed, db_type, config_name, url, extra_options)
+    if db_type == "trino":
+        for name in (
+            "trino_auth_method",
+            "trino_kerberos_delegate",
+            "trino_kerberos_hostname_override",
+            "trino_kerberos_mutual_authentication",
+            "trino_kerberos_service_name",
+        ):
+            if name in config.extra_options:
+                config.set_option(name, config.extra_options.pop(name))
+    return normalize_connection_config(config)
 
 
 def _parse_file_based_url(

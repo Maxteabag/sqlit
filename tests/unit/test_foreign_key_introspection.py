@@ -157,7 +157,7 @@ class TestBuildFkNavigationQuery:
             value=7,
             ref_schema="public",
         )
-        assert q == 'SELECT * FROM "public"."users" WHERE "id" = 7 LIMIT 100'
+        assert q == 'SELECT * FROM "users" WHERE "id" = 7 LIMIT 100'
 
     def test_mysql_uses_backticks(self):
         from sqlit.domains.connections.providers.mysql.adapter import MySQLAdapter

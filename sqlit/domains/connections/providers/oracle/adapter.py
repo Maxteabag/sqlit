@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.adapters.base import (
@@ -17,6 +18,31 @@ from sqlit.domains.connections.providers.registry import get_default_port
 
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
+
+
+_LEADING_SQL_COMMENTS = re.compile(
+    r"^\s*(?:(?:--[^\n]*(?:\n|$))|(?:/\*.*?\*/\s*))*",
+    re.DOTALL,
+)
+_PLSQL_START = re.compile(
+    r"^(?:BEGIN|DECLARE)\b|^CREATE\s+(?:OR\s+REPLACE\s+)?"
+    r"(?:(?:NON)?EDITIONABLE\s+)?"
+    r"(?:FUNCTION|PACKAGE|PROCEDURE|TRIGGER|TYPE\s+BODY)\b",
+    re.IGNORECASE,
+)
+
+
+def _prepare_statement(query: str) -> str:
+    """Remove SQL*Plus terminators that python-oracledb does not accept."""
+    statement = query.rstrip()
+    if not statement.endswith(";"):
+        return query
+
+    without_leading_comments = _LEADING_SQL_COMMENTS.sub("", statement)
+    if _PLSQL_START.match(without_leading_comments):
+        return query
+
+    return statement[:-1].rstrip()
 
 
 class OracleAdapter(DatabaseAdapter):
@@ -73,6 +99,13 @@ class OracleAdapter(DatabaseAdapter):
             package_name=self.install_package,
         )
 
+        # Fetch CLOB/BLOB values inline as str/bytes instead of LOB locators.
+        # Locators need a live connection to be read, but results are pickled
+        # across the process worker pipe after the query connection is closed,
+        # which raises DPY-1001 mid-serialization. Inline fetch also avoids
+        # one extra round trip per LOB per row.
+        oracledb.defaults.fetch_lobs = False
+
         endpoint = config.tcp_endpoint
         if endpoint is None:
             raise ValueError("Oracle connections require a TCP-style endpoint.")
@@ -88,7 +121,18 @@ class OracleAdapter(DatabaseAdapter):
             sid = config.get_option("oracle_sid") or endpoint.database
             dsn = oracledb.makedsn(endpoint.host, port, sid=sid)
         else:
-            dsn = f"{endpoint.host}:{port}/{endpoint.database}"
+            protocol = str(config.get_option("oracle_protocol", "default")).strip().lower()
+            if protocol not in {"", "default", "tcp", "tcps"}:
+                raise ValueError("Oracle protocol must be Default, TCP, or TCPS")
+            protocol_prefix = f"{protocol}://" if protocol in {"tcp", "tcps"} else ""
+            dsn = f"{protocol_prefix}{endpoint.host}:{port}/{endpoint.database}"
+
+            parameters = str(
+                config.get_option("oracle_easy_connect_parameters", "") or ""
+            ).strip()
+            parameters = parameters.lstrip("?")
+            if parameters:
+                dsn = f"{dsn}?{parameters}"
 
         # Determine connection mode based on oracle_role
         oracle_role = config.get_option("oracle_role", "normal")
@@ -427,7 +471,12 @@ class OracleAdapter(DatabaseAdapter):
         """Execute a query on Oracle with optional row limit."""
         cursor = conn.cursor()
         try:
-            cursor.execute(query)
+            # Larger fetch batches cut per-round-trip overhead on high-latency
+            # links without fetching beyond the requested result cap.
+            row_budget = max_rows + 1 if max_rows is not None else 1001
+            cursor.arraysize = min(1000, max(1, row_budget))
+            cursor.prefetchrows = min(1001, max(1, row_budget))
+            cursor.execute(_prepare_statement(query))
             if cursor.description:
                 columns = [col[0] for col in cursor.description]
                 if max_rows is not None:
@@ -447,7 +496,7 @@ class OracleAdapter(DatabaseAdapter):
         """Execute a non-query on Oracle."""
         cursor = conn.cursor()
         try:
-            cursor.execute(query)
+            cursor.execute(_prepare_statement(query))
             rowcount = int(cursor.rowcount)
             conn.commit()
             return rowcount

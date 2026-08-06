@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
     """Iterate through SQL characters, tracking string literal context.
 
-    Handles escape sequences (backslash) and SQL-style doubled quotes.
+    Handles escape sequences (backslash), SQL-style doubled quotes,
+    and PostgreSQL dollar-quoted strings ($$ or $tag$).
 
     Yields:
         (index, char, outside_string) tuples where outside_string is True
@@ -27,9 +28,24 @@ def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
     """
     in_single_quote = False
     in_double_quote = False
+    in_dollar_tag: str | None = None
     i = 0
 
     while i < len(sql):
+        # If inside a dollar-quoted string, check for the closing tag
+        if in_dollar_tag is not None:
+            if sql[i:].startswith(in_dollar_tag):
+                # Yield the characters of the closing tag as inside string
+                for offset in range(len(in_dollar_tag)):
+                    yield (i + offset, sql[i + offset], False)
+                i += len(in_dollar_tag)
+                in_dollar_tag = None
+                continue
+            else:
+                yield (i, sql[i], False)
+                i += 1
+                continue
+
         char = sql[i]
 
         # Handle escape sequences in strings
@@ -50,6 +66,18 @@ def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
             yield (i + 1, '"', False)
             i += 2
             continue
+
+        # Check for PostgreSQL dollar-quoted string start
+        if char == "$" and not in_single_quote and not in_double_quote:
+            # Match $[a-zA-Z_][a-zA-Z0-9_]*$ or $$
+            match = re.match(r"^\$([a-zA-Z_][a-zA-Z0-9_]*)?\$", sql[i:])
+            if match:
+                delimiter = match.group(0)
+                in_dollar_tag = delimiter
+                for offset in range(len(delimiter)):
+                    yield (i + offset, sql[i + offset], False)
+                i += len(delimiter)
+                continue
 
         # Toggle quote state and yield
         if char == "'" and not in_double_quote:

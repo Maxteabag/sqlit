@@ -9,6 +9,7 @@ so they fail without the fix and pass with it.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -85,3 +86,51 @@ def test_copy_cell_preserves_literal_brackets_when_not_rendering_markup() -> Non
     app = _FakeApp([("[bold]hello",)], render_markup=False)
     app.action_copy_cell()
     assert app.clipboard_text == "[bold]hello"
+
+
+class _FakeQueryInput:
+    def __init__(self) -> None:
+        self.text = ""
+        self.cursor_location = (0, 0)
+        self.read_only = True
+
+    def focus(self) -> None:
+        pass
+
+
+class _FakeEditApp(_FakeApp):
+    def __init__(self, cells: list[tuple[str, ...]], columns: list[str]) -> None:
+        super().__init__(cells, render_markup=True)
+        self._columns = columns
+        self.query_input = _FakeQueryInput()
+        self._suppress_autocomplete_once = False
+        self.current_provider = SimpleNamespace(
+            dialect=SimpleNamespace(qualified_name=lambda database, schema, name: name),
+        )
+
+    def _get_active_results_context(self) -> tuple[Any, list, list, bool]:
+        return self._table, self._columns, [], False
+
+    def _get_active_results_table_info(self, _table: Any, _stacked: bool) -> dict[str, Any]:
+        return {"name": "users", "columns": []}
+
+    def action_focus_query(self) -> None:
+        pass
+
+    def _update_footer_bindings(self) -> None:
+        pass
+
+    def _update_vim_mode_visuals(self) -> None:
+        pass
+
+
+def test_delete_row_strips_filter_markup_before_generating_sql() -> None:
+    app = _FakeEditApp([("[bold #FFFF00]Ja[/]ne",)], ["name"])
+    app.action_delete_row()
+    assert app.query_input.text == "DELETE FROM users WHERE name = 'Jane';"
+
+
+def test_edit_cell_strips_filter_markup_before_generating_sql() -> None:
+    app = _FakeEditApp([("[bold #FFFF00]Ja[/]ne",)], ["name"])
+    app.action_edit_cell()
+    assert "WHERE name = 'Jane';" in app.query_input.text

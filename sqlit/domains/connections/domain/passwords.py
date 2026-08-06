@@ -6,8 +6,8 @@ from sqlit.domains.connections.domain.config import ConnectionConfig
 from sqlit.domains.connections.providers.metadata import is_file_based, requires_auth
 
 
-def needs_db_password(config: ConnectionConfig) -> bool:
-    """Return True if the database password should be prompted."""
+def uses_db_password(config: ConnectionConfig) -> bool:
+    """Return whether the selected database authentication consumes a password."""
     if is_file_based(config.db_type):
         return False
 
@@ -16,6 +16,19 @@ def needs_db_password(config: ConnectionConfig) -> bool:
 
     auth_type = config.get_option("auth_type")
     if auth_type in ("ad_default", "ad_integrated", "windows"):
+        return False
+
+    if config.db_type == "trino":
+        auth_method = str(config.options.get("trino_auth_method", config.extra_options.get("trino_auth_method", "basic"))).lower()
+        if auth_method in {"none", "kerberos", "gssapi"}:
+            return False
+
+    return config.tcp_endpoint is not None
+
+
+def needs_db_password(config: ConnectionConfig) -> bool:
+    """Return True if the database password should be prompted."""
+    if not uses_db_password(config):
         return False
 
     endpoint = config.tcp_endpoint

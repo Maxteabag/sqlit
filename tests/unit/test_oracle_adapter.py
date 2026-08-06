@@ -161,6 +161,132 @@ class TestOracleAdapterConnectionType:
             # Service name uses slash separator: host:port/service_name
             assert call_kwargs["dsn"] == "localhost:1521/XEPDB1"
 
+    def test_connect_tcps_with_easy_connect_parameters(self):
+        """Issue #261: protocol and parameters must be included in the DSN."""
+        mock_oracledb = MagicMock()
+        mock_oracledb.AUTH_MODE_SYSDBA = 2
+        mock_oracledb.AUTH_MODE_SYSOPER = 4
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            adapter = OracleAdapter()
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                database="service-name.com",
+                username="testuser",
+                password="testpass",
+                options={
+                    "oracle_connection_type": "service_name",
+                    "oracle_protocol": "tcps",
+                    "oracle_easy_connect_parameters": (
+                        "ssl_server_dn_match=no&retry_count=3"
+                    ),
+                },
+            )
+
+            adapter.connect(config)
+
+            call_kwargs = mock_oracledb.connect.call_args.kwargs
+            assert call_kwargs["dsn"] == (
+                "tcps://localhost:1521/service-name.com"
+                "?ssl_server_dn_match=no&retry_count=3"
+            )
+
+    def test_connect_easy_connect_parameters_accept_leading_question_mark(self):
+        """Users may paste Easy Connect parameters with their separator."""
+        mock_oracledb = MagicMock()
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                database="XEPDB1",
+                username="testuser",
+                password="testpass",
+                options={"oracle_easy_connect_parameters": "?expire_time=2"},
+            )
+
+            OracleAdapter().connect(config)
+
+            assert mock_oracledb.connect.call_args.kwargs["dsn"] == (
+                "localhost:1521/XEPDB1?expire_time=2"
+            )
+
+    def test_connect_rejects_unknown_oracle_protocol(self):
+        """Configs outside the schema must not silently discard bad protocols."""
+        mock_oracledb = MagicMock()
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                database="XEPDB1",
+                username="testuser",
+                password="testpass",
+                options={"oracle_protocol": "udp"},
+            )
+
+            with pytest.raises(ValueError, match="Default, TCP, or TCPS"):
+                OracleAdapter().connect(config)
+
+            mock_oracledb.connect.assert_not_called()
+
+    def test_connect_sid_ignores_easy_connect_options(self):
+        """Easy Connect protocol and parameters do not apply to SID descriptors."""
+        mock_oracledb = MagicMock()
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                username="testuser",
+                password="testpass",
+                options={
+                    "oracle_connection_type": "sid",
+                    "oracle_sid": "ORCL",
+                    "oracle_protocol": "tcps",
+                    "oracle_easy_connect_parameters": "ssl_server_dn_match=no",
+                },
+            )
+
+            OracleAdapter().connect(config)
+
+            mock_oracledb.makedsn.assert_called_once_with("localhost", 1521, sid="ORCL")
+            assert mock_oracledb.connect.call_args.kwargs["dsn"] is (
+                mock_oracledb.makedsn.return_value
+            )
+
+    def test_tcps_easy_connect_dsn_parses_in_real_driver(self):
+        """The issue #261 DSN must be accepted by python-oracledb itself."""
+        oracledb = pytest.importorskip("oracledb")
+        params = oracledb.ConnectParams()
+
+        params.parse_connect_string(
+            "tcps://localhost:1521/service-name.com?ssl_server_dn_match=no"
+        )
+
+        assert params.protocol == "tcps"
+        assert params.host == "localhost"
+        assert params.port == 1521
+        assert params.service_name == "service-name.com"
+        assert params.ssl_server_dn_match is False
+
     def test_connect_sid_format(self):
         """SID connection type must go through oracledb.makedsn — see issue #106.
 

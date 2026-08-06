@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import cast
 
 from sqlit.domains.query.completion import (
     SuggestionType,
@@ -15,6 +16,46 @@ from sqlit.shared.ui.protocols import AutocompleteMixinHost
 
 class AutocompleteSuggestionsMixin:
     """Mixin providing SQL autocomplete suggestion logic."""
+
+    def _format_autocomplete_identifier(self: AutocompleteMixinHost, name: str) -> str:
+        provider = getattr(self, "current_provider", None)
+        formatter = getattr(getattr(provider, "dialect", None), "format_autocomplete_identifier", None)
+        if callable(formatter):
+            return cast(str, formatter(name))
+        return name
+
+    def _format_autocomplete_name(self: AutocompleteMixinHost, name: str) -> str:
+        if any(marker in name for marker in ('"', "`", "[", "]")):
+            return name
+        table_metadata = getattr(self, "_table_metadata", {}) or {}
+        metadata = table_metadata.get(name.lower())
+        if metadata:
+            schema_name, object_name, _database = metadata
+            provider = getattr(self, "current_provider", None)
+            default_schema = getattr(getattr(provider, "capabilities", None), "default_schema", None)
+            formatted_object = AutocompleteSuggestionsMixin._format_autocomplete_identifier(self, object_name)
+            if schema_name and schema_name != default_schema and name.lower().startswith(f"{schema_name.lower()}."):
+                formatted_schema = AutocompleteSuggestionsMixin._format_autocomplete_identifier(self, schema_name)
+                return f"{formatted_schema}.{formatted_object}"
+            return formatted_object
+        if "." not in name:
+            return AutocompleteSuggestionsMixin._format_autocomplete_identifier(self, name)
+        return ".".join(
+            AutocompleteSuggestionsMixin._format_autocomplete_identifier(self, part)
+            for part in name.split(".")
+        )
+
+    def _format_autocomplete_columns(
+        self: AutocompleteMixinHost,
+        columns: dict[str, list[str]],
+    ) -> dict[str, list[str]]:
+        return {
+            table_key: [
+                AutocompleteSuggestionsMixin._format_autocomplete_identifier(self, column)
+                for column in column_names
+            ]
+            for table_key, column_names in columns.items()
+        }
 
     def _get_current_word(self: AutocompleteMixinHost, text: str, cursor_pos: int) -> str:
         """Get the word currently being typed at cursor position."""
@@ -64,8 +105,13 @@ class AutocompleteSuggestionsMixin:
     def _get_autocomplete_suggestions(self: AutocompleteMixinHost, text: str, cursor_pos: int) -> list[str]:
         """Get autocomplete suggestions using the SQL completion engine."""
         # Build schema data for get_completions
-        tables = self._schema_cache.get("tables", []) + self._schema_cache.get("views", [])
-        columns = self._schema_cache.get("columns", {})
+        raw_tables = self._schema_cache.get("tables", []) + self._schema_cache.get("views", [])
+        raw_columns = self._schema_cache.get("columns", {})
+        tables = [
+            AutocompleteSuggestionsMixin._format_autocomplete_name(self, table)
+            for table in raw_tables
+        ]
+        columns = AutocompleteSuggestionsMixin._format_autocomplete_columns(self, raw_columns)
         procedures = self._schema_cache.get("procedures", [])
 
         # First check if we need to lazy-load columns before calling get_completions
@@ -81,7 +127,7 @@ class AutocompleteSuggestionsMixin:
                 been loaded yet. Returning Loading... for an unknown key would
                 wedge forever because the loader skips unknown tables silently.
                 """
-                if key in columns:
+                if key in raw_columns:
                     return False
                 if key not in table_metadata:
                     return False
@@ -102,7 +148,7 @@ class AutocompleteSuggestionsMixin:
                     scope = suggestion.table_scope
                     if scope:
                         scope_lower = scope.lower()
-                        table_key = alias_map.get(scope_lower, scope_lower)
+                        table_key = alias_map.get(scope_lower, scope_lower).lower()
 
                         if needs_column_load(table_key) and table_key not in loading:
                             self._load_columns_for_table(table_key)

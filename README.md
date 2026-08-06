@@ -239,8 +239,6 @@ Autocomplete triggers automatically in INSERT mode. Use `Tab` to accept.
 
 Connections and settings are stored in `$XDG_CONFIG_HOME/sqlit/` (default: `~/.config/sqlit/`). Override the location by setting `SQLIT_CONFIG_DIR`.
 
-If an older install left files in `~/.sqlit/`, they are moved to the new location automatically on first run.
-
 ### Custom keybindings
 
 Edit the `keymap.json` file in your sqlit config dir. See [`config/keymap.template.json`](config/keymap.template.json) for the full default keymap. Keymap.json need to only contain the overriding keymaps.
@@ -295,8 +293,23 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Spanner                             | `google-cloud-spanner`       | `pipx inject sqlit-tui google-cloud-spanner`       | `python -m pip install google-cloud-spanner`       |
 | Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      |
 | Apache Impala                       | `impyla`                     | `pipx inject sqlit-tui impyla`                     | `python -m pip install impyla`                     |
+| Trino                               | `trino`                      | `pipx inject sqlit-tui trino`                      | `python -m pip install trino`                      |
 | SurrealDB                           | `surrealdb`                  | `pipx inject sqlit-tui surrealdb`                  | `python -m pip install surrealdb`                  |
 | osquery                             | `osquery`                    | `pipx inject sqlit-tui osquery`                    | `python -m pip install osquery`                    |
+
+### Trino Kerberos Authentication
+
+To connect to a Trino server with an existing Kerberos ticket, install the matching Trino authentication extra before launching sqlit:
+
+```bash
+# pipx installation
+pipx inject sqlit-tui 'trino[kerberos]'
+
+# pip or virtual environment installation
+python -m pip install 'trino[kerberos]'
+```
+
+Obtain a valid ticket, for example with `kinit`, then create or edit a Trino connection and choose **Kerberos** as its authentication method. The service name defaults to `HTTP`; set it or the hostname override only when your server's Kerberos principal requires different values. Mutual authentication uses the selected driver's default unless explicitly overridden. Select **GSSAPI** instead when your environment requires the `requests-gssapi` implementation, after installing `trino[gssapi]`; sqlit derives its default service target from `HTTP` and the configured Trino hostname.
 
 ### SSH Tunnel Support
 

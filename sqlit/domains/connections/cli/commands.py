@@ -19,10 +19,35 @@ from sqlit.domains.connections.domain.config import (
     get_database_type_labels,
 )
 from sqlit.domains.connections.providers.catalog import get_provider_schema
+from sqlit.domains.query.app.alerts import (
+    CONNECTION_ALERT_OPTION,
+    format_alert_mode,
+    parse_alert_mode,
+)
 from sqlit.shared.app.runtime import RuntimeConfig
 from sqlit.shared.app.services import AppServices, build_app_services
 
 from .helpers import build_connection_config_from_args
+
+
+def _apply_alert_option(config: ConnectionConfig, raw: str | None) -> str | None:
+    """Apply an --alert value (mode token or "unset") to a connection.
+
+    Returns an error message on invalid input, otherwise None.
+    """
+    if raw is None:
+        return None
+    token = raw.strip().lower()
+    if not token:
+        return None
+    if token in {"unset", "clear", "default"}:
+        config.options.pop(CONNECTION_ALERT_OPTION, None)
+        return None
+    mode = parse_alert_mode(token)
+    if mode is None:
+        return f"Invalid --alert value '{raw}'. Use off|delete|write|unset."
+    config.set_option(CONNECTION_ALERT_OPTION, format_alert_mode(mode))
+    return None
 
 
 def _find_connection_index(connections: list[ConnectionConfig], name: str) -> int | None:
@@ -204,6 +229,11 @@ def cmd_connection_create(args: Any, *, services: AppServices | None = None) -> 
         print(f"Error: {exc}")
         return 1
 
+    alert_error = _apply_alert_option(config, getattr(args, "alert", None))
+    if alert_error:
+        print(f"Error: {alert_error}")
+        return 1
+
     connections.append(config)
     _ensure_password_storage(services, config)
     _save_connections(services, connections)
@@ -269,6 +299,11 @@ def cmd_connection_edit(args: Any, *, services: AppServices | None = None) -> in
             from sqlit.domains.connections.domain.config import FileEndpoint
 
             conn.endpoint = FileEndpoint(path=file_path)
+
+    alert_error = _apply_alert_option(conn, getattr(args, "alert", None))
+    if alert_error:
+        print(f"Error: {alert_error}")
+        return 1
 
     _ensure_password_storage(services, conn)
 

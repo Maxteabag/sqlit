@@ -76,6 +76,55 @@ class TestStatementSplitting:
 
         assert len(statements) == 2
 
+    def test_preserves_semicolons_in_dollar_quoted_strings(self):
+        """Should not split on semicolons inside dollar-quoted strings."""
+        from sqlit.domains.query.app.multi_statement import split_statements
+
+        query = """
+        CREATE OR REPLACE FUNCTION example()
+        RETURNS void AS $$
+        BEGIN
+            INSERT INTO t (x) VALUES ('a;b');
+        END;
+        $$ LANGUAGE plpgsql;
+        SELECT 1;
+        """
+        statements = split_statements(query)
+
+        assert len(statements) == 2
+        assert "CREATE OR REPLACE FUNCTION" in statements[0]
+        assert "SELECT 1" in statements[1]
+
+    def test_preserves_semicolons_in_named_dollar_quoted_strings(self):
+        """Should not split on semicolons inside named dollar-quoted strings."""
+        from sqlit.domains.query.app.multi_statement import split_statements
+
+        query = """
+        CREATE OR REPLACE FUNCTION example()
+        RETURNS void AS $func_tag$
+        BEGIN
+            INSERT INTO t (x) VALUES ('a;b');
+        END;
+        $func_tag$ LANGUAGE plpgsql;
+        SELECT 1;
+        """
+        statements = split_statements(query)
+
+        assert len(statements) == 2
+        assert "CREATE OR REPLACE FUNCTION" in statements[0]
+        assert "SELECT 1" in statements[1]
+
+    def test_dollar_quotes_inside_standard_strings_are_ignored(self):
+        """Should ignore dollar quote delimiters when inside standard string literals."""
+        from sqlit.domains.query.app.multi_statement import split_statements
+
+        query = "INSERT INTO t (x) VALUES ('$$'); SELECT 1"
+        statements = split_statements(query)
+
+        assert len(statements) == 2
+        assert "INSERT" in statements[0]
+        assert "SELECT 1" in statements[1]
+
 
 class TestMultiStatementResult:
     """Tests for MultiStatementResult data structure."""
