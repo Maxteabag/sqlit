@@ -293,8 +293,23 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Spanner                             | `google-cloud-spanner`       | `pipx inject sqlit-tui google-cloud-spanner`       | `python -m pip install google-cloud-spanner`       |
 | Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      |
 | Apache Impala                       | `impyla`                     | `pipx inject sqlit-tui impyla`                     | `python -m pip install impyla`                     |
+| Trino                               | `trino`                      | `pipx inject sqlit-tui trino`                      | `python -m pip install trino`                      |
 | SurrealDB                           | `surrealdb`                  | `pipx inject sqlit-tui surrealdb`                  | `python -m pip install surrealdb`                  |
 | osquery                             | `osquery`                    | `pipx inject sqlit-tui osquery`                    | `python -m pip install osquery`                    |
+
+### Trino Kerberos Authentication
+
+To connect to a Trino server with an existing Kerberos ticket, install the matching Trino authentication extra before launching sqlit:
+
+```bash
+# pipx installation
+pipx inject sqlit-tui 'trino[kerberos]'
+
+# pip or virtual environment installation
+python -m pip install 'trino[kerberos]'
+```
+
+Obtain a valid ticket, for example with `kinit`, then create or edit a Trino connection and choose **Kerberos** as its authentication method. Set the service name and hostname override only when your server's Kerberos principal requires them. Mutual authentication defaults to Optional. Select **GSSAPI** instead when your environment requires the `requests-gssapi` implementation, after installing `trino[gssapi]`; GSSAPI requires a hostname override when a service name is set.
 
 ### SSH Tunnel Support
 
