@@ -107,14 +107,15 @@ class TrinoAdapter(CursorBasedAdapter):
         if schema:
             connect_args["schema"] = schema
 
-        auth = self._build_authentication(config, endpoint.username, endpoint.password)
+        auth_hostname = endpoint.original_host or endpoint.host
+        auth = self._build_authentication(config, endpoint.username, endpoint.password, auth_hostname)
         if auth is not None:
             connect_args["auth"] = auth
 
         connect_args.update({key: value for key, value in config.extra_options.items() if key not in self._AUTH_OPTION_NAMES})
         return trino_dbapi.connect(**connect_args)
 
-    def _build_authentication(self, config: ConnectionConfig, username: str, password: str | None) -> Any | None:
+    def _build_authentication(self, config: ConnectionConfig, username: str, password: str | None, hostname: str) -> Any | None:
         default_method = "basic" if password else "none"
         auth_method = str(self._get_authentication_option(config, "trino_auth_method", default_method)).lower()
 
@@ -173,21 +174,22 @@ class TrinoAdapter(CursorBasedAdapter):
         auth_args: dict[str, Any] = {
             "delegate": str(self._get_authentication_option(config, "trino_kerberos_delegate", "false")).lower() == "true",
         }
-        mutual_authentication = str(self._get_authentication_option(config, "trino_kerberos_mutual_authentication", "optional")).lower()
+        mutual_authentication = str(self._get_authentication_option(config, "trino_kerberos_mutual_authentication", "driver")).lower()
         mutual_authentication_values = {
             "required": REQUIRED,
             "optional": OPTIONAL,
             "disabled": DISABLED,
         }
-        if mutual_authentication not in mutual_authentication_values:
+        if mutual_authentication != "driver" and mutual_authentication not in mutual_authentication_values:
             raise ValueError(f"Unsupported Trino Kerberos mutual authentication mode: {mutual_authentication}")
-        auth_args["mutual_authentication"] = mutual_authentication_values[mutual_authentication]
+        if mutual_authentication != "driver":
+            auth_args["mutual_authentication"] = mutual_authentication_values[mutual_authentication]
         service_name = self._get_authentication_option(config, "trino_kerberos_service_name")
-        if auth_method == "kerberos" and not service_name:
+        if not service_name:
             service_name = "HTTP"
         hostname_override = self._get_authentication_option(config, "trino_kerberos_hostname_override")
-        if auth_method == "gssapi" and service_name and not hostname_override:
-            raise ValueError("Trino GSSAPI authentication requires a hostname override when a service name is set.")
+        if auth_method == "gssapi" and not hostname_override:
+            hostname_override = hostname
         if service_name:
             auth_args["service_name"] = str(service_name)
         if hostname_override:

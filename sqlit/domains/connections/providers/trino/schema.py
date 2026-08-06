@@ -30,6 +30,7 @@ def _get_authentication_options() -> tuple[SelectOption, ...]:
 
 def _get_kerberos_mutual_authentication_options() -> tuple[SelectOption, ...]:
     return (
+        SelectOption("driver", "Driver default"),
         SelectOption("required", "Required"),
         SelectOption("optional", "Optional"),
         SelectOption("disabled", "Disabled"),
@@ -84,7 +85,6 @@ SCHEMA = ConnectionSchema(
             placeholder="HTTP",
             description="Service principal name; blank uses HTTP for Kerberos",
             visible_when=_trino_auth_is_kerberos,
-            advanced=True,
         ),
         SchemaField(
             name="trino_kerberos_hostname_override",
@@ -92,7 +92,6 @@ SCHEMA = ConnectionSchema(
             placeholder="trino.example.com",
             description="Hostname used to construct the Kerberos service principal",
             visible_when=_trino_auth_is_kerberos,
-            advanced=True,
         ),
         SchemaField(
             name="trino_kerberos_delegate",
@@ -108,7 +107,7 @@ SCHEMA = ConnectionSchema(
             label="Mutual Authentication",
             field_type=FieldType.SELECT,
             options=_get_kerberos_mutual_authentication_options(),
-            default="optional",
+            default="driver",
             visible_when=_trino_auth_is_kerberos,
             advanced=True,
         ),

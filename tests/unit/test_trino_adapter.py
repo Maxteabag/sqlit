@@ -70,16 +70,45 @@ def test_trino_kerberos_authentication_passes_selected_options():
 
     auth.KerberosAuthentication.assert_called_once_with(
         delegate=True,
-        mutual_authentication=auth.KerberosAuthentication.MUTUAL_OPTIONAL,
         service_name="trino",
         hostname_override="coordinator.example.com",
     )
     assert dbapi.connect.call_args.kwargs["auth"] is auth.KerberosAuthentication.return_value
 
 
-def test_trino_gssapi_rejects_service_name_without_hostname_override():
-    with pytest.raises(ValueError, match="requires a hostname override"):
-        _connect(_config(options={"trino_auth_method": "gssapi", "trino_kerberos_service_name": "trino"}))
+def test_trino_gssapi_defaults_to_http_service_and_endpoint_hostname():
+    dbapi, auth = _connect(_config(options={"trino_auth_method": "gssapi"}))
+
+    auth.GSSAPIAuthentication.assert_called_once_with(
+        delegate=False,
+        service_name="HTTP",
+        hostname_override="trino.example.com",
+    )
+    assert dbapi.connect.call_args.kwargs["auth"] is auth.GSSAPIAuthentication.return_value
+
+
+def test_trino_gssapi_preserves_remote_hostname_across_tunnel_rewrite():
+    config = _config(options={"trino_auth_method": "gssapi"})
+    tunneled_config = config.with_endpoint(host="127.0.0.1", port="12345")
+
+    _, auth = _connect(tunneled_config)
+
+    auth.GSSAPIAuthentication.assert_called_once_with(
+        delegate=False,
+        service_name="HTTP",
+        hostname_override="trino.example.com",
+    )
+    assert "trino_kerberos_hostname_override" not in config.options
+
+
+def test_trino_explicit_mutual_authentication_overrides_driver_default():
+    _, auth = _connect(_config(options={"trino_auth_method": "kerberos", "trino_kerberos_mutual_authentication": "optional"}))
+
+    auth.KerberosAuthentication.assert_called_once_with(
+        delegate=False,
+        mutual_authentication=auth.KerberosAuthentication.MUTUAL_OPTIONAL,
+        service_name="HTTP",
+    )
 
 
 def test_trino_kerberos_missing_extra_opens_package_setup():
@@ -102,7 +131,6 @@ def test_trino_url_uses_kerberos_options_without_passing_them_to_driver():
 
     auth.KerberosAuthentication.assert_called_once_with(
         delegate=False,
-        mutual_authentication=auth.KerberosAuthentication.MUTUAL_OPTIONAL,
         service_name="trino",
         hostname_override="coordinator.example.com",
     )
@@ -127,6 +155,10 @@ def test_trino_schema_exposes_kerberos_authentication_options():
 
     assert [option.value for option in fields["trino_auth_method"].options] == ["none", "basic", "kerberos", "gssapi"]
     assert fields["trino_auth_method"].default == "basic"
-    assert fields["trino_kerberos_mutual_authentication"].default == "optional"
+    assert fields["trino_kerberos_mutual_authentication"].default == "driver"
     assert fields["password"].visible_when is not None
     assert fields["trino_kerberos_service_name"].visible_when is not None
+    assert not fields["trino_kerberos_service_name"].advanced
+    assert not fields["trino_kerberos_hostname_override"].advanced
+    assert fields["trino_kerberos_delegate"].advanced
+    assert fields["trino_kerberos_mutual_authentication"].advanced

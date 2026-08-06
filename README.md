@@ -309,7 +309,7 @@ pipx inject sqlit-tui 'trino[kerberos]'
 python -m pip install 'trino[kerberos]'
 ```
 
-Obtain a valid ticket, for example with `kinit`, then create or edit a Trino connection and choose **Kerberos** as its authentication method. Set the service name and hostname override only when your server's Kerberos principal requires them. Mutual authentication defaults to Optional. Select **GSSAPI** instead when your environment requires the `requests-gssapi` implementation, after installing `trino[gssapi]`; GSSAPI requires a hostname override when a service name is set.
+Obtain a valid ticket, for example with `kinit`, then create or edit a Trino connection and choose **Kerberos** as its authentication method. The service name defaults to `HTTP`; set it or the hostname override only when your server's Kerberos principal requires different values. Mutual authentication uses the selected driver's default unless explicitly overridden. Select **GSSAPI** instead when your environment requires the `requests-gssapi` implementation, after installing `trino[gssapi]`; sqlit derives its default service target from `HTTP` and the configured Trino hostname.
 
 ### SSH Tunnel Support
 
