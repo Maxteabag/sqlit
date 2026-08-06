@@ -42,7 +42,7 @@ class MySQLBaseAdapter(CursorBasedAdapter):
     def supports_foreign_keys(self) -> bool:
         return True
 
-    def apply_database_override(self, config: "ConnectionConfig", database: str) -> "ConnectionConfig":
+    def apply_database_override(self, config: ConnectionConfig, database: str) -> ConnectionConfig:
         """Apply a default database for unqualified queries."""
         if not database:
             return config
@@ -146,6 +146,12 @@ class MySQLBaseAdapter(CursorBasedAdapter):
         """
         escaped = name.replace("`", "``")
         return f"`{escaped}`"
+
+    def quote_literal(self, value: Any) -> str:
+        """Render a literal safely under MySQL's default backslash escaping."""
+        if not isinstance(value, str):
+            return super().quote_literal(value)
+        return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
 
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT LIMIT query. Schema parameter is ignored (MySQL has no schemas)."""

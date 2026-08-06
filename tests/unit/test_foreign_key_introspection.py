@@ -181,6 +181,19 @@ class TestBuildFkNavigationQuery:
         )
         assert q == "SELECT * FROM `users` WHERE `id` = 7 LIMIT 100"
 
+    def test_mysql_escapes_backslashes_and_quotes_in_database_values(self):
+        from sqlit.domains.connections.providers.mysql.adapter import MySQLAdapter
+        from sqlit.domains.results.ui.mixins.results import build_fk_navigation_query
+
+        q = build_fk_navigation_query(
+            adapter=MySQLAdapter(),
+            ref_table="users",
+            ref_column="external_id",
+            value="path\\' OR 1=1 --",
+        )
+
+        assert q == "SELECT * FROM `users` WHERE `external_id` = 'path\\\\'' OR 1=1 --' LIMIT 100"
+
     def test_custom_limit(self):
         from sqlit.domains.results.ui.mixins.results import build_fk_navigation_query
 

@@ -1274,8 +1274,11 @@ class ResultsMixin:
         ]
         # Group by constraint to drop composite FKs (multi-row constraints)
         from collections import Counter
-        counts = Counter(fk.constraint_name for fk in candidates)
-        candidates = [fk for fk in candidates if counts[fk.constraint_name] == 1]
+        def constraint_identity(fk: Any) -> tuple[str, str, str, str]:
+            return (fk.owner_database, fk.owner_schema, fk.owner_table, fk.constraint_name)
+
+        counts = Counter(constraint_identity(fk) for fk in candidates)
+        candidates = [fk for fk in candidates if counts[constraint_identity(fk)] == 1]
         if not candidates:
             self.notify(f"No incoming references on '{columns[cursor_col]}'", severity="warning")
             return
