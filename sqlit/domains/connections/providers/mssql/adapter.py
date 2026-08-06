@@ -13,6 +13,7 @@ from sqlit.domains.connections.providers.adapters.base import (
     SequenceInfo,
     TableInfo,
     TriggerInfo,
+    _strip_leading_sql_comments,
 )
 from sqlit.domains.connections.providers.tls import (
     TLS_MODE_DEFAULT,
@@ -122,6 +123,30 @@ class SQLServerAdapter(DatabaseAdapter):
 
     @property
     def supports_stored_procedures(self) -> bool:
+        return True
+
+    def classify_query(self, query: str) -> bool:
+        """Treat T-SQL procedure execution as potentially row-returning."""
+        return self._is_procedure_call(query) or super().classify_query(query)
+
+    @staticmethod
+    def _is_procedure_call(query: str) -> bool:
+        """Distinguish procedure calls from EXECUTE AS and dynamic SQL."""
+        statement = _strip_leading_sql_comments(query)
+        parts = statement.split(maxsplit=1)
+        if not parts or parts[0].upper() not in {"EXEC", "EXECUTE"} or len(parts) == 1:
+            return False
+        target = _strip_leading_sql_comments(parts[1])
+        if not target:
+            return False
+        upper_target = target.upper()
+        if upper_target.split(maxsplit=1)[0] == "AS":
+            return False
+        if target.startswith(("(", "'", '"')) or upper_target.startswith("N'"):
+            return False
+        if target.startswith("@"):
+            _return_variable, separator, procedure = target.partition("=")
+            return bool(separator and procedure.strip())
         return True
 
     @property
@@ -645,6 +670,25 @@ class SQLServerAdapter(DatabaseAdapter):
         """Execute a query on SQL Server with optional row limit."""
         cursor = conn.cursor()
         cursor.execute(query)
+        if self._is_procedure_call(query):
+            result: tuple[list[str], list[tuple], bool] | None = None
+            while True:
+                if cursor.description and result is None:
+                    columns = [col[0] for col in cursor.description]
+                    if max_rows is not None:
+                        rows = cursor.fetchmany(max_rows + 1)
+                        truncated = len(rows) > max_rows
+                        rows = rows[:max_rows]
+                    else:
+                        rows = cursor.fetchall()
+                        truncated = False
+                    result = (columns, [tuple(row) for row in rows], truncated)
+
+                nextset = getattr(cursor, "nextset", None)
+                if not callable(nextset) or not nextset():
+                    break
+            return result or ([], [], False)
+
         if cursor.description:
             columns = [col[0] for col in cursor.description]
             if max_rows is not None:
