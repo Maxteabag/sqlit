@@ -148,10 +148,10 @@ class MySQLBaseAdapter(CursorBasedAdapter):
         return f"`{escaped}`"
 
     def quote_literal(self, value: Any) -> str:
-        """Render a literal safely under MySQL's default backslash escaping."""
+        """Render strings independently of the session's backslash-escape mode."""
         if not isinstance(value, str):
             return super().quote_literal(value)
-        return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
+        return f"CONVERT(X'{value.encode('utf-8').hex()}' USING utf8mb4)"
 
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT LIMIT query. Schema parameter is ignored (MySQL has no schemas)."""

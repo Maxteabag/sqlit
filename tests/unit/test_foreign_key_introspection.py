@@ -213,7 +213,8 @@ class TestBuildFkNavigationQuery:
             value="path\\' OR 1=1 --",
         )
 
-        assert q == "SELECT * FROM `users` WHERE `external_id` = 'path\\\\'' OR 1=1 --' LIMIT 100"
+        encoded = b"path\\' OR 1=1 --".hex()
+        assert q == f"SELECT * FROM `users` WHERE `external_id` = CONVERT(X'{encoded}' USING utf8mb4) LIMIT 100"
 
     def test_custom_limit(self):
         from sqlit.domains.results.ui.mixins.results import build_fk_navigation_query

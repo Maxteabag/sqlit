@@ -1183,9 +1183,6 @@ class ResultsMixin:
         }
         self._pending_result_table_info = info
         self._last_query_table = info
-        prime = getattr(self, "_prime_result_table_columns", None)
-        if callable(prime):
-            prime(info)
 
     def action_navigate_fk(self: ResultsMixinHost) -> None:
         """Jump to the row referenced by the current cell's foreign-key column.
