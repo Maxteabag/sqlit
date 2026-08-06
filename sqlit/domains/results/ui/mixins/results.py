@@ -123,6 +123,9 @@ class ResultsMixin:
             return
         table_info["foreign_keys"] = outgoing
         table_info["referencing_foreign_keys"] = incoming
+        update = getattr(self, "_update_footer_bindings", None)
+        if callable(update):
+            update()
 
     def _prime_result_table_columns(self: ResultsMixinHost, table_info: dict[str, Any] | None) -> None:
         if not table_info:
@@ -1132,8 +1135,21 @@ class ResultsMixin:
             return None
         # provider.schema_inspector is the adapter; it provides the full
         # qualified_name / quote_identifier / quote_literal triple.
+        adapter = provider.schema_inspector
+        connection_builder = getattr(adapter, "build_filtered_select_query_for_conn", None)
+        connection = getattr(self, "current_connection", None)
+        if callable(connection_builder) and connection is not None:
+            return connection_builder(
+                connection,
+                ref_table,
+                ref_column,
+                value,
+                FK_NAVIGATION_DEFAULT_LIMIT,
+                ref_database or None,
+                ref_schema or None,
+            )
         return build_fk_navigation_query(
-            adapter=provider.schema_inspector,
+            adapter=adapter,
             ref_table=ref_table,
             ref_column=ref_column,
             value=value,

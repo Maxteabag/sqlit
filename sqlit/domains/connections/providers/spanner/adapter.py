@@ -467,3 +467,18 @@ class SpannerAdapter(CursorBasedAdapter):
         """Build SELECT query with LIMIT using connection-aware quoting."""
         quoted = self._quote_identifier_for_conn(conn, table)
         return f"SELECT * FROM {quoted} LIMIT {limit}"
+
+    def build_filtered_select_query_for_conn(
+        self,
+        conn: Any,
+        table: str,
+        column: str,
+        value: Any,
+        limit: int,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> str:
+        """Build a navigation query using the connected database's dialect."""
+        quoted_table = self._quote_identifier_for_conn(conn, table)
+        quoted_column = self._quote_identifier_for_conn(conn, column)
+        return f"SELECT * FROM {quoted_table} WHERE {quoted_column} = {self.quote_literal(value)} LIMIT {limit}"
