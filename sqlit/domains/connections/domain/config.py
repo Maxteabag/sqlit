@@ -14,6 +14,7 @@ class DatabaseType(str, Enum):
     CLICKHOUSE = "clickhouse"
     COCKROACHDB = "cockroachdb"
     D1 = "d1"
+    DATABRICKS = "databricks"
     DUCKDB = "duckdb"
     DB2 = "db2"
     FIREBIRD = "firebird"
@@ -53,6 +54,7 @@ DATABASE_TYPE_DISPLAY_ORDER: list[DatabaseType] = [
     DatabaseType.HANA,
     DatabaseType.TERADATA,
     DatabaseType.SNOWFLAKE,
+    DatabaseType.DATABRICKS,
     DatabaseType.BIGQUERY,
     DatabaseType.SPANNER,
     DatabaseType.TRINO,
