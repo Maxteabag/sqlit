@@ -52,23 +52,13 @@ def save_connection(
     config.name = ensure_unique_name(existing_names, config.name)
     connections.append(config)
 
-    persist_connections = connections
-    if getattr(connection_store, "is_persistent", True):
-        try:
-            persist_connections = connection_store.load_all()
-        except Exception:
-            persist_connections = connections
-        else:
-            persist_connections = [c for c in persist_connections if c.name != config.name]
-            persist_connections.append(config)
-
     warning = None
     warning_severity = "warning"
     if not getattr(connection_store, "is_persistent", True):
         warning = "Connections are not persisted in this session"
 
     try:
-        connection_store.save_all(persist_connections)
+        connection_store.save_one(config)
         return SaveConnectionResult(
             config=config,
             saved=True,

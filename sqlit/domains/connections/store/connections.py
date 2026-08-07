@@ -187,6 +187,15 @@ class ConnectionStore(JSONFileStore):
         """
         return config.to_dict(include_passwords=False)
 
+    def _write_index(self, connections: list[ConnectionConfig]) -> None:
+        """Write the JSON index file (without passwords) for all connections.
+
+        The index is a single file shared by every connection, so it is always
+        rewritten in full. This write never touches the OS keyring.
+        """
+        payload = [self._config_to_dict_without_passwords(c) for c in connections]
+        self._write_json(self._wrap_connections_payload(payload))
+
     def save_all(self, connections: list[ConnectionConfig]) -> None:
         """Save all connections.
 
@@ -203,8 +212,54 @@ class ConnectionStore(JSONFileStore):
         for config in persist_connections:
             errors.extend(self._save_credentials(config))
 
-        payload = [self._config_to_dict_without_passwords(c) for c in persist_connections]
-        self._write_json(self._wrap_connections_payload(payload))
+        self._write_index(persist_connections)
+        if errors:
+            raise CredentialsPersistError(errors)
+
+    def save_one(
+        self,
+        connection: ConnectionConfig,
+        previous_name: str | None = None,
+    ) -> None:
+        """Persist a single connection without rewriting other credentials.
+
+        Only the given connection's keyring entries are written. When
+        ``previous_name`` differs from the connection's current name (a
+        rename), the stale entries under the old name are removed. The JSON
+        index file is rewritten in full because all connections share one
+        file, but that write never touches the OS keyring for other
+        connections.
+
+        Args:
+            connection: The connection to persist.
+            previous_name: The connection's prior name when renaming.
+        """
+        from sqlit.domains.connections.app.persist_utils import build_persist_connections
+
+        renamed = bool(previous_name and previous_name != connection.name)
+
+        existing = self.load_all(load_credentials=False)
+        filtered = [
+            c
+            for c in existing
+            if c.name != connection.name and not (renamed and c.name == previous_name)
+        ]
+        filtered.append(connection)
+        self._write_index(filtered)
+
+        errors: list[CredentialsStoreError] = []
+        if renamed:
+            for deleter in (
+                self.credentials_service.delete_password,
+                self.credentials_service.delete_ssh_password,
+            ):
+                try:
+                    deleter(previous_name)  # type: ignore[arg-type]
+                except CredentialsStoreError as exc:
+                    errors.append(exc)
+
+        target = build_persist_connections([connection], self.credentials_service)[0]
+        errors.extend(self._save_credentials(target))
         if errors:
             raise CredentialsPersistError(errors)
 
@@ -231,11 +286,10 @@ class ConnectionStore(JSONFileStore):
         Raises:
             ValueError: If a connection with the same name already exists.
         """
-        connections = self.load_all()
+        connections = self.load_all(load_credentials=False)
         if any(c.name == connection.name for c in connections):
             raise ValueError(f"Connection '{connection.name}' already exists")
-        connections.append(connection)
-        self.save_all(connections)
+        self.save_one(connection)
 
     def update(self, connection: ConnectionConfig) -> None:
         """Update an existing connection.
@@ -246,11 +300,10 @@ class ConnectionStore(JSONFileStore):
         Raises:
             ValueError: If connection doesn't exist.
         """
-        connections = self.load_all()
-        for i, c in enumerate(connections):
+        connections = self.load_all(load_credentials=False)
+        for c in connections:
             if c.name == connection.name:
-                connections[i] = connection
-                self.save_all(connections)
+                self.save_one(connection)
                 return
         raise ValueError(f"Connection '{connection.name}' not found")
 
@@ -265,13 +318,13 @@ class ConnectionStore(JSONFileStore):
         Returns:
             True if deleted, False if not found.
         """
-        connections = self.load_all()
+        connections = self.load_all(load_credentials=False)
         original_count = len(connections)
         connections = [c for c in connections if c.name != name]
         if len(connections) < original_count:
             # Delete credentials from keyring
             self.credentials_service.delete_all_for_connection(name)
-            self.save_all(connections)
+            self._write_index(connections)
             return True
         return False
 

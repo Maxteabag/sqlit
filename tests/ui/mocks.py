@@ -33,6 +33,18 @@ class MockConnectionStore:
         self.last_saved = connections.copy()
         self.connections = connections.copy()
 
+    def save_one(
+        self,
+        connection: ConnectionConfig,
+        previous_name: str | None = None,
+    ) -> None:
+        self.save_called = True
+        if previous_name and previous_name != connection.name:
+            self.connections = [c for c in self.connections if c.name != previous_name]
+        self.connections = [c for c in self.connections if c.name != connection.name]
+        self.connections.append(connection)
+        self.last_saved = self.connections.copy()
+
     def set_credentials_service(self, service: Any) -> None:
         self._credentials_service = service
 
