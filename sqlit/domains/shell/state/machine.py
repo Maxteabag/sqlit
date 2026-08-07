@@ -211,6 +211,10 @@ class UIStateMachine:
         # EXPLORER
         s = HelpSection(id="explorer", title="EXPLORER")
         s.binding(ks([("tree_cursor_down", "j"), ("tree_cursor_up", "k")]), "Move cursor down/up")
+        s.binding(ks([("tree_page_down", "^d"), ("tree_page_up", "^u")]), "Page down/up")
+        tree_g = k("tg_leader_key", "g")
+        s.binding(f"{tree_g}{lk('first_node', 'tg', 'g')}", "Jump to first node")
+        s.binding(k("tree_cursor_last", "G"), "Jump to last node")
         s.binding("<enter>", "Expand node / Connect")
         s.binding(k("new_connection", "n"), "New connection")
         s.binding(k("select_table", "s"), "SELECT TOP 100 (on table/view)")
