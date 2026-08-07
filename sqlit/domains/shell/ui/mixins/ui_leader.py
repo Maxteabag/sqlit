@@ -94,6 +94,12 @@ class UILeaderMixin:
     def action_leader_toggle_fullscreen(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("toggle_fullscreen")
 
+    def action_leader_grow_active_pane(self: UINavigationMixinHost) -> None:
+        self._execute_leader_command("grow_active_pane")
+
+    def action_leader_shrink_active_pane(self: UINavigationMixinHost) -> None:
+        self._execute_leader_command("shrink_active_pane")
+
     def action_leader_show_connection_picker(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("show_connection_picker")
 

@@ -61,6 +61,7 @@ from sqlit.shared.ui.widgets import (
     SqlitDataTable,
     TreeFilterInput,
 )
+from sqlit.shared.ui.widgets_pane_splitter import PaneSplitter
 from sqlit.shared.ui.widgets_stacked_results import StackedResultsContainer
 
 if TYPE_CHECKING:
@@ -1180,6 +1181,8 @@ class SSMSTUI(
                     tree.guide_depth = 2
                     yield tree
 
+                yield PaneSplitter(id="sidebar-splitter", orientation="vertical")
+
                 with Vertical(id="main-panel"):
                     with Container(id="query-area"):
                         yield QueryTextArea(
@@ -1190,6 +1193,8 @@ class SSMSTUI(
                             read_only=True,
                         )
                         yield Lazy(AutocompleteDropdown(id="autocomplete-dropdown"))
+
+                    yield PaneSplitter(id="query-results-splitter", orientation="horizontal")
 
                     with Container(id="results-area"):
                         yield ResultsFilterInput(id="results-filter")

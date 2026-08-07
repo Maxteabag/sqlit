@@ -204,6 +204,7 @@ class UIStateMachine:
         s.binding(k("focus_explorer", "e"), "Focus Explorer pane")
         s.binding(k("focus_query", "q"), "Focus Query pane")
         s.binding(k("focus_results", "r"), "Focus Results pane")
+        s.binding(f"{leader_key}{lk('grow_active_pane', 'leader', '=')}/{lk('shrink_active_pane', 'leader', '-')}", "Grow/shrink focused pane (or drag divider)")
         s.binding(leader_key, "Open command menu")
         s.binding(k("show_help", "?"), "Show this help")
         sections.append(s)
