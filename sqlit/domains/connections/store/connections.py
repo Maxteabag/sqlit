@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING
 
 from sqlit.domains.connections.app.credentials import CredentialsPersistError, CredentialsStoreError
@@ -175,6 +176,47 @@ class ConnectionStore(JSONFileStore):
 
         return errors
 
+    def _restore_credentials(
+        self,
+        connection_name: str,
+        db_password: str | None,
+        ssh_password: str | None,
+    ) -> list[CredentialsStoreError]:
+        """Best-effort restoration used when a credential move fails."""
+        errors: list[CredentialsStoreError] = []
+        operations = (
+            (
+                "db",
+                self.credentials_service.set_password,
+                self.credentials_service.delete_password,
+                db_password,
+            ),
+            (
+                "ssh",
+                self.credentials_service.set_ssh_password,
+                self.credentials_service.delete_ssh_password,
+                ssh_password,
+            ),
+        )
+        for kind, setter, deleter, password in operations:
+            try:
+                if password is None:
+                    deleter(connection_name)
+                else:
+                    setter(connection_name, password)
+            except CredentialsStoreError as exc:
+                errors.append(exc)
+            except Exception as exc:
+                errors.append(
+                    CredentialsStoreError(
+                        connection_name=connection_name,
+                        kind=kind,
+                        action="store" if password is not None else "delete",
+                        reason=exc,
+                    )
+                )
+        return errors
+
     def _config_to_dict_without_passwords(self, config: ConnectionConfig) -> dict:
         """Convert config to dict without password fields.
 
@@ -245,10 +287,59 @@ class ConnectionStore(JSONFileStore):
             if c.name != connection.name and not (renamed and c.name == previous_name)
         ]
         filtered.append(connection)
-        self._write_index(filtered)
 
         errors: list[CredentialsStoreError] = []
         if renamed:
+            # Connections are normally loaded without credentials. Hydrate the
+            # renamed copy from the old keyring name before moving anything.
+            target = copy.deepcopy(connection)
+            try:
+                endpoint = target.tcp_endpoint
+                if endpoint and endpoint.password is None:
+                    endpoint.password = self.credentials_service.get_password_for_migration(previous_name)  # type: ignore[arg-type]
+                if target.tunnel and target.tunnel.password is None:
+                    target.tunnel.password = self.credentials_service.get_ssh_password_for_migration(previous_name)  # type: ignore[arg-type]
+                destination_db_password = self.credentials_service.get_password_for_migration(connection.name)
+                destination_ssh_password = self.credentials_service.get_ssh_password_for_migration(
+                    connection.name
+                )
+            except CredentialsStoreError as exc:
+                raise CredentialsPersistError([exc]) from exc
+
+            # Store the new credentials before changing the index or deleting
+            # the old entries. A failed write must leave the original usable.
+            try:
+                errors.extend(self._save_credentials(target))
+            except Exception as exc:
+                rollback_errors = self._restore_credentials(
+                    connection.name,
+                    destination_db_password,
+                    destination_ssh_password,
+                )
+                if rollback_errors:
+                    raise CredentialsPersistError(rollback_errors) from exc
+                raise
+            if errors:
+                errors.extend(
+                    self._restore_credentials(
+                        connection.name,
+                        destination_db_password,
+                        destination_ssh_password,
+                    )
+                )
+                raise CredentialsPersistError(errors)
+
+            try:
+                self._write_index(filtered)
+            except Exception as exc:
+                rollback_errors = self._restore_credentials(
+                    connection.name,
+                    destination_db_password,
+                    destination_ssh_password,
+                )
+                if rollback_errors:
+                    raise CredentialsPersistError(rollback_errors) from exc
+                raise
             for deleter in (
                 self.credentials_service.delete_password,
                 self.credentials_service.delete_ssh_password,
@@ -257,9 +348,10 @@ class ConnectionStore(JSONFileStore):
                     deleter(previous_name)  # type: ignore[arg-type]
                 except CredentialsStoreError as exc:
                     errors.append(exc)
-
-        target = build_persist_connections([connection], self.credentials_service)[0]
-        errors.extend(self._save_credentials(target))
+        else:
+            self._write_index(filtered)
+            target = build_persist_connections([connection], self.credentials_service)[0]
+            errors.extend(self._save_credentials(target))
         if errors:
             raise CredentialsPersistError(errors)
 

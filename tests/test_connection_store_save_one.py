@@ -37,6 +37,9 @@ class SpyCredentialsService(PlaintextCredentialsService):
         self.delete_db: list[str] = []
         self.delete_ssh: list[str] = []
         self.fail_set_for: set[str] = set()
+        self.fail_set_ssh_for: set[str] = set()
+        self.fail_set_ssh_raw_for: set[str] = set()
+        self.fail_migration_read_for: set[str] = set()
 
     def set_password(self, connection_name: str, password: str) -> None:
         self.set_db.append(connection_name)
@@ -51,7 +54,27 @@ class SpyCredentialsService(PlaintextCredentialsService):
 
     def set_ssh_password(self, connection_name: str, password: str) -> None:
         self.set_ssh.append(connection_name)
+        if connection_name in self.fail_set_ssh_raw_for:
+            self.fail_set_ssh_raw_for.remove(connection_name)
+            raise OSError("disk unavailable")
+        if connection_name in self.fail_set_ssh_for:
+            raise CredentialsStoreError(
+                connection_name=connection_name,
+                kind="ssh",
+                action="store",
+                reason=RuntimeError("boom"),
+            )
         super().set_ssh_password(connection_name, password)
+
+    def get_password_for_migration(self, connection_name: str) -> str | None:
+        if connection_name in self.fail_migration_read_for:
+            raise CredentialsStoreError(
+                connection_name=connection_name,
+                kind="db",
+                action="read",
+                reason=RuntimeError("boom"),
+            )
+        return super().get_password_for_migration(connection_name)
 
     def delete_password(self, connection_name: str) -> None:
         self.delete_db.append(connection_name)
@@ -208,6 +231,99 @@ class TestSaveOne:
         assert self.creds.get_password("new") == "secret"
         assert self.creds.get_ssh_password("new") == "ssh_secret"
         assert {c["name"] for c in self._json()} == {"new"}
+
+    def test_save_one_rename_preserves_omitted_credentials(self) -> None:
+        store = self._create_store()
+        store.save_one(self._make("old", password="secret", ssh=True))
+        self.creds.reset_calls()
+
+        renamed = self._make("new", password=None, ssh=True)
+        assert renamed.tunnel is not None
+        renamed.tunnel.password = None
+        store.save_one(renamed, previous_name="old")
+
+        assert self.creds.get_password("old") is None
+        assert self.creds.get_ssh_password("old") is None
+        assert self.creds.get_password("new") == "secret"
+        assert self.creds.get_ssh_password("new") == "ssh_secret"
+
+    def test_save_one_failed_rename_keeps_original_usable(self) -> None:
+        store = self._create_store()
+        store.save_one(self._make("old", password="secret", ssh=True))
+        self.creds.reset_calls()
+        self.creds.fail_set_for = {"new"}
+
+        renamed = self._make("new", password=None, ssh=True)
+        assert renamed.tunnel is not None
+        renamed.tunnel.password = None
+        with pytest.raises(CredentialsPersistError):
+            store.save_one(renamed, previous_name="old")
+
+        assert self.creds.get_password("old") == "secret"
+        assert self.creds.get_ssh_password("old") == "ssh_secret"
+        assert "old" not in self.creds.delete_db
+        assert "old" not in self.creds.delete_ssh
+        assert {c["name"] for c in self._json()} == {"old"}
+
+    def test_save_one_rename_aborts_when_source_credentials_cannot_be_read(self) -> None:
+        store = self._create_store()
+        store.save_one(self._make("old", password="secret", ssh=True))
+        self.creds.reset_calls()
+        self.creds.fail_migration_read_for = {"old"}
+
+        renamed = self._make("new", password=None, ssh=True)
+        with pytest.raises(CredentialsPersistError):
+            store.save_one(renamed, previous_name="old")
+
+        self.creds.fail_migration_read_for.clear()
+        assert self.creds.get_password("old") == "secret"
+        assert self.creds.get_password("new") is None
+        assert {c["name"] for c in self._json()} == {"old"}
+
+    def test_save_one_partial_rename_write_restores_destination_credentials(self) -> None:
+        store = self._create_store()
+        old = self._make("old", password="source-db", ssh=True)
+        destination = self._make("new", password="destination-db", ssh=True)
+        assert destination.tunnel is not None
+        destination.tunnel.password = "destination-ssh"
+        store.save_all([old, destination])
+        self.creds.reset_calls()
+        self.creds.fail_set_ssh_for = {"new"}
+
+        renamed = self._make("new", password=None, ssh=True)
+        assert renamed.tunnel is not None
+        renamed.tunnel.password = None
+        with pytest.raises(CredentialsPersistError):
+            store.save_one(renamed, previous_name="old")
+
+        self.creds.fail_set_ssh_for.clear()
+        assert self.creds.get_password("old") == "source-db"
+        assert self.creds.get_ssh_password("old") == "ssh_secret"
+        assert self.creds.get_password("new") == "destination-db"
+        assert self.creds.get_ssh_password("new") == "destination-ssh"
+        assert {c["name"] for c in self._json()} == {"old", "new"}
+
+    def test_save_one_raw_backend_failure_restores_destination_credentials(self) -> None:
+        store = self._create_store()
+        old = self._make("old", password="source-db", ssh=True)
+        destination = self._make("new", password="destination-db", ssh=True)
+        assert destination.tunnel is not None
+        destination.tunnel.password = "destination-ssh"
+        store.save_all([old, destination])
+        self.creds.reset_calls()
+        self.creds.fail_set_ssh_raw_for = {"new"}
+
+        renamed = self._make("new", password=None, ssh=True)
+        assert renamed.tunnel is not None
+        renamed.tunnel.password = None
+        with pytest.raises(OSError):
+            store.save_one(renamed, previous_name="old")
+
+        self.creds.fail_set_ssh_raw_for.clear()
+        assert self.creds.get_password("old") == "source-db"
+        assert self.creds.get_password("new") == "destination-db"
+        assert self.creds.get_ssh_password("new") == "destination-ssh"
+        assert {c["name"] for c in self._json()} == {"old", "new"}
 
     def test_save_one_rename_does_not_delete_when_name_unchanged(self) -> None:
         store = self._create_store()
