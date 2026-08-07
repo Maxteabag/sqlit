@@ -541,22 +541,7 @@ class ConnectionMixin:
                 if not self.services.connection_store.is_persistent:
                     self.notify("Connections are not persisted in this session")
                 try:
-                    persist_connections = self.connections
-                    if self.services.connection_store.is_persistent:
-                        try:
-                            persist_connections = self.services.connection_store.load_all()
-                        except Exception:
-                            persist_connections = self.connections
-                        else:
-                            if orig_name:
-                                persist_connections = [
-                                    c for c in persist_connections if c.name != orig_name
-                                ]
-                            persist_connections = [
-                                c for c in persist_connections if c.name != with_config.name
-                            ]
-                            persist_connections.append(with_config)
-                    self.services.connection_store.save_all(persist_connections)
+                    self.services.connection_store.save_one(with_config, previous_name=orig_name)
                 except CredentialsPersistError as exc:
                     credentials_error = exc
                 self._refresh_connection_tree()
