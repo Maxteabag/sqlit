@@ -357,6 +357,10 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             tree_object_info.show_sequence_info(self, data)
             return
 
+        if self._get_node_kind(node) == "procedure":
+            tree_object_info.show_procedure_info(self, data)
+            return
+
     def action_use_database(self: TreeMixinHost) -> None:
         """Toggle the selected database as the default for the current connection."""
         node = self.object_tree.cursor_node

@@ -9,18 +9,28 @@ This module provides:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
+
+# Regex for client-side DELIMITER commands (MySQL/MariaDB style).
+# Matches "DELIMITER <token>" at the start of a line, case-insensitive.
+_DELIMITER_RE = re.compile(r"(?im)^\s*DELIMITER\s+(\S+)")
 
 if TYPE_CHECKING:
     from .query_service import NonQueryResult, QueryResult
 
 
-def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
+def _iter_sql_chars(sql: str, delimiter: str | None = None) -> Iterator[tuple[int, str, bool]]:
     """Iterate through SQL characters, tracking string literal context.
 
     Handles escape sequences (backslash), SQL-style doubled quotes,
     and PostgreSQL dollar-quoted strings ($$ or $tag$).
+
+    Args:
+        sql: SQL string to iterate.
+        delimiter: Optional statement delimiter. If it starts with '$',
+            it takes precedence over PostgreSQL dollar-quoted strings.
 
     Yields:
         (index, char, outside_string) tuples where outside_string is True
@@ -67,16 +77,24 @@ def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
             i += 2
             continue
 
+        # If a delimiter is provided and matches here outside of any string,
+        # treat it as code, not as a dollar-quoted string. This allows MySQL DELIMITER $$.
+        if delimiter and not in_single_quote and not in_double_quote and sql.startswith(delimiter, i):
+            for offset in range(len(delimiter)):
+                yield (i + offset, sql[i + offset], True)
+            i += len(delimiter)
+            continue
+
         # Check for PostgreSQL dollar-quoted string start
         if char == "$" and not in_single_quote and not in_double_quote:
             # Match $[a-zA-Z_][a-zA-Z0-9_]*$ or $$
             match = re.match(r"^\$([a-zA-Z_][a-zA-Z0-9_]*)?\$", sql[i:])
             if match:
-                delimiter = match.group(0)
-                in_dollar_tag = delimiter
-                for offset in range(len(delimiter)):
+                dollar_tag = match.group(0)
+                in_dollar_tag = dollar_tag
+                for offset in range(len(dollar_tag)):
                     yield (i + offset, sql[i + offset], False)
-                i += len(delimiter)
+                i += len(dollar_tag)
                 continue
 
         # Toggle quote state and yield
@@ -94,27 +112,44 @@ def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
 
 def _has_semicolon_outside_strings(sql: str) -> bool:
     """Check if SQL has semicolons outside of string literals."""
-    for _, char, outside in _iter_sql_chars(sql):
-        if char == ";" and outside:
-            return True
-    return False
+    return _has_delimiter_outside_strings(sql, ";")
+
+
+def _has_delimiter_outside_strings(sql: str, delimiter: str) -> bool:
+    """Check if SQL has the given delimiter outside of string literals."""
+    return any(
+        outside and sql.startswith(delimiter, idx)
+        for idx, _char, outside in _iter_sql_chars(sql, delimiter)
+    )
 
 
 def _split_by_semicolons(sql: str) -> list[str]:
     """Split SQL by semicolons, respecting string literals."""
+    return _split_with_delimiter(sql, ";")
+
+
+def _split_with_delimiter(sql: str, delimiter: str) -> list[str]:
+    """Split SQL by a delimiter, respecting string literals.
+
+    The delimiter can be any non-empty string (e.g. ";", "$$", "//").
+    """
     statements = []
     current: list[str] = []
+    skip_until = -1
 
-    for _, char, outside in _iter_sql_chars(sql):
-        if char == ";" and outside:
+    for idx, char, outside in _iter_sql_chars(sql, delimiter):
+        if idx < skip_until:
+            continue
+        if outside and sql.startswith(delimiter, idx):
             stmt = "".join(current).strip()
             if stmt:
                 statements.append(stmt)
             current = []
+            skip_until = idx + len(delimiter)
         else:
             current.append(char)
 
-    # Don't forget the last statement (may not end with semicolon)
+    # Don't forget the last statement (may not end with delimiter)
     stmt = "".join(current).strip()
     if stmt:
         statements.append(stmt)
@@ -177,6 +212,24 @@ def _append_statement_range(
         ranges.append((stmt_text, actual_start, actual_start + len(stmt_text)))
 
 
+def _append_ranges_for_block(
+    ranges: list[tuple[str, int, int]],
+    sql: str,
+    block_start: int,
+    block_end: int,
+    delimiter: str,
+) -> None:
+    """Split a SQL block by delimiter and append statement ranges."""
+    stmt_start = block_start
+    for idx, _char, outside in _iter_sql_chars(sql[block_start:block_end], delimiter):
+        absolute_idx = block_start + idx
+        if outside and sql.startswith(delimiter, absolute_idx):
+            _append_statement_range(ranges, sql, stmt_start, absolute_idx)
+            stmt_start = absolute_idx + len(delimiter)
+
+    _append_statement_range(ranges, sql, stmt_start, block_end)
+
+
 def _get_statement_ranges(sql: str) -> list[tuple[str, int, int]]:
     """Get statements with their character ranges in the original SQL.
 
@@ -194,16 +247,21 @@ def _get_statement_ranges(sql: str) -> list[tuple[str, int, int]]:
 
     ranges: list[tuple[str, int, int]] = []
 
+    delimiter_changes = _get_delimiter_changes(sql)
+
+    if delimiter_changes:
+        current_delimiter = ";"
+        last_end = 0
+        for start, end, new_delimiter in delimiter_changes:
+            _append_ranges_for_block(ranges, sql, last_end, start, current_delimiter)
+            current_delimiter = new_delimiter
+            last_end = end
+        _append_ranges_for_block(ranges, sql, last_end, len(sql), current_delimiter)
+        return ranges
+
     # Strategy 1: If semicolons exist, use semicolon splitting with tracking
     if _has_semicolon_outside_strings(sql):
-        stmt_start = 0
-
-        for idx, char, outside in _iter_sql_chars(sql):
-            if char == ";" and outside:
-                _append_statement_range(ranges, sql, stmt_start, idx)
-                stmt_start = idx + 1
-
-        _append_statement_range(ranges, sql, stmt_start, len(sql))
+        _append_ranges_for_block(ranges, sql, 0, len(sql), ";")
         return ranges
 
     # Strategy 2: If blank lines exist, use blank line splitting with tracking
@@ -307,20 +365,32 @@ def get_executable_sql(sql: str) -> str:
     return "; ".join(executable)
 
 
+def _get_delimiter_changes(sql: str) -> list[tuple[int, int, str]]:
+    """Find client-side DELIMITER changes in SQL.
+
+    Returns:
+        List of (start_index, end_index, new_delimiter) tuples.
+        The [start, end) range covers the full DELIMITER command line.
+    """
+    return [(match.start(), match.end(), match.group(1)) for match in _DELIMITER_RE.finditer(sql)]
+
+
 def split_statements(sql: str) -> list[str]:
     """Split SQL into individual statements.
 
     Splitting strategy:
-    1. If query contains semicolons (outside strings) → split by semicolons
-    2. If no semicolons but has blank lines → split by blank lines
-    3. Otherwise → return as single statement
+    1. Respect MySQL/MariaDB-style DELIMITER commands
+    2. Split by the active delimiter (default ";")
+    3. If no delimiter but has blank lines → split by blank lines
+    4. Otherwise → return as single statement
 
     Handles:
-    - Multiple statements separated by semicolons
-    - Multiple statements separated by blank lines (when no semicolons)
-    - Semicolons/blank lines inside string literals (preserved)
+    - Multiple statements separated by the active delimiter
+    - DELIMITER $$ ... $$ DELIMITER ; style procedure bodies
+    - Multiple statements separated by blank lines (when no delimiter)
+    - Delimiters/blank lines inside string literals (preserved)
     - Empty statements (filtered out)
-    - Trailing semicolons
+    - Trailing delimiters
 
     Args:
         sql: SQL containing one or more statements.
@@ -331,17 +401,32 @@ def split_statements(sql: str) -> list[str]:
     if not sql or not sql.strip():
         return []
 
-    # Strategy 1: If semicolons exist, use semicolon splitting
-    if _has_semicolon_outside_strings(sql):
-        return _split_by_semicolons(sql)
+    delimiter_changes = _get_delimiter_changes(sql)
+    if not delimiter_changes:
+        # No DELIMITER commands: use the default ";" logic.
+        if _has_delimiter_outside_strings(sql, ";"):
+            return _split_with_delimiter(sql, ";")
+        if re.search(r"\n\s*\n", sql):
+            return _split_by_blank_lines(sql)
+        return [sql.strip()]
 
-    # Strategy 2: If blank lines exist, use blank line splitting
-    # A blank line is two consecutive newlines (possibly with whitespace between)
-    if re.search(r"\n\s*\n", sql):
-        return _split_by_blank_lines(sql)
+    statements: list[str] = []
+    current_delimiter = ";"
+    last_end = 0
 
-    # Strategy 3: Single statement
-    return [sql.strip()]
+    for start, end, new_delimiter in delimiter_changes:
+        # Process SQL before the DELIMITER command using the current delimiter.
+        block = sql[last_end:start]
+        statements.extend(_split_with_delimiter(block, current_delimiter))
+        # Switch delimiter and skip the DELIMITER command itself.
+        current_delimiter = new_delimiter
+        last_end = end
+
+    # Process remaining SQL after the last DELIMITER command.
+    block = sql[last_end:]
+    statements.extend(_split_with_delimiter(block, current_delimiter))
+
+    return statements
 
 
 def normalize_for_execution(sql: str) -> str:
@@ -350,6 +435,9 @@ def normalize_for_execution(sql: str) -> str:
     Converts blank-line-separated statements to semicolon-separated,
     since databases expect semicolons between statements.
 
+    If the SQL contains DELIMITER commands, it is returned as-is so that
+    the server receives the procedure body with the correct terminator.
+
     Args:
         sql: SQL that may use blank lines or semicolons as separators.
 
@@ -357,6 +445,10 @@ def normalize_for_execution(sql: str) -> str:
         SQL with semicolons between statements (ready for database execution).
     """
     if not sql or not sql.strip():
+        return sql
+
+    # DELIMITER commands are client-side directives; keep them intact.
+    if _get_delimiter_changes(sql):
         return sql
 
     # If already has semicolons, return as-is

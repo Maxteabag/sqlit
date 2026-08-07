@@ -140,6 +140,10 @@ class ForeignKeyInspector(Protocol):
 class ProcedureInspector(Protocol):
     def get_procedures(self, conn: Any, database: str | None = None) -> list[Any]: ...
 
+    def get_procedure_definition(
+        self, conn: Any, procedure_name: str, database: str | None = None
+    ) -> dict[str, Any]: ...
+
 
 class ConfigValidator(Protocol):
     def normalize(self, config: ConnectionConfig) -> ConnectionConfig: ...
