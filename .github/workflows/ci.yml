@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main, master]
 
+# Applies to every `uv` invocation below, so --locked need not be repeated
+# in 15 jobs. Fails the run if uv.lock is out of date with pyproject.toml.
+env:
+  UV_LOCKED: "1"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,23 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
-          pip install -e .
+          enable-cache: true
 
       - name: Check package builds
-        run: python -m build
+        run: uv build
 
       - name: Verify CLI entry point
-        run: |
-          python -c "from sqlit.cli import main; print('CLI import OK')"
+        run: uv run --no-dev python -c "from sqlit.cli import main; print('CLI import OK')"
 
   nix-flake:
     runs-on: ubuntu-latest
@@ -54,16 +52,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev
+          enable-cache: true
 
       - name: Run unit tests
         run: |
@@ -90,16 +82,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev
+          enable-cache: true
 
       - name: Run SQLite integration tests
         run: uv run pytest tests/test_sqlite.py -v --timeout=60
@@ -127,16 +113,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra mssql
+          enable-cache: true
 
       - name: Wait for SQL Server to be ready
         run: |
@@ -155,7 +135,7 @@ jobs:
           MSSQL_PORT: 1433
           MSSQL_USER: sa
           MSSQL_PASSWORD: TestPassword123!
-        run: uv run pytest tests/test_mssql.py -v --timeout=120
+        run: uv run --extra mssql pytest tests/test_mssql.py -v --timeout=120
 
   test-postgresql:
     runs-on: ubuntu-latest
@@ -180,16 +160,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra postgres
+          enable-cache: true
 
       - name: Run PostgreSQL integration tests
         env:
@@ -198,7 +172,7 @@ jobs:
           POSTGRES_USER: testuser
           POSTGRES_PASSWORD: TestPassword123!
           POSTGRES_DATABASE: test_sqlit
-        run: uv run pytest tests/test_postgresql.py -v --timeout=120
+        run: uv run --extra postgres pytest tests/test_postgresql.py -v --timeout=120
 
   test-mysql:
     runs-on: ubuntu-latest
@@ -224,16 +198,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra mysql
+          enable-cache: true
 
       - name: Run MySQL integration tests
         env:
@@ -242,7 +210,7 @@ jobs:
           MYSQL_USER: root
           MYSQL_PASSWORD: TestPassword123!
           MYSQL_DATABASE: test_sqlit
-        run: uv run pytest tests/test_mysql.py -v --timeout=120
+        run: uv run --extra mysql pytest tests/test_mysql.py -v --timeout=120
 
   test-oracle:
     runs-on: ubuntu-latest
@@ -267,16 +235,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra oracle
+          enable-cache: true
 
       - name: Run Oracle integration tests
         env:
@@ -285,7 +247,7 @@ jobs:
           ORACLE_USER: testuser
           ORACLE_PASSWORD: TestPassword123!
           ORACLE_SERVICE: FREEPDB1
-        run: uv run pytest tests/test_oracle.py -v --timeout=120
+        run: uv run --extra oracle pytest tests/test_oracle.py -v --timeout=120
 
   test-mariadb:
     runs-on: ubuntu-latest
@@ -311,21 +273,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          enable-cache: true
 
       - name: Install MariaDB Connector/C
         run: |
           sudo apt-get update
           sudo apt-get install -y libmariadb-dev
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra mariadb
 
       - name: Run MariaDB integration tests
         env:
@@ -334,7 +290,7 @@ jobs:
           MARIADB_USER: root
           MARIADB_PASSWORD: TestPassword123!
           MARIADB_DATABASE: test_sqlit
-        run: uv run pytest tests/test_mariadb.py -v --timeout=120
+        run: uv run --extra mariadb pytest tests/test_mariadb.py -v --timeout=120
 
   test-duckdb:
     runs-on: ubuntu-latest
@@ -345,19 +301,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra duckdb
+          enable-cache: true
 
       - name: Run DuckDB integration tests
-        run: uv run pytest tests/test_duckdb.py -v --timeout=60
+        run: uv run --extra duckdb pytest tests/test_duckdb.py -v --timeout=60
 
   test-cockroachdb:
     runs-on: ubuntu-latest
@@ -366,16 +316,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra cockroachdb
+          enable-cache: true
 
       - name: Start CockroachDB
         run: |
@@ -398,7 +342,7 @@ jobs:
           COCKROACHDB_USER: root
           COCKROACHDB_PASSWORD: ""
           COCKROACHDB_DATABASE: test_sqlit
-        run: uv run pytest tests/test_cockroachdb.py -v --timeout=120
+        run: uv run --extra cockroachdb pytest tests/test_cockroachdb.py -v --timeout=120
 
   test-firebird:
     runs-on: ubuntu-latest
@@ -417,16 +361,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra firebird
+          enable-cache: true
 
       - name: Run Firebird integration tests
         env:
@@ -435,7 +373,7 @@ jobs:
           FIREBIRD_USER: testuser
           FIREBIRD_PASSWORD: TestPassword123!
           FIREBIRD_DATABASE: /var/lib/firebird/data/test_sqlit.fdb
-        run: uv run pytest tests/test_firebird.py -v --timeout=120
+        run: uv run --extra firebird pytest tests/test_firebird.py -v --timeout=120
 
   test-clickhouse:
     runs-on: ubuntu-latest
@@ -444,16 +382,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra clickhouse
+          enable-cache: true
 
       - name: Start ClickHouse
         run: |
@@ -478,7 +410,7 @@ jobs:
           CLICKHOUSE_USER: default
           CLICKHOUSE_PASSWORD: testpass
           CLICKHOUSE_DATABASE: test_sqlit
-        run: uv run pytest tests/test_clickhouse.py -v --timeout=120
+        run: uv run --extra clickhouse pytest tests/test_clickhouse.py -v --timeout=120
 
   test-ssh:
     runs-on: ubuntu-latest
@@ -487,16 +419,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra ssh --extra postgres
+          enable-cache: true
 
       - name: Create Docker network
         run: docker network create ssh-test-net
@@ -553,7 +479,7 @@ jobs:
           POSTGRES_USER: testuser
           POSTGRES_PASSWORD: TestPassword123!
           POSTGRES_DATABASE: test_sqlit
-        run: uv run pytest tests/test_ssh.py -v --timeout=120
+        run: uv run --extra ssh --extra postgres pytest tests/test_ssh.py -v --timeout=120
 
       - name: Cleanup
         if: always()
@@ -569,16 +495,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync --group test --no-dev --extra turso
+          enable-cache: true
 
       - name: Start Turso (libsql-server)
         run: |
@@ -598,7 +518,7 @@ jobs:
       - name: Run Turso integration tests
         env:
           TURSO_URL: http://localhost:8080
-        run: uv run pytest tests/test_turso.py -v --timeout=120
+        run: uv run --extra turso pytest tests/test_turso.py -v --timeout=120
 
       - name: Cleanup
         if: always()
