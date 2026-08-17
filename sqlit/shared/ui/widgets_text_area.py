@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from rich.segment import Segment
+from textual.binding import Binding
 from textual.color import Color
 from textual.events import Key, Paste
 from textual.strip import Strip
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
 
 class QueryTextArea(TextArea):
     """TextArea that intercepts clipboard keys and defers Enter to app."""
+
+    BINDINGS = [Binding("ctrl+delete", "delete_word_right", "Delete word right", show=False)]
 
     _last_text: str = ""
     _terminal_cursor_active: bool = False
