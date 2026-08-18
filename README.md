@@ -318,7 +318,7 @@ If you try to create an SSH connection without these dependencies, sqlit will de
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Maxteabag/sqlit&type=Date)](https://star-history.com/#Maxteabag/sqlit&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=Maxteabag/sqlit&type=Date)](https://star-history.dera.page/#Maxteabag/sqlit&Date)
 
 ---
 
