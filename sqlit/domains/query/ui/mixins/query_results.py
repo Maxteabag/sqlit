@@ -35,6 +35,7 @@ class QueryResultsMixin:
     ) -> None:
         """Replace the results table with new data."""
         self._cancel_results_render()
+        self._results_transposed = False
         container = self.results_area
         old_table = self.results_table
         was_focused = old_table.has_focus
@@ -321,6 +322,7 @@ class QueryResultsMixin:
         self._last_result_columns = columns
         self._last_result_rows = rows
         self._last_result_row_count = row_count
+        self._results_transposed = False
         table_info = getattr(self, "_pending_result_table_info", None)
 
         # Switch to single result mode (in case we were showing stacked results)

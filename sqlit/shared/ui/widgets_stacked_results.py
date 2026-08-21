@@ -106,6 +106,7 @@ class ResultSection(Collapsible):
         self.result_columns: list[str] = []
         self.result_rows: list[tuple] = []
         self.result_table_info: dict[str, Any] | None = None
+        self.result_transposed: bool = False
         self._content = content
         if is_error:
             self.add_class("error")

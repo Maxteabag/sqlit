@@ -245,3 +245,84 @@ class TestEditQueryInEditorLeaderCommand:
             leader_menu="leader",
         )
         assert sm.check_action(ctx, "leader_edit_query_in_editor") is True
+
+
+class TestResultsTransposeState:
+    """toggle_transpose and the actions that are unsafe while transposed."""
+
+    def test_toggle_transpose_blocked_without_results(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=False)
+        assert sm.check_action(ctx, "toggle_transpose") is False
+
+    def test_toggle_transpose_allowed_with_results(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True)
+        assert sm.check_action(ctx, "toggle_transpose") is True
+
+    def test_toggle_transpose_blocked_when_filter_active(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_filter_active=True)
+        assert sm.check_action(ctx, "toggle_transpose") is False
+
+    def test_results_filter_blocked_when_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=True)
+        assert sm.check_action(ctx, "results_filter") is False
+
+    def test_edit_cell_blocked_when_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=True)
+        assert sm.check_action(ctx, "edit_cell") is False
+
+    def test_delete_row_blocked_when_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=True)
+        assert sm.check_action(ctx, "delete_row") is False
+
+    def test_navigate_fk_blocked_when_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=True)
+        assert sm.check_action(ctx, "navigate_fk") is False
+
+    def test_navigate_referrers_blocked_when_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=True)
+        assert sm.check_action(ctx, "navigate_referrers") is False
+
+    def test_edit_cell_allowed_when_not_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=False)
+        assert sm.check_action(ctx, "edit_cell") is True
+
+    def test_footer_shows_transpose_label_when_not_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=False)
+        left, _ = sm.get_display_bindings(ctx)
+        binding = next(b for b in left if b.action == "toggle_transpose")
+        assert binding.label == "Transpose"
+
+    def test_footer_shows_untranspose_label_when_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=True)
+        left, _ = sm.get_display_bindings(ctx)
+        binding = next(b for b in left if b.action == "toggle_transpose")
+        assert binding.label == "Untranspose"
+
+    def test_footer_hides_edit_delete_filter_when_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=True)
+        left, _ = sm.get_display_bindings(ctx)
+        actions = {b.action for b in left}
+        assert "edit_cell" not in actions
+        assert "delete_row" not in actions
+        assert "results_filter" not in actions
+
+    def test_footer_shows_edit_delete_filter_when_not_transposed(self):
+        sm = UIStateMachine()
+        ctx = make_context(focus="results", has_results=True, results_transposed=False)
+        left, _ = sm.get_display_bindings(ctx)
+        actions = {b.action for b in left}
+        assert "edit_cell" in actions
+        assert "delete_row" in actions
+        assert "results_filter" in actions

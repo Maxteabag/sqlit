@@ -509,6 +509,7 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("tab", "next_result_section", "results"),
             ActionKeyDef("shift+tab", "prev_result_section", "results"),
             ActionKeyDef("z", "toggle_result_section", "results"),
+            ActionKeyDef("T", "toggle_transpose", "results"),
             ActionKeyDef("escape", "results_filter_close", "results_filter"),
             ActionKeyDef("enter", "results_filter_accept", "results_filter"),
             # Value view

@@ -16,15 +16,36 @@ class ResultsFocusedState(State):
         def has_results(app: InputContext) -> bool:
             return app.has_results
 
+        def not_transposed(app: InputContext) -> bool:
+            return app.has_results and not app.results_transposed
+
+        def can_toggle_transpose(app: InputContext) -> bool:
+            return app.has_results and not app.results_filter_active
+
         self.allows("view_cell", has_results, key="v", label="View cell", help="Preview cell (tooltip)")
         self.allows("view_cell_full", has_results, key="V", label="View full", help="View full cell value")
-        self.allows("edit_cell", has_results, key="u", label="Update cell", help="Update cell (generate UPDATE)")
-        self.allows("delete_row", has_results, key="d", label="Delete row", help="Delete row (generate DELETE)")
-        self.allows("navigate_fk", has_results, key="o", label="FK jump", help="Open row referenced by foreign key")
-        self.allows("navigate_referrers", has_results, key="O", label="Refs", help="Show tables referencing this row")
+        self.allows("edit_cell", not_transposed, key="u", label="Update cell", help="Update cell (generate UPDATE)")
+        self.allows("delete_row", not_transposed, key="d", label="Delete row", help="Delete row (generate DELETE)")
+        self.allows(
+            "navigate_fk", not_transposed, key="o", label="FK jump", help="Open row referenced by foreign key"
+        )
+        self.allows(
+            "navigate_referrers",
+            not_transposed,
+            key="O",
+            label="Refs",
+            help="Show tables referencing this row",
+        )
         self.allows("results_yank_leader_key", has_results, key="y", label="Copy", help="Copy menu (cell/row/all)")
         self.allows("clear_results", has_results, key="x", label="Clear", help="Clear results")
-        self.allows("results_filter", has_results, key="slash", label="Filter", help="Filter rows")
+        self.allows("results_filter", not_transposed, key="slash", label="Filter", help="Filter rows")
+        self.allows(
+            "toggle_transpose",
+            can_toggle_transpose,
+            key="T",
+            label="Transpose",
+            help="Transpose columns/rows",
+        )
         self.allows("results_cursor_left", has_results)  # vim h
         self.allows("results_cursor_down", has_results)  # vim j
         self.allows("results_cursor_up", has_results)  # vim k
@@ -83,21 +104,22 @@ class ResultsFocusedState(State):
                     action="view_cell_full",
                 )
             )
-            left.append(
-                DisplayBinding(
-                    key=resolve_display_key("edit_cell") or "u",
-                    label="Update",
-                    action="edit_cell",
+            if not app.results_transposed:
+                left.append(
+                    DisplayBinding(
+                        key=resolve_display_key("edit_cell") or "u",
+                        label="Update",
+                        action="edit_cell",
+                    )
                 )
-            )
-            left.append(
-                DisplayBinding(
-                    key=resolve_display_key("delete_row") or "d",
-                    label="Delete",
-                    action="delete_row",
+                left.append(
+                    DisplayBinding(
+                        key=resolve_display_key("delete_row") or "d",
+                        label="Delete",
+                        action="delete_row",
+                    )
                 )
-            )
-            if app.cursor_column_is_foreign_key:
+            if app.cursor_column_is_foreign_key and not app.results_transposed:
                 left.append(
                     DisplayBinding(
                         key=resolve_display_key("navigate_fk") or "o",
@@ -105,7 +127,7 @@ class ResultsFocusedState(State):
                         action="navigate_fk",
                     )
                 )
-            if app.cursor_column_is_foreign_key_target:
+            if app.cursor_column_is_foreign_key_target and not app.results_transposed:
                 left.append(
                     DisplayBinding(
                         key=resolve_display_key("navigate_referrers") or "O",
@@ -129,11 +151,19 @@ class ResultsFocusedState(State):
         )
         left.append(
             DisplayBinding(
-                key=resolve_display_key("results_filter") or "/",
-                label="Filter",
-                action="results_filter",
+                key=resolve_display_key("toggle_transpose") or "T",
+                label="Untranspose" if app.results_transposed else "Transpose",
+                action="toggle_transpose",
             )
         )
+        if not app.results_transposed:
+            left.append(
+                DisplayBinding(
+                    key=resolve_display_key("results_filter") or "/",
+                    label="Filter",
+                    action="results_filter",
+                )
+            )
         if app.stacked_result_count > 1:
             left.append(
                 DisplayBinding(
@@ -154,11 +184,13 @@ class ResultsFocusedState(State):
             [
                 "view_cell",
                 "view_cell_full",
+                "edit_cell",
                 "delete_row",
                 "navigate_fk",
                 "navigate_referrers",
                 "results_yank_leader_key",
                 "clear_results",
+                "toggle_transpose",
                 "results_filter",
                 "next_result_section",
                 "prev_result_section",
