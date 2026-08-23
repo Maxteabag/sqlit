@@ -69,7 +69,10 @@ class AutocompleteMixin(AutocompleteSchemaMixin, AutocompleteSuggestionsMixin):
         cursor_pos = self._location_to_offset(text, cursor_loc)
 
         word_start = cursor_pos
-        while word_start > 0 and text[word_start - 1] not in " \t\n,()[].":
+        while word_start > 0:
+            previous = text[word_start - 1]
+            if previous in " \t\r\n,()[].":
+                break
             word_start -= 1
 
         if word_start > 0 and text[word_start - 1] == ".":
