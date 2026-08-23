@@ -11,9 +11,8 @@ from rich.errors import MarkupError
 from rich.markup import escape
 from rich.protocol import is_renderable
 from rich.text import Text
-from textual.coordinate import Coordinate
-
 from textual.containers import Container
+from textual.coordinate import Coordinate
 from textual.events import Key
 from textual.strip import Strip
 from textual_fastdatatable import DataTable as FastDataTable
@@ -59,8 +58,18 @@ class SqlitDataTable(FastDataTable):
 
         return self._render_line(y, scroll_x, scroll_x + width, self.rich_style)
 
-    def _get_cell_renderable(self, row_index: int, column_index: int) -> Any:
-        """Format cells with plain text for NULL/bool/date values."""
+    def _get_cell_renderable(
+        self,
+        row_index: int,
+        column_index: int,
+        max_width: int | None = None,
+    ) -> Any:
+        """Format cells with plain text for NULL/bool/date values.
+
+        ``textual-fastdatatable`` 0.19 passes the available cell width to this
+        hook. Keep accepting it even though sqlit's formatter currently relies
+        on Rich to crop the returned renderable.
+        """
         if row_index == -1:
             return self.ordered_columns[column_index].label
 
