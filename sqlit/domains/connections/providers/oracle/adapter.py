@@ -32,6 +32,29 @@ _PLSQL_START = re.compile(
 )
 
 
+def _dictionary_qualified_name(owner: str, name: str) -> str:
+    """Keep the owner/object boundary recoverable for quoted dotted names."""
+    if any(char in owner + name for char in '."'):
+
+        def quote(value: str) -> str:
+            return '"' + value.replace('"', '""') + '"'
+
+        return f"{quote(owner)}.{quote(name)}"
+    return f"{owner}.{name}"
+
+
+def _split_dictionary_name(value: str) -> tuple[str | None, str]:
+    """Decode names emitted by `_dictionary_qualified_name`."""
+    if value.startswith('"'):
+        match = re.fullmatch(r'"((?:""|[^"])*)"\."((?:""|[^"])*)"', value)
+        if match:
+            return match.group(1).replace('""', '"'), match.group(2).replace('""', '"')
+    if "." in value:
+        owner, name = value.split(".", 1)
+        return owner, name
+    return None, value.upper()
+
+
 def _prepare_statement(query: str) -> str:
     """Remove SQL*Plus terminators that python-oracledb does not accept."""
     statement = query.rstrip()
@@ -48,8 +71,8 @@ def _prepare_statement(query: str) -> str:
 class OracleAdapter(DatabaseAdapter):
     """Adapter for Oracle Database using oracledb.
 
-    Note: Oracle uses schemas extensively, but user_tables/user_views return
-    only objects owned by the current user (which acts as the default schema).
+    Oracle schemas are users.  The ALL_* dictionary views expose objects the
+    connected user may access, including objects owned by other schemas.
     """
 
     @property
@@ -127,9 +150,7 @@ class OracleAdapter(DatabaseAdapter):
             protocol_prefix = f"{protocol}://" if protocol in {"tcp", "tcps"} else ""
             dsn = f"{protocol_prefix}{endpoint.host}:{port}/{endpoint.database}"
 
-            parameters = str(
-                config.get_option("oracle_easy_connect_parameters", "") or ""
-            ).strip()
+            parameters = str(config.get_option("oracle_easy_connect_parameters", "") or "").strip()
             parameters = parameters.lstrip("?")
             if parameters:
                 dsn = f"{dsn}?{parameters}"
@@ -158,37 +179,52 @@ class OracleAdapter(DatabaseAdapter):
         return []
 
     def get_tables(self, conn: Any, database: str | None = None) -> list[TableInfo]:
-        """Get list of tables from Oracle. Returns (schema, name) with empty schema."""
+        """Get all tables accessible to the connected Oracle user."""
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT table_name FROM user_tables ORDER BY table_name")
-            # user_tables returns only current user's tables, so no schema prefix needed
-            return [("", row[0]) for row in cursor.fetchall()]
+            cursor.execute("SELECT owner, table_name FROM all_tables ORDER BY owner, table_name")
+            return [(row[0], row[1]) for row in cursor.fetchall()]
         finally:
             cursor.close()
 
     def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
-        """Get list of views from Oracle. Returns (schema, name) with empty schema."""
+        """Get all views accessible to the connected Oracle user."""
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT view_name FROM user_views ORDER BY view_name")
-            return [("", row[0]) for row in cursor.fetchall()]
+            cursor.execute("SELECT owner, view_name FROM all_views ORDER BY owner, view_name")
+            return [(row[0], row[1]) for row in cursor.fetchall()]
         finally:
             cursor.close()
 
-    def get_columns(
-        self, conn: Any, table: str, database: str | None = None, schema: str | None = None
-    ) -> list[ColumnInfo]:
-        """Get columns for a table from Oracle. Schema parameter is ignored."""
+    def get_columns(self, conn: Any, table: str, database: str | None = None, schema: str | None = None) -> list[ColumnInfo]:
+        """Get columns for a table from Oracle, scoped to its owning schema."""
+        if schema:
+            constraints_view = "all_constraints"
+            constraint_columns_view = "all_cons_columns"
+            columns_view = "all_tab_columns"
+            owner_clause = " AND cons.owner = :owner_name AND cols.owner = :owner_name"
+            columns_owner_clause = " AND owner = :owner_name"
+            params = {"table_name": table, "owner_name": schema}
+        else:
+            constraints_view = "user_constraints"
+            constraint_columns_view = "user_cons_columns"
+            columns_view = "user_tab_columns"
+            owner_clause = ""
+            columns_owner_clause = ""
+            params = {"table_name": table.upper()}
+
         # Get primary key columns
         pk_cursor = conn.cursor()
         try:
             pk_cursor.execute(
                 "SELECT cols.column_name "
-                "FROM user_constraints cons "
-                "JOIN user_cons_columns cols ON cons.constraint_name = cols.constraint_name "
-                "WHERE cons.constraint_type = 'P' AND cons.table_name = :1",
-                (table.upper(),),
+                f"FROM {constraints_view} cons "
+                f"JOIN {constraint_columns_view} cols "
+                "ON cons.constraint_name = cols.constraint_name "
+                "AND cons.owner = cols.owner "
+                "WHERE cons.constraint_type = 'P' AND cons.table_name = :table_name"
+                f"{owner_clause}",
+                params,
             )
             pk_columns = {row[0] for row in pk_cursor.fetchall()}
         finally:
@@ -198,8 +234,8 @@ class OracleAdapter(DatabaseAdapter):
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT column_name, data_type FROM user_tab_columns " "WHERE table_name = :1 ORDER BY column_id",
-                (table.upper(),),
+                f"SELECT column_name, data_type FROM {columns_view} WHERE table_name = :table_name{columns_owner_clause} ORDER BY column_id",
+                params,
             )
             return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in cursor.fetchall()]
         finally:
@@ -209,10 +245,8 @@ class OracleAdapter(DatabaseAdapter):
         """Get stored procedures from Oracle."""
         cursor = conn.cursor()
         try:
-            cursor.execute(
-                "SELECT object_name FROM user_procedures " "WHERE object_type = 'PROCEDURE' ORDER BY object_name"
-            )
-            return [row[0] for row in cursor.fetchall()]
+            cursor.execute("SELECT owner, object_name FROM all_procedures WHERE object_type = 'PROCEDURE' ORDER BY owner, object_name")
+            return [_dictionary_qualified_name(row[0], row[1]) for row in cursor.fetchall()]
         finally:
             cursor.close()
 
@@ -220,16 +254,8 @@ class OracleAdapter(DatabaseAdapter):
         """Get indexes from Oracle."""
         cursor = conn.cursor()
         try:
-            cursor.execute(
-                "SELECT index_name, table_name, uniqueness "
-                "FROM user_indexes "
-                "WHERE index_type != 'LOB' "
-                "ORDER BY table_name, index_name"
-            )
-            return [
-                IndexInfo(name=row[0], table_name=row[1], is_unique=row[2] == "UNIQUE")
-                for row in cursor.fetchall()
-            ]
+            cursor.execute("SELECT owner, index_name, table_owner, table_name, uniqueness FROM all_indexes WHERE index_type != 'LOB' ORDER BY owner, table_owner, table_name, index_name")
+            return [IndexInfo(name=_dictionary_qualified_name(row[0], row[1]), table_name=_dictionary_qualified_name(row[2], row[3]), is_unique=row[4] == "UNIQUE") for row in cursor.fetchall()]
         finally:
             cursor.close()
 
@@ -237,13 +263,8 @@ class OracleAdapter(DatabaseAdapter):
         """Get triggers from Oracle."""
         cursor = conn.cursor()
         try:
-            cursor.execute(
-                "SELECT trigger_name, table_name "
-                "FROM user_triggers "
-                "WHERE base_object_type = 'TABLE' "
-                "ORDER BY table_name, trigger_name"
-            )
-            return [TriggerInfo(name=row[0], table_name=row[1] or "") for row in cursor.fetchall()]
+            cursor.execute("SELECT owner, trigger_name, table_owner, table_name FROM all_triggers WHERE base_object_type = 'TABLE' ORDER BY owner, table_owner, table_name, trigger_name")
+            return [TriggerInfo(name=_dictionary_qualified_name(row[0], row[1]), table_name=_dictionary_qualified_name(row[2], row[3]) if row[3] else "") for row in cursor.fetchall()]
         finally:
             cursor.close()
 
@@ -251,8 +272,8 @@ class OracleAdapter(DatabaseAdapter):
         """Get sequences from Oracle."""
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT sequence_name FROM user_sequences ORDER BY sequence_name")
-            return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+            cursor.execute("SELECT sequence_owner, sequence_name FROM all_sequences ORDER BY sequence_owner, sequence_name")
+            return [SequenceInfo(name=_dictionary_qualified_name(row[0], row[1])) for row in cursor.fetchall()]
         finally:
             cursor.close()
 
@@ -263,28 +284,37 @@ class OracleAdapter(DatabaseAdapter):
         database: str | None = None,
         schema: str | None = None,
     ) -> list[ForeignKeyInfo]:
-        """List outgoing FKs via user_constraints / user_cons_columns.
+        """List outgoing FKs via Oracle's accessible constraint metadata.
 
         Joins each FK's child column (uc) to its parent column (rc) via
         r_constraint_name. Oracle stores identifiers upper-case in the
         dictionary views unless quoted on creation.
         """
+        owner_predicate = "c.owner = :owner_name" if schema else "c.owner = SYS_CONTEXT('USERENV', 'SESSION_USER')"
+        params = {"table_name": table if schema else table.upper()}
+        if schema:
+            params["owner_name"] = schema
         cursor = conn.cursor()
         try:
             cursor.execute(
                 "SELECT c.constraint_name, ucc.position, "
-                "       ucc.column_name, rc.table_name, rcc.column_name "
-                "FROM user_constraints c "
-                "JOIN user_cons_columns ucc "
-                "  ON c.constraint_name = ucc.constraint_name "
-                "JOIN user_constraints rc "
-                "  ON c.r_constraint_name = rc.constraint_name "
-                "JOIN user_cons_columns rcc "
-                "  ON rc.constraint_name = rcc.constraint_name "
+                "       ucc.column_name, rc.table_name, rcc.column_name, "
+                "       c.owner, rc.owner "
+                "FROM all_constraints c "
+                "JOIN all_cons_columns ucc "
+                "  ON c.owner = ucc.owner "
+                "  AND c.constraint_name = ucc.constraint_name "
+                "JOIN all_constraints rc "
+                "  ON c.r_owner = rc.owner "
+                "  AND c.r_constraint_name = rc.constraint_name "
+                "JOIN all_cons_columns rcc "
+                "  ON rc.owner = rcc.owner "
+                "  AND rc.constraint_name = rcc.constraint_name "
                 "  AND ucc.position = rcc.position "
-                "WHERE c.constraint_type = 'R' AND c.table_name = :1 "
+                "WHERE c.constraint_type = 'R' "
+                f"AND {owner_predicate} AND c.table_name = :table_name "
                 "ORDER BY c.constraint_name, ucc.position",
-                (table.upper(),),
+                params,
             )
             return [
                 ForeignKeyInfo(
@@ -292,6 +322,8 @@ class OracleAdapter(DatabaseAdapter):
                     column=row[2],
                     referenced_table=row[3],
                     referenced_column=row[4],
+                    owner_schema=row[5],
+                    referenced_schema=row[6],
                     constraint_name=row[0],
                     ordinal=int(row[1]),
                 )
@@ -308,22 +340,31 @@ class OracleAdapter(DatabaseAdapter):
         schema: str | None = None,
     ) -> list[ForeignKeyInfo]:
         """List FKs from other tables that reference `table`."""
+        owner_predicate = "rc.owner = :owner_name" if schema else "rc.owner = SYS_CONTEXT('USERENV', 'SESSION_USER')"
+        params = {"table_name": table if schema else table.upper()}
+        if schema:
+            params["owner_name"] = schema
         cursor = conn.cursor()
         try:
             cursor.execute(
                 "SELECT c.constraint_name, ucc.position, "
-                "       c.table_name, ucc.column_name, rcc.column_name "
-                "FROM user_constraints c "
-                "JOIN user_cons_columns ucc "
-                "  ON c.constraint_name = ucc.constraint_name "
-                "JOIN user_constraints rc "
-                "  ON c.r_constraint_name = rc.constraint_name "
-                "JOIN user_cons_columns rcc "
-                "  ON rc.constraint_name = rcc.constraint_name "
+                "       c.table_name, ucc.column_name, rcc.column_name, "
+                "       c.owner, rc.owner "
+                "FROM all_constraints c "
+                "JOIN all_cons_columns ucc "
+                "  ON c.owner = ucc.owner "
+                "  AND c.constraint_name = ucc.constraint_name "
+                "JOIN all_constraints rc "
+                "  ON c.r_owner = rc.owner "
+                "  AND c.r_constraint_name = rc.constraint_name "
+                "JOIN all_cons_columns rcc "
+                "  ON rc.owner = rcc.owner "
+                "  AND rc.constraint_name = rcc.constraint_name "
                 "  AND ucc.position = rcc.position "
-                "WHERE c.constraint_type = 'R' AND rc.table_name = :1 "
+                "WHERE c.constraint_type = 'R' "
+                f"AND {owner_predicate} AND rc.table_name = :table_name "
                 "ORDER BY c.table_name, c.constraint_name, ucc.position",
-                (table.upper(),),
+                params,
             )
             return [
                 ForeignKeyInfo(
@@ -331,6 +372,8 @@ class OracleAdapter(DatabaseAdapter):
                     column=row[3],
                     referenced_table=table,
                     referenced_column=row[4],
+                    owner_schema=row[5],
+                    referenced_schema=row[6],
                     constraint_name=row[0],
                     ordinal=int(row[1]),
                 )
@@ -339,16 +382,14 @@ class OracleAdapter(DatabaseAdapter):
         finally:
             cursor.close()
 
-    def get_index_definition(
-        self, conn: Any, index_name: str, table_name: str, database: str | None = None
-    ) -> dict[str, Any]:
+    def get_index_definition(self, conn: Any, index_name: str, table_name: str, database: str | None = None) -> dict[str, Any]:
         """Get detailed information about an Oracle index."""
-        # Get index info
+        owner, bare_index = _split_dictionary_name(index_name)
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT uniqueness, index_type FROM user_indexes WHERE index_name = :1",
-                (index_name.upper(),),
+                "SELECT uniqueness, index_type FROM all_indexes WHERE index_name = :1 AND owner = COALESCE(:2, SYS_CONTEXT('USERENV', 'SESSION_USER'))",
+                (bare_index, owner),
             )
             row = cursor.fetchone()
             is_unique = row[0] == "UNIQUE" if row else False
@@ -360,9 +401,8 @@ class OracleAdapter(DatabaseAdapter):
         col_cursor = conn.cursor()
         try:
             col_cursor.execute(
-                "SELECT column_name FROM user_ind_columns "
-                "WHERE index_name = :1 ORDER BY column_position",
-                (index_name.upper(),),
+                "SELECT column_name FROM all_ind_columns WHERE index_name = :1 AND index_owner = COALESCE(:2, SYS_CONTEXT('USERENV', 'SESSION_USER')) ORDER BY column_position",
+                (bare_index, owner),
             )
             columns = [row[0] for row in col_cursor.fetchall()]
         finally:
@@ -372,8 +412,8 @@ class OracleAdapter(DatabaseAdapter):
         ddl_cursor = conn.cursor()
         try:
             ddl_cursor.execute(
-                "SELECT DBMS_METADATA.GET_DDL('INDEX', :1) FROM dual",
-                (index_name.upper(),),
+                "SELECT DBMS_METADATA.GET_DDL('INDEX', :1, COALESCE(:2, SYS_CONTEXT('USERENV', 'SESSION_USER'))) FROM dual",
+                (bare_index, owner),
             )
             ddl_row = ddl_cursor.fetchone()
             definition = str(ddl_row[0]) if ddl_row else None
@@ -391,16 +431,14 @@ class OracleAdapter(DatabaseAdapter):
             "definition": definition,
         }
 
-    def get_trigger_definition(
-        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
-    ) -> dict[str, Any]:
+    def get_trigger_definition(self, conn: Any, trigger_name: str, table_name: str, database: str | None = None) -> dict[str, Any]:
         """Get detailed information about an Oracle trigger."""
+        owner, bare_trigger = _split_dictionary_name(trigger_name)
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT trigger_type, triggering_event, trigger_body "
-                "FROM user_triggers WHERE trigger_name = :1",
-                (trigger_name.upper(),),
+                "SELECT trigger_type, triggering_event, trigger_body FROM all_triggers WHERE trigger_name = :1 AND owner = COALESCE(:2, SYS_CONTEXT('USERENV', 'SESSION_USER'))",
+                (bare_trigger, owner),
             )
             row = cursor.fetchone()
             if row:
@@ -423,16 +461,14 @@ class OracleAdapter(DatabaseAdapter):
         finally:
             cursor.close()
 
-    def get_sequence_definition(
-        self, conn: Any, sequence_name: str, database: str | None = None
-    ) -> dict[str, Any]:
+    def get_sequence_definition(self, conn: Any, sequence_name: str, database: str | None = None) -> dict[str, Any]:
         """Get detailed information about an Oracle sequence."""
+        owner, bare_sequence = _split_dictionary_name(sequence_name)
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT min_value, max_value, increment_by, cycle_flag, last_number "
-                "FROM user_sequences WHERE sequence_name = :1",
-                (sequence_name.upper(),),
+                "SELECT min_value, max_value, increment_by, cycle_flag, last_number FROM all_sequences WHERE sequence_name = :1 AND sequence_owner = COALESCE(:2, SYS_CONTEXT('USERENV', 'SESSION_USER'))",
+                (bare_sequence, owner),
             )
             row = cursor.fetchone()
             if row:
@@ -464,8 +500,9 @@ class OracleAdapter(DatabaseAdapter):
         return f'"{escaped}"'
 
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
-        """Build SELECT query with FETCH FIRST for Oracle 12c+. Schema parameter is ignored."""
-        return f'SELECT * FROM "{table}" FETCH FIRST {limit} ROWS ONLY'
+        """Build a schema-aware SELECT query with Oracle 12c+ pagination."""
+        qualified = self.catalog_qualified_name(database, schema, table)
+        return f"SELECT * FROM {qualified} FETCH FIRST {limit} ROWS ONLY"
 
     def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
         qualified = self.catalog_qualified_name(database, schema, table)
