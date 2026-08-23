@@ -245,6 +245,7 @@
         "cancel_operation": "z",
         "change_theme": "t",
         "edit_query_in_editor": "o",
+        "format_query": "p",
         "show_help": "h",
         "telescope": "space",
         "telescope_filter": "/"

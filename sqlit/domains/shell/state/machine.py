@@ -34,8 +34,8 @@ from sqlit.domains.query.state import (
     QueryFocusedState,
     QueryInsertModeState,
     QueryNormalModeState,
-    QueryVisualModeState,
     QueryVisualLineModeState,
+    QueryVisualModeState,
 )
 from sqlit.domains.results.state import (
     ResultsFilterActiveState,
@@ -49,7 +49,6 @@ from sqlit.domains.shell.state.leader_pending import LeaderPendingState
 from sqlit.domains.shell.state.main_screen import MainScreenState
 from sqlit.domains.shell.state.modal_active import ModalActiveState
 from sqlit.domains.shell.state.root import RootState
-
 
 STATE_TO_HELP_SECTION: dict[str, str] = {
     "QueryInsertModeState": "query_insert",
@@ -238,6 +237,7 @@ class UIStateMachine:
         s.binding(f"{g_key}{lk('execute_query_atomic', 'g', 't')}", "Execute as transaction")
         s.binding(k("show_history", "<backspace>"), "Query history")
         s.binding(k("new_query", "N"), "New query (clear)")
+        s.binding(f"{leader_key}{lk('format_query', 'leader', 'p')}", "Format query")
         s.binding(k("undo", "u"), "Undo")
         s.binding(k("redo", "^r"), "Redo")
         sections.append(s)
