@@ -344,8 +344,10 @@ class TreeFilterMixin:
                 matches.append(node)
                 # Store original label and apply highlighting
                 self._tree_original_labels[id(node)] = str(node.label)
+                theme = getattr(self, "current_theme", None)
+                match_color = getattr(theme, "primary", "#1565C0")
                 highlighted = highlight_matches(
-                    escape_markup(label_text), indices, style="bold #FFFF00"
+                    escape_markup(label_text), indices, style=f"bold {match_color}"
                 )
                 # Preserve any existing markup prefix (like icons, colors)
                 node.set_label(self._rebuild_label_with_highlight(node, highlighted))
