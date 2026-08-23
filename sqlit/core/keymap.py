@@ -203,6 +203,13 @@ class DefaultKeymapProvider(KeymapProvider):
                 "Open in editor",
                 "Actions",
             ),
+            LeaderCommandDef(
+                "p",
+                "format_query",
+                "Format Query",
+                "Actions",
+                guard="query_focused",
+            ),
             LeaderCommandDef("h", "show_help", "Help", "Actions"),
             LeaderCommandDef("k", "show_keybinding_editor", "Edit Keybindings", "Actions"),
             LeaderCommandDef("space", "telescope", "Telescope", "Actions"),

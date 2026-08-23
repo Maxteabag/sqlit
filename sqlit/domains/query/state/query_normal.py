@@ -27,6 +27,7 @@ class QueryNormalModeState(State):
             "edit_query_in_editor",
             help="Open current query in your terminal editor",
         )
+        self.allows("format_query", help="Format the current query")
         # Vim cursor movement
         self.allows("cursor_left", help="Move cursor left")
         self.allows("cursor_right", help="Move cursor right")

@@ -12,6 +12,7 @@ from .query_editing_clipboard import QueryEditingClipboardMixin
 from .query_editing_comments import QueryEditingCommentsMixin
 from .query_editing_common import QueryEditingCommonMixin
 from .query_editing_cursor import QueryEditingCursorMixin
+from .query_editing_format import QueryEditingFormatMixin
 from .query_editing_operators import QueryEditingOperatorsMixin
 from .query_editing_selection import QueryEditingSelectionMixin
 from .query_editing_undo import QueryEditingUndoMixin
@@ -29,6 +30,7 @@ class QueryMixin(
     QueryEditingSelectionMixin,
     QueryEditingOperatorsMixin,
     QueryEditingClipboardMixin,
+    QueryEditingFormatMixin,
     QueryEditingCommentsMixin,
     QueryEditingCursorMixin,
     QueryExecutionMixin,
