@@ -6,8 +6,6 @@ in a single query, including error handling and result collection.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestStatementSplitting:
     """Tests for splitting multi-statement queries."""
@@ -306,15 +304,17 @@ class TestMultiStatementExecutor:
 
 
 class TestBlankLineSplitting:
-    """Tests for splitting statements by blank lines when no semicolons."""
+    """Tests for splitting statements by two blank lines when no semicolons."""
 
-    def test_splits_by_blank_line_when_no_semicolons(self):
-        """Should split by blank lines when query has no semicolons."""
+    def test_splits_by_two_blank_lines_when_no_semicolons(self):
+        """Two consecutive blank lines split when the query has no semicolons."""
         from sqlit.domains.query.app.multi_statement import split_statements
 
         query = """SELECT * FROM vikings
 
+
 SELECT * FROM ships
+
 
 SELECT * FROM weapons"""
         statements = split_statements(query)
@@ -351,6 +351,18 @@ WHERE v.active = true"""
         assert "JOIN" in statements[0]
         assert "WHERE" in statements[0]
 
+    def test_single_blank_line_inside_statement_stays_together(self):
+        """Issue #281: one blank line is ordinary formatting, not a boundary."""
+        from sqlit.domains.query.app.multi_statement import split_statements
+
+        query = """SELECT *
+FROM schema_name.table_name
+WHERE id < 1000
+
+LIMIT 10"""
+
+        assert split_statements(query) == [query]
+
     def test_blank_line_with_multiline_statements(self):
         """Should split by blank lines even with multi-line statements."""
         from sqlit.domains.query.app.multi_statement import split_statements
@@ -358,6 +370,7 @@ WHERE v.active = true"""
         query = """SELECT v.name
 FROM vikings v
 WHERE v.id = 1
+
 
 SELECT s.name
 FROM ships s
@@ -394,14 +407,26 @@ FROM vikings"""
 
         assert len(statements) == 1
 
-    def test_blank_line_with_whitespace_only(self):
-        """Line with only whitespace should count as blank line."""
+    def test_two_blank_lines_with_whitespace_only(self):
+        """Two whitespace-only blank lines should count as a boundary."""
         from sqlit.domains.query.app.multi_statement import split_statements
 
-        query = "SELECT 1\n   \nSELECT 2"
+        query = "SELECT 1\n   \n\t\nSELECT 2"
         statements = split_statements(query)
 
         assert len(statements) == 2
+
+    def test_two_crlf_blank_lines_are_a_boundary(self):
+        """Windows line endings preserve the double-blank-line separator."""
+        from sqlit.domains.query.app.multi_statement import (
+            normalize_for_execution,
+            split_statements,
+        )
+
+        query = "SELECT 1\r\n\r\n\r\nSELECT 2"
+
+        assert split_statements(query) == ["SELECT 1", "SELECT 2"]
+        assert normalize_for_execution(query) == "SELECT 1; SELECT 2"
 
     def test_preserves_strings_with_newlines_in_blank_line_mode(self):
         """Should not split on blank lines inside string literals."""
@@ -409,7 +434,9 @@ FROM vikings"""
 
         query = """SELECT 'line1
 
+
 line2' AS text
+
 
 SELECT 'other'"""
         statements = split_statements(query)
@@ -422,13 +449,15 @@ SELECT 'other'"""
 class TestNormalizeSqlForExecution:
     """Tests for normalizing SQL before execution."""
 
-    def test_adds_semicolons_between_blank_line_statements(self):
-        """Blank-line-separated statements should be joined with semicolons for execution."""
+    def test_adds_semicolons_between_double_blank_line_statements(self):
+        """Double-blank-line statements are joined with semicolons for execution."""
         from sqlit.domains.query.app.multi_statement import normalize_for_execution
 
         query = """SELECT * FROM vikings
 
+
 SELECT * FROM ships
+
 
 SELECT * FROM weapons"""
         normalized = normalize_for_execution(query)
@@ -439,6 +468,14 @@ SELECT * FROM weapons"""
         assert "vikings" in normalized
         assert "ships" in normalized
         assert "weapons" in normalized
+
+    def test_preserves_single_blank_line(self):
+        """A single blank line remains part of one statement."""
+        from sqlit.domains.query.app.multi_statement import normalize_for_execution
+
+        query = "SELECT * FROM vikings\n\nLIMIT 10"
+
+        assert normalize_for_execution(query) == query
 
     def test_preserves_semicolon_separated_statements(self):
         """Already semicolon-separated statements should stay as-is."""
