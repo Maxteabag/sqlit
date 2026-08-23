@@ -168,6 +168,81 @@ class TestOracleIntegration(BaseDatabaseTests):
         assert result.returncode == 0
         assert "clob value ok" in result.stdout
 
+    def test_schema_introspection_includes_granted_cross_schema_tables(self, oracle_db):
+        """Tables granted from another schema must appear with usable columns."""
+        import os
+
+        import oracledb
+
+        from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+        from tests.fixtures.oracle import (
+            ORACLE_HOST,
+            ORACLE_PASSWORD,
+            ORACLE_PORT,
+            ORACLE_USER,
+        )
+
+        owner = "ISSUE295_OWNER"
+        table = "SHARED_CUSTOMERS"
+        dsn = f"{ORACLE_HOST}:{ORACLE_PORT}/{oracle_db}"
+        admin = oracledb.connect(
+            user="system",
+            password=os.environ.get("ORACLE_ADMIN_PASSWORD", ORACLE_PASSWORD),
+            dsn=dsn,
+        )
+        try:
+            cursor = admin.cursor()
+            try:
+                try:
+                    cursor.execute(f"DROP USER {owner} CASCADE")
+                except oracledb.DatabaseError:
+                    pass
+                cursor.execute(f'CREATE USER {owner} IDENTIFIED BY "Issue295Password123!"')
+                cursor.execute(f"ALTER USER {owner} QUOTA UNLIMITED ON USERS")
+                cursor.execute(f"CREATE TABLE {owner}.{table} (id NUMBER PRIMARY KEY, name VARCHAR2(50))")
+                cursor.execute(f"CREATE INDEX {owner}.IX_SHARED_NAME ON {owner}.{table} (name)")
+                cursor.execute(f"CREATE TRIGGER {owner}.TRG_SHARED BEFORE INSERT ON {owner}.{table} FOR EACH ROW BEGIN NULL; END;")
+                cursor.execute(f"CREATE SEQUENCE {owner}.SHARED_SEQ START WITH 1")
+                cursor.execute(f"CREATE PROCEDURE {owner}.REFRESH_SHARED AS BEGIN NULL; END;")
+                cursor.execute(f"GRANT SELECT ON {owner}.{table} TO {ORACLE_USER}")
+                cursor.execute(f"GRANT SELECT ON {owner}.SHARED_SEQ TO {ORACLE_USER}")
+                cursor.execute(f"GRANT EXECUTE ON {owner}.REFRESH_SHARED TO {ORACLE_USER}")
+                admin.commit()
+
+                user_conn = oracledb.connect(
+                    user=ORACLE_USER,
+                    password=ORACLE_PASSWORD,
+                    dsn=dsn,
+                )
+                try:
+                    adapter = OracleAdapter()
+                    assert (owner, table) in adapter.get_tables(user_conn)
+                    columns = adapter.get_columns(user_conn, table, schema=owner)
+                    assert [(column.name, column.is_primary_key) for column in columns] == [
+                        ("ID", True),
+                        ("NAME", False),
+                    ]
+                    index = next(item for item in adapter.get_indexes(user_conn) if item.name == f"{owner}.IX_SHARED_NAME")
+                    assert index.table_name == f"{owner}.{table}"
+                    assert adapter.get_index_definition(user_conn, index.name, index.table_name)["columns"] == ["NAME"]
+                    trigger = next(item for item in adapter.get_triggers(user_conn) if item.name == f"{owner}.TRG_SHARED")
+                    assert adapter.get_trigger_definition(user_conn, trigger.name, trigger.table_name)["event"] == "INSERT"
+                    sequence = next(item for item in adapter.get_sequences(user_conn) if item.name == f"{owner}.SHARED_SEQ")
+                    assert adapter.get_sequence_definition(user_conn, sequence.name)["increment"] == 1
+                    assert f"{owner}.REFRESH_SHARED" in adapter.get_procedures(user_conn)
+                finally:
+                    user_conn.close()
+            finally:
+                cursor.close()
+        finally:
+            try:
+                cursor = admin.cursor()
+                cursor.execute(f"DROP USER {owner} CASCADE")
+                admin.commit()
+                cursor.close()
+            finally:
+                admin.close()
+
     def test_delete_oracle_connection(self, oracle_db, cli_runner):
         """Test deleting an Oracle connection."""
         from .conftest import ORACLE_HOST, ORACLE_PASSWORD, ORACLE_PORT, ORACLE_USER

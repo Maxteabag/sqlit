@@ -71,8 +71,9 @@ class OracleLegacyAdapter(OracleAdapter):
         return super().connect(config)
 
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
-        """Build SELECT query with ROWNUM for Oracle 11g. Schema parameter is ignored."""
-        return f'SELECT * FROM (SELECT * FROM "{table}") WHERE ROWNUM <= {limit}'
+        """Build a schema-aware SELECT query with Oracle 11g ROWNUM pagination."""
+        qualified = self.catalog_qualified_name(database, schema, table)
+        return f"SELECT * FROM (SELECT * FROM {qualified}) WHERE ROWNUM <= {limit}"
 
     def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
         qualified = self.catalog_qualified_name(database, schema, table)
