@@ -27,7 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "textual[syntax]>=6.10.0",
-    "textual-fastdatatable>=0.14.0",
+    "textual-fastdatatable==0.19.0",
     "pyperclip>=1.8.2",
     "keyring>=24.0.0",
     "docker>=7.0.0",
