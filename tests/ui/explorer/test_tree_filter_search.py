@@ -12,6 +12,7 @@ Scenario:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from sqlit.domains.explorer.domain.tree_nodes import (
@@ -127,6 +128,7 @@ class _FilterHost(TreeFilterMixin):
 
     def __init__(self, connection_names: list[str]):
         self._connection_names = connection_names
+        self.current_theme = SimpleNamespace(primary="#1565C0")
         self.object_tree = MockTree()
         self.tree_filter_input = MockFilterInput()
         self._populate()
@@ -210,6 +212,15 @@ class TestTreeFilterSearch:
         assert visible == self.T_MATCHES, (
             f"Expected only 't'-matching connections visible, got {visible}"
         )
+
+    def test_match_highlight_uses_current_theme_primary_color(self):
+        host = _FilterHost(["user-primary", "production"])
+
+        self._open_filter(host)
+        self._type(host, "user")
+
+        assert len(host._tree_filter_matches) == 1
+        assert "[bold #1565C0]" in str(host._tree_filter_matches[0].label)
 
     def test_typing_tt_filters_out_everything(self):
         host = _FilterHost(self.CONNECTION_NAMES)

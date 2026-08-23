@@ -200,7 +200,8 @@ class UIStatusMixin:
             from rich.markup import escape as escape_markup
 
             cmd_buffer = escape_markup(getattr(self, "_command_buffer", ""))
-            conn_info = f"[bold cyan]:{cmd_buffer}[/]"
+            command_color = getattr(self.current_theme, "primary", "#1565C0")
+            conn_info = f"[bold {command_color}]:{cmd_buffer}[/]"
 
         # Build status indicators
         status_parts = []
