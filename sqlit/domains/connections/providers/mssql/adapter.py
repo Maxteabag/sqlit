@@ -421,6 +421,43 @@ class SQLServerAdapter(DatabaseAdapter):
         )
         return [row[0] for row in cursor.fetchall()]
 
+    def get_completion_routines(
+        self, conn: Any, database: str | None = None
+    ) -> list[Any]:
+        """Get procedures/functions with parameter metadata for autocomplete."""
+        from sqlit.domains.connections.providers.adapters.base import RoutineInfo
+
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT r.ROUTINE_SCHEMA, r.ROUTINE_NAME, r.ROUTINE_TYPE, r.DATA_TYPE, "
+            "p.PARAMETER_NAME, p.ORDINAL_POSITION "
+            "FROM INFORMATION_SCHEMA.ROUTINES r "
+            "LEFT JOIN INFORMATION_SCHEMA.PARAMETERS p "
+            "ON p.SPECIFIC_SCHEMA = r.SPECIFIC_SCHEMA "
+            "AND p.SPECIFIC_NAME = r.SPECIFIC_NAME "
+            "ORDER BY r.ROUTINE_SCHEMA, r.ROUTINE_NAME, p.ORDINAL_POSITION"
+        )
+
+        grouped: dict[tuple[str, str, str, str], list[str]] = {}
+        for schema, name, routine_type, return_type, parameter, ordinal in cursor.fetchall():
+            key = (schema, name, routine_type, return_type or "")
+            if parameter and (ordinal is None or ordinal > 0):
+                grouped.setdefault(key, []).append(parameter)
+            else:
+                grouped.setdefault(key, [])
+
+        return [
+            RoutineInfo(
+                name,
+                schema=schema,
+                database=database or "",
+                routine_type=routine_type,
+                return_type=return_type,
+                parameters=tuple(parameters),
+            )
+            for (schema, name, routine_type, return_type), parameters in grouped.items()
+        ]
+
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes from SQL Server."""
         cursor = self._get_cursor_for_database(conn, database)
