@@ -8,6 +8,14 @@ import sys
 
 import pytest
 
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        os.environ.get("SQLIT_ORACLE_NNE_TEST") != "1",
+        reason="Oracle NNE fixture is not enabled",
+    ),
+]
+
 _CONNECT_SCRIPT = r"""
 import os
 import sys
@@ -42,7 +50,6 @@ def _connect(mode: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.integration
 def test_thin_mode_is_rejected_when_native_encryption_is_required() -> None:
     result = _connect("thin")
 
@@ -50,7 +57,6 @@ def test_thin_mode_is_rejected_when_native_encryption_is_required() -> None:
     assert "DPY-3001" in result.stderr
 
 
-@pytest.mark.integration
 def test_thick_mode_connects_with_instant_client() -> None:
     if not os.environ.get("ORACLE_CLIENT_LIB_DIR"):
         pytest.skip("Oracle Instant Client is not configured")

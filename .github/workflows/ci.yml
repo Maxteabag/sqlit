@@ -310,6 +310,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libaio1t64 || sudo apt-get install -y libaio1
+          libaio_path=$(ldconfig -p | awk '/libaio\.so\.1t64/{path=$NF} END{print path}')
+          if [ -n "$libaio_path" ]; then
+            sudo ln -sf "$libaio_path" "$(dirname "$libaio_path")/libaio.so.1"
+            sudo ldconfig
+          fi
           curl --fail --location --retry 3 "$INSTANT_CLIENT_URL" --output "$RUNNER_TEMP/instantclient.zip"
           echo "$INSTANT_CLIENT_SHA256  $RUNNER_TEMP/instantclient.zip" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/instantclient"
@@ -321,6 +326,7 @@ jobs:
 
       - name: Verify Oracle Thin rejection and Thick connection
         env:
+          SQLIT_ORACLE_NNE_TEST: "1"
           ORACLE_HOST: localhost
           ORACLE_PORT: 1521
           ORACLE_USER: testuser
