@@ -6,6 +6,9 @@ Orchestrates context detection and completion generation.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+
+from sqlit.domains.query.app.multi_statement import split_statements
 
 from .alter_table import get_alter_table_completions
 from .core import (
@@ -27,6 +30,7 @@ from .core import (
     is_inside_string,
     remove_comments,
     remove_string_literals,
+    split_identifier_parts,
 )
 from .create_index import get_create_index_completions
 from .create_table import get_create_table_completions
@@ -63,11 +67,60 @@ def get_context(sql: str, cursor_pos: int) -> list[Suggestion]:
     if before_cursor.rstrip().endswith(";"):
         return []
 
+    statements = split_statements(before_cursor)
+    current_statement = statements[-1] if statements else before_cursor
+    routine_context = remove_comments(remove_string_literals(current_statement))
+    routine_context = re.split(
+        r"\n(?=\s*(?:SELECT|INSERT|UPDATE|DELETE|MERGE|WITH|EXEC(?:UTE)?|"
+        r"CREATE|ALTER|DROP)\b)",
+        routine_context,
+        flags=re.IGNORECASE,
+    )[-1]
+    routine_invocation = re.search(
+        r"\b(?:EXEC|EXECUTE)\s+"
+        r"(?:@\w+\s*=\s*)?"
+        r"([^\s,=;]+)"
+        r"(?P<suffix>.*)$",
+        routine_context,
+        re.IGNORECASE,
+    )
+    if routine_invocation and routine_invocation.group("suffix").startswith((" ", "\t", "\n")):
+        return [
+            Suggestion(
+                type=SuggestionType.PARAMETER,
+                table_scope=routine_invocation.group(1),
+            )
+        ]
+    if routine_invocation and not routine_invocation.group("suffix"):
+        target = routine_invocation.group(1)
+        parts = split_identifier_parts(target)
+        if target.endswith("."):
+            qualifiers = parts
+        else:
+            qualifiers = parts[:-1]
+        scope = ".".join(qualifiers) if qualifiers else None
+        return [Suggestion(type=SuggestionType.PROCEDURE, table_scope=scope)]
+
+    qualified_from = re.search(
+        r"\b(?:FROM|JOIN|APPLY)\s+"
+        r"(?:(?:\[[^\]]+\]|\w+)\.){1,2}\[?\w*$",
+        before_cursor,
+        re.IGNORECASE,
+    )
+    if qualified_from:
+        return [Suggestion(type=SuggestionType.TABLE)]
+
     # Check for table.column pattern (alias or table prefix)
-    dot_match = re.search(r"(\w+)\.\w*$", before_cursor)
+    dot_match = re.search(
+        r"((?:\[[^\]]+\]|\w+)(?:\.(?:\[[^\]]+\]|\w+))*)\.\[?\w*$",
+        before_cursor,
+    )
     if dot_match:
         prefix = dot_match.group(1)
-        return [Suggestion(type=SuggestionType.ALIAS_COLUMN, table_scope=prefix)]
+        return [
+            Suggestion(type=SuggestionType.ALIAS_COLUMN, table_scope=prefix),
+            Suggestion(type=SuggestionType.FUNCTION, table_scope=prefix),
+        ]
 
     # Try statement-specific handlers
     for handler in [get_insert_context, get_update_context, get_delete_context]:
@@ -162,6 +215,77 @@ def get_completions(
     """
     before_cursor = sql[:cursor_pos]
     current_word = get_current_word(sql, cursor_pos)
+    routines = procedures or []
+
+    def routine_display_name(routine: object) -> str:
+        name = str(routine)
+        identities = {
+            (
+                str(getattr(candidate, "database", "")).lower(),
+                str(getattr(candidate, "schema", "")).lower(),
+            )
+            for candidate in routines
+            if str(candidate).lower() == name.lower()
+        }
+        if len(identities) <= 1:
+            return name
+        parts = [
+            str(getattr(routine, "database", "")),
+            str(getattr(routine, "schema", "")),
+            name,
+        ]
+        return ".".join(part for part in parts if part)
+
+    def scoped_routine_names(
+        candidates: Sequence[object],
+        *,
+        schema: str,
+        database: str = "",
+    ) -> list[str]:
+        filtered = [
+            routine
+            for routine in candidates
+            if str(getattr(routine, "schema", "")).lower() == schema.lower()
+            and (
+                not database
+                or str(getattr(routine, "database", "")).lower()
+                == database.lower()
+            )
+        ]
+        counts: dict[str, int] = {}
+        for routine in filtered:
+            key = str(routine).lower()
+            counts[key] = counts.get(key, 0) + 1
+        return [
+            str(routine)
+            for routine in filtered
+            if counts[str(routine).lower()] == 1
+        ]
+
+    procedure_names = [
+        routine_display_name(routine)
+        for routine in routines
+        if getattr(routine, "routine_type", "PROCEDURE") == "PROCEDURE"
+    ]
+    function_names = [
+        routine_display_name(routine)
+        for routine in routines
+        if getattr(routine, "routine_type", "") == "FUNCTION"
+    ]
+    legacy_routine_names = [
+        str(routine) for routine in routines if not hasattr(routine, "routine_type")
+    ]
+    function_routines = [
+        routine
+        for routine in routines
+        if getattr(routine, "routine_type", "") == "FUNCTION"
+    ]
+    table_function_routines = [
+        routine
+        for routine in function_routines
+        if bool(getattr(routine, "is_table_valued", False))
+    ]
+    table_function_names = [routine_display_name(routine) for routine in table_function_routines]
 
     # Don't suggest if inside string literal
     if is_inside_string(before_cursor):
@@ -183,7 +307,12 @@ def get_completions(
             return fuzzy_match(current_word, result)
 
     # Try DROP handler (doesn't need columns)
-    drop_result = get_drop_completions(before_cursor, tables, procedures)
+    drop_routines = (
+        (function_names if include_functions else []) + legacy_routine_names
+        if re.search(r"\bDROP\s+FUNCTION\b", before_cursor, re.IGNORECASE)
+        else procedure_names
+    )
+    drop_result = get_drop_completions(before_cursor, tables, drop_routines)
     if drop_result is not None:
         return fuzzy_match(current_word, drop_result)
 
@@ -258,11 +387,27 @@ def get_completions(
 
     # Schema.table prefix → suggest tables after schema name
     # Pattern: FROM/JOIN schema. or schema.partial
-    namespace_match = re.search(r"\b(?:FROM|JOIN)\s+(\w+)\.\w*$", clean_before, re.IGNORECASE)
+    namespace_match = re.search(
+        r"\b(?:FROM|JOIN|APPLY)\s+"
+        r"(?:(?:\[([^\]]+)\]|(\w+))\.)?"
+        r"(?:\[([^\]]+)\]|(\w+))\.\[?\w*$",
+        clean_before,
+        re.IGNORECASE,
+    )
     if namespace_match:
-        namespace = namespace_match.group(1)
+        database = namespace_match.group(1) or namespace_match.group(2) or ""
+        namespace = namespace_match.group(3) or namespace_match.group(4)
         names = get_names_for_namespace(namespace, tables)
-        return fuzzy_match(current_word, names if names else tables)
+        candidates = list(names if names else tables)
+        if include_functions:
+            candidates.extend(
+                scoped_routine_names(
+                    table_function_routines,
+                    schema=namespace,
+                    database=database,
+                )
+            )
+        return fuzzy_match(current_word, candidates)
 
     # ANY/ALL/SOME ( → suggest SELECT for subquery
     if re.search(r"\b(ANY|ALL|SOME)\s*\(\s*\w*$", clean_before, re.IGNORECASE):
@@ -333,6 +478,8 @@ def get_completions(
         if suggestion.type == SuggestionType.TABLE:
             results.extend(get_identifier_namespaces(tables))
             results.extend(tables)
+            if include_functions:
+                results.extend(table_function_names)
             results.extend(cte_names)
 
         elif suggestion.type == SuggestionType.COLUMN:
@@ -358,6 +505,7 @@ def get_completions(
 
             if include_functions:
                 results.extend(get_all_functions())
+                results.extend(function_names)
 
         elif suggestion.type == SuggestionType.ALIAS_COLUMN:
             scope = suggestion.table_scope
@@ -372,14 +520,74 @@ def get_completions(
                     results.extend(columns[scope_lower])
 
         elif suggestion.type == SuggestionType.PROCEDURE:
-            if procedures:
-                results.extend(procedures)
+            scope_parts = split_identifier_parts(suggestion.table_scope or "")
+            schema_scope = scope_parts[-1].lower() if scope_parts else ""
+            database_scope = scope_parts[-2].lower() if len(scope_parts) > 1 else ""
+            if not schema_scope:
+                results.extend(procedure_names)
+            else:
+                results.extend(
+                    scoped_routine_names(
+                        [
+                            routine
+                            for routine in routines
+                            if getattr(routine, "routine_type", "PROCEDURE")
+                            == "PROCEDURE"
+                        ],
+                        schema=schema_scope,
+                        database=database_scope,
+                    )
+                )
+
+        elif suggestion.type == SuggestionType.FUNCTION:
+            scope_parts = split_identifier_parts(suggestion.table_scope or "")
+            schema_scope = scope_parts[-1].lower() if scope_parts else ""
+            database_scope = scope_parts[-2].lower() if len(scope_parts) > 1 else ""
+            is_alias = len(scope_parts) == 1 and schema_scope in alias_map
+            if include_functions and not is_alias:
+                if schema_scope:
+                    results.extend(
+                        scoped_routine_names(
+                            function_routines,
+                            schema=schema_scope,
+                            database=database_scope,
+                        )
+                    )
+                else:
+                    results.extend(
+                        routine_display_name(routine)
+                        for routine in function_routines
+                    )
+
+        elif suggestion.type == SuggestionType.PARAMETER:
+            parts = split_identifier_parts(suggestion.table_scope or "")
+            name_part = parts[-1].lower() if parts else ""
+            schema_part = parts[-2].lower() if len(parts) > 1 else ""
+            database_part = parts[-3].lower() if len(parts) > 2 else ""
+            matches = []
+            for routine in routines:
+                name = str(routine).lower()
+                schema = str(getattr(routine, "schema", "")).lower()
+                database = str(getattr(routine, "database", "")).lower()
+                if (
+                    name == name_part
+                    and (not schema_part or schema == schema_part)
+                    and (not database_part or database == database_part)
+                ):
+                    matches.append(routine)
+            if not database_part and len(matches) > 1:
+                # The user's default schema is not available here, so choosing
+                # any same-named routine would risk suggesting invalid params.
+                matches = []
+            for routine in matches:
+                results.extend(getattr(routine, "parameters", ()))
 
         elif suggestion.type == SuggestionType.KEYWORD:
             if include_keywords:
                 results.extend(get_all_keywords())
             if include_functions:
                 results.extend(get_all_functions())
+                results.extend(function_names)
 
         elif suggestion.type == SuggestionType.OPERATOR:
             results.extend(SQL_OPERATORS)
