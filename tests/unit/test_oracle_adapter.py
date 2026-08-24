@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -165,6 +165,169 @@ class TestOracleAdapterSchemaIntrospection:
         OracleAdapter().get_sequence_definition(conn, "test_sequence")
 
         assert cursor.execute.call_args.args[1] == ("TEST_SEQUENCE", None)
+class TestOracleAdapterClientMode:
+    """Regression coverage for Oracle databases that require Thick mode."""
+
+    def test_connect_defaults_to_thin_mode(self):
+        mock_oracledb = MagicMock()
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                database="ORCL",
+                username="testuser",
+                password="testpass",
+            )
+
+            OracleAdapter().connect(config)
+
+            mock_oracledb.init_oracle_client.assert_not_called()
+
+    def test_thin_mode_rejects_process_already_initialized_as_thick(self):
+        mock_oracledb = MagicMock()
+        mock_oracledb.is_thin_mode.return_value = False
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                database="ORCL",
+                username="testuser",
+                password="testpass",
+                options={"oracle_client_mode": "thin"},
+            )
+
+            with pytest.raises(ValueError, match="Restart sqlit"):
+                OracleAdapter().connect(config)
+
+            mock_oracledb.connect.assert_not_called()
+
+    def test_connect_enables_thick_mode_before_connecting(self):
+        mock_oracledb = MagicMock()
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                database="ORCL",
+                username="testuser",
+                password="testpass",
+                options={"oracle_client_mode": "thick"},
+            )
+
+            OracleAdapter().connect(config)
+
+            mock_oracledb.init_oracle_client.assert_called_once_with()
+            assert mock_oracledb.method_calls.index(call.init_oracle_client()) < mock_oracledb.method_calls.index(
+                call.connect(
+                    user="testuser",
+                    password="testpass",
+                    dsn="localhost:1521/ORCL",
+                )
+            )
+
+    def test_connect_passes_configured_client_library_path(self):
+        mock_oracledb = MagicMock()
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                database="ORCL",
+                username="testuser",
+                password="testpass",
+                options={
+                    "oracle_client_mode": "thick",
+                    "oracle_client_lib_dir": "/opt/oracle/instantclient",
+                },
+            )
+
+            OracleAdapter().connect(config)
+
+            mock_oracledb.init_oracle_client.assert_called_once_with(
+                lib_dir="/opt/oracle/instantclient"
+            )
+
+    def test_connect_reports_thick_mode_prerequisites(self):
+        mock_oracledb = MagicMock()
+        mock_oracledb.init_oracle_client.side_effect = RuntimeError("DPI-1047")
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                database="ORCL",
+                username="testuser",
+                password="testpass",
+                options={"oracle_client_mode": "thick"},
+            )
+
+            with pytest.raises(
+                ValueError, match="Install Oracle Client libraries"
+            ) as exc_info:
+                OracleAdapter().connect(config)
+
+            assert isinstance(exc_info.value.__cause__, RuntimeError)
+            assert "DPI-1047" in str(exc_info.value)
+            mock_oracledb.connect.assert_not_called()
+
+    def test_schema_only_shows_library_directory_for_thick_mode(self):
+        from sqlit.domains.connections.providers.oracle.schema import SCHEMA
+
+        fields = {field.name: field for field in SCHEMA.fields}
+
+        assert fields["oracle_client_mode"].default == "thin"
+        assert [option.value for option in fields["oracle_client_mode"].options] == [
+            "thin",
+            "thick",
+        ]
+        visible_when = fields["oracle_client_lib_dir"].visible_when
+        assert visible_when is not None
+        assert visible_when({"oracle_client_mode": "thin"}) is False
+        assert visible_when({"oracle_client_mode": "thick"}) is True
+
+    def test_oracle_legacy_still_defaults_to_thick_mode(self):
+        mock_oracledb = MagicMock()
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle_legacy.adapter import (
+                OracleLegacyAdapter,
+            )
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle_legacy",
+                server="localhost",
+                port="1521",
+                database="ORCL",
+                username="testuser",
+                password="testpass",
+            )
+
+            OracleLegacyAdapter().connect(config)
+
+            mock_oracledb.init_oracle_client.assert_called_once_with()
 
 
 class TestOracleAdapterRole:

@@ -75,6 +75,8 @@ class OracleAdapter(DatabaseAdapter):
     connected user may access, including objects owned by other schemas.
     """
 
+    _client_mode_default = "thin"
+
     @property
     def name(self) -> str:
         return "Oracle"
@@ -113,6 +115,45 @@ class OracleAdapter(DatabaseAdapter):
     def test_query(self) -> str:
         return "SELECT 1 FROM DUAL"
 
+    def _ensure_client_mode(self, oracledb: Any, config: ConnectionConfig) -> None:
+        """Enable Thick mode before the first connection when requested.
+
+        python-oracledb chooses one mode for the lifetime of the process, so
+        initialization must happen before ``connect()``. Calling
+        ``init_oracle_client()`` repeatedly with the same arguments is
+        supported by the driver.
+        """
+        client_mode = str(
+            config.get_option("oracle_client_mode", self._client_mode_default)
+        ).strip().lower()
+        if client_mode == "thin":
+            is_thin_mode = getattr(oracledb, "is_thin_mode", None)
+            if callable(is_thin_mode) and is_thin_mode() is False:
+                raise ValueError(
+                    "Oracle Thin mode cannot be selected after Thick mode was "
+                    "initialized in this sqlit process. Restart sqlit before "
+                    "opening this connection."
+                )
+            return
+        if client_mode != "thick":
+            raise ValueError("Oracle client mode must be Thin or Thick")
+
+        lib_dir = str(
+            config.get_option("oracle_client_lib_dir", "") or ""
+        ).strip()
+        try:
+            if lib_dir:
+                oracledb.init_oracle_client(lib_dir=lib_dir)
+            else:
+                oracledb.init_oracle_client()
+        except Exception as exc:
+            raise ValueError(
+                "Oracle Thick mode initialization failed. Install Oracle Client "
+                "libraries and make them available to sqlit before connecting. "
+                "Restart sqlit if a Thin-mode connection was already opened. "
+                f"Driver error: {exc}"
+            ) from exc
+
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to Oracle database."""
         oracledb = self._import_driver_module(
@@ -121,6 +162,8 @@ class OracleAdapter(DatabaseAdapter):
             extra_name=self.install_extra,
             package_name=self.install_package,
         )
+
+        self._ensure_client_mode(oracledb, config)
 
         # Fetch CLOB/BLOB values inline as str/bytes instead of LOB locators.
         # Locators need a live connection to be read, but results are pickled
