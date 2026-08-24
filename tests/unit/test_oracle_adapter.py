@@ -188,6 +188,29 @@ class TestOracleAdapterClientMode:
 
             mock_oracledb.init_oracle_client.assert_not_called()
 
+    def test_thin_mode_rejects_process_already_initialized_as_thick(self):
+        mock_oracledb = MagicMock()
+        mock_oracledb.is_thin_mode.return_value = False
+
+        with patch.dict("sys.modules", {"oracledb": mock_oracledb}):
+            from sqlit.domains.connections.providers.oracle.adapter import OracleAdapter
+
+            config = ConnectionConfig(
+                name="test",
+                db_type="oracle",
+                server="localhost",
+                port="1521",
+                database="ORCL",
+                username="testuser",
+                password="testpass",
+                options={"oracle_client_mode": "thin"},
+            )
+
+            with pytest.raises(ValueError, match="Restart sqlit"):
+                OracleAdapter().connect(config)
+
+            mock_oracledb.connect.assert_not_called()
+
     def test_connect_enables_thick_mode_before_connecting(self):
         mock_oracledb = MagicMock()
 

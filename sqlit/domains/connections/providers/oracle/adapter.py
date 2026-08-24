@@ -127,6 +127,13 @@ class OracleAdapter(DatabaseAdapter):
             config.get_option("oracle_client_mode", self._client_mode_default)
         ).strip().lower()
         if client_mode == "thin":
+            is_thin_mode = getattr(oracledb, "is_thin_mode", None)
+            if callable(is_thin_mode) and is_thin_mode() is False:
+                raise ValueError(
+                    "Oracle Thin mode cannot be selected after Thick mode was "
+                    "initialized in this sqlit process. Restart sqlit before "
+                    "opening this connection."
+                )
             return
         if client_mode != "thick":
             raise ValueError("Oracle client mode must be Thin or Thick")
