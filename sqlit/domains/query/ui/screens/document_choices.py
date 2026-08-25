@@ -8,6 +8,7 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
+from sqlit.shared.ui.screens.confirm import ConfirmScreen
 from sqlit.shared.ui.widgets import Dialog
 
 
@@ -94,3 +95,27 @@ class ExternalQueryChangeScreen(_DocumentChoiceScreen):
     def __init__(self, document_name: str) -> None:
         super().__init__()
         self.description = f"{document_name} changed after it was opened. Choose which version to keep."
+
+
+class SavedQueryOverwriteScreen(ConfirmScreen):
+    """Compact confirmation for replacing one named query file."""
+
+    CSS = ConfirmScreen.CSS + """
+    SavedQueryOverwriteScreen {
+        align: center middle;
+        background: transparent;
+    }
+    SavedQueryOverwriteScreen #confirm-dialog {
+        width: 38;
+        min-width: 32;
+        max-width: 90%;
+    }
+    """
+
+    def __init__(self, relative_path: str) -> None:
+        super().__init__(
+            "Replace saved query?",
+            relative_path,
+            yes_label="Replace",
+            no_label="Cancel",
+        )

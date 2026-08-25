@@ -224,7 +224,7 @@ class QueryDocumentsMixin:
                 overwrite=overwrite,
             )
         except FileExistsError as exc:
-            from sqlit.shared.ui.screens.confirm import ConfirmScreen
+            from sqlit.domains.query.ui.screens import SavedQueryOverwriteScreen
 
             relative_path = str(exc)
             replacement_fingerprint = (
@@ -244,11 +244,7 @@ class QueryDocumentsMixin:
                     )
 
             self.push_screen(
-                ConfirmScreen(
-                    f"Replace {relative_path}?",
-                    yes_label="Replace",
-                    no_label="Cancel",
-                ),
+                SavedQueryOverwriteScreen(relative_path),
                 on_overwrite,
             )
             return

@@ -1,7 +1,11 @@
 """Query UI screens."""
 
 from .char_pending_menu import CharPendingMenuScreen
-from .document_choices import ExternalQueryChangeScreen, UnsavedQueryChangesScreen
+from .document_choices import (
+    ExternalQueryChangeScreen,
+    SavedQueryOverwriteScreen,
+    UnsavedQueryChangesScreen,
+)
 from .editor_picker import EditorPickerScreen
 from .query_history import QueryHistoryScreen
 from .query_library import QueryLibraryScreen
@@ -14,6 +18,7 @@ __all__ = [
     "ExternalQueryChangeScreen",
     "QueryLibraryScreen",
     "QueryHistoryScreen",
+    "SavedQueryOverwriteScreen",
     "SavedQueryNameScreen",
     "TextObjectMenuScreen",
     "UnsavedQueryChangesScreen",
