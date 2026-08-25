@@ -125,6 +125,10 @@ class AutocompleteMixin(AutocompleteSchemaMixin, AutocompleteSuggestionsMixin):
         if event.text_area.id != "query-input":
             return
 
+        update_document_title = getattr(self, "_update_query_document_title", None)
+        if callable(update_document_title):
+            update_document_title()
+
         # Mark that text just changed so selection_changed knows to ignore cursor movement
         self._text_just_changed = True
 

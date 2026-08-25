@@ -54,6 +54,15 @@ class TestQueryHistoryCursorMemory:
             query_b = "SELECT id, name FROM products"
             app._handle_history_result(("select", query_b))
             await pilot.pause()
+            # The first query is an unsaved document, so explicitly discard
+            # it before switching to the history entry.
+            from sqlit.domains.query.ui.screens import UnsavedQueryChangesScreen
+
+            prompt = app.screen
+            assert isinstance(prompt, UnsavedQueryChangesScreen)
+            prompt.query_one(".document-choice-list").highlighted = 1
+            prompt.action_select()
+            await pilot.pause()
 
             # Verify query changed
             assert app.query_input.text == query_b
@@ -64,6 +73,11 @@ class TestQueryHistoryCursorMemory:
 
             # Now switch back to query A
             app._handle_history_result(("select", query_a))
+            await pilot.pause()
+            prompt = app.screen
+            assert isinstance(prompt, UnsavedQueryChangesScreen)
+            prompt.query_one(".document-choice-list").highlighted = 1
+            prompt.action_select()
             await pilot.pause()
 
             # Verify query A is back

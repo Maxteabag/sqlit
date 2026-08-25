@@ -8,6 +8,7 @@ from textual.worker import Worker
 
 from sqlit.shared.ui.spinner import Spinner
 
+from .query_documents import QueryDocumentsMixin
 from .query_editing_clipboard import QueryEditingClipboardMixin
 from .query_editing_comments import QueryEditingCommentsMixin
 from .query_editing_common import QueryEditingCommonMixin
@@ -23,6 +24,7 @@ from .query_results import QueryResultsMixin
 
 
 class QueryMixin(
+    QueryDocumentsMixin,
     QueryEditingVisualMixin,
     QueryEditingVisualLineMixin,
     QueryEditingCommonMixin,

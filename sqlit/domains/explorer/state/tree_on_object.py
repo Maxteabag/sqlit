@@ -12,16 +12,17 @@ class TreeOnObjectState(State):
     help_category = "Explorer"
 
     def _setup_actions(self) -> None:
-        self.allows("select_table", label="Show Info", help="Show object definition/info")
+        self.allows("select_table", label="Open", help="Open the selected object")
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
         seen: set[str] = set()
 
+        label = "Open Query" if app.tree_node_kind == "saved_query_file" else "Show Info"
         left.append(
             DisplayBinding(
                 key=resolve_display_key("select_table") or "s",
-                label="Show Info",
+                label=label,
                 action="select_table",
             )
         )
@@ -45,4 +46,9 @@ class TreeOnObjectState(State):
         return left, []
 
     def is_active(self, app: InputContext) -> bool:
-        return app.focus == "explorer" and app.tree_node_kind in ("index", "trigger", "sequence")
+        return app.focus == "explorer" and app.tree_node_kind in (
+            "index",
+            "trigger",
+            "sequence",
+            "saved_query_file",
+        )

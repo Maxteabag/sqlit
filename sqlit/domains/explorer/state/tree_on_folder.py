@@ -69,4 +69,9 @@ class TreeOnFolderState(State):
         return left, []
 
     def is_active(self, app: InputContext) -> bool:
-        return app.focus == "explorer" and app.tree_node_kind in ("folder", "schema", "connection_folder")
+        return app.focus == "explorer" and app.tree_node_kind in (
+            "folder",
+            "schema",
+            "connection_folder",
+            "saved_query_folder",
+        )

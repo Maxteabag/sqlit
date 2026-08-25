@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from rich.markup import escape
+
 from sqlit.domains.connections.providers.metadata import get_connection_display_info
 from sqlit.shared.ui.protocols import UINavigationMixinHost
 
@@ -98,6 +100,7 @@ class UIStatusMixin:
         explorer_label = "Direct connection" if direct_active else "Explorer"
 
         def set_title(pane: Any, key: str, label: str, *, active: bool) -> None:
+            label = escape(label)
             if active and dialog_open:
                 # Active pane with dialog: key matches border (disabled), title stays primary
                 # Border reverts to default (active-pane class removed)
@@ -117,7 +120,9 @@ class UIStatusMixin:
         results_key = format_key(km.action("focus_results") or "r")
 
         set_title(pane_explorer, explorer_key, explorer_label, active=active_pane == "explorer")
-        set_title(pane_query, query_key, "Query", active=active_pane == "query")
+        query_label_builder = getattr(self, "_query_document_label", None)
+        query_label = query_label_builder() if callable(query_label_builder) else "Query"
+        set_title(pane_query, query_key, query_label, active=active_pane == "query")
         set_title(pane_results, results_key, "Results", active=active_pane == "results")
 
     def _update_vim_mode_visuals(self: UINavigationMixinHost) -> None:
