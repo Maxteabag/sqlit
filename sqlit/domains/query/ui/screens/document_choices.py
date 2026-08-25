@@ -22,6 +22,7 @@ class _DocumentChoiceScreen(ModalScreen[str | None]):
         background: transparent;
     }
     .document-choice-dialog { width: 66; max-width: 92%; height: auto; }
+    UnsavedQueryChangesScreen .document-choice-dialog { width: 46; }
     .document-choice-description { color: $text-muted; margin-bottom: 1; }
     .document-choice-list { height: auto; border: none; }
     .document-choice-list > .option-list--option { padding: 0; }
@@ -37,7 +38,8 @@ class _DocumentChoiceScreen(ModalScreen[str | None]):
             title=self.title_text,
             shortcuts=[("Select", "enter"), ("Cancel", "esc")],
         ):
-            yield Static(self.description, classes="document-choice-description")
+            if self.description:
+                yield Static(self.description, classes="document-choice-description")
             yield OptionList(
                 *(Option(label, id=value) for value, label in self.choices),
                 classes="document-choice-list",
@@ -75,7 +77,7 @@ class UnsavedQueryChangesScreen(_DocumentChoiceScreen):
 
     def __init__(self, document_name: str) -> None:
         super().__init__()
-        self.description = f"{document_name} has changes that have not been saved."
+        _ = document_name
 
 
 class ExternalQueryChangeScreen(_DocumentChoiceScreen):

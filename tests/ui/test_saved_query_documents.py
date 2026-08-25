@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from textual import events
 from textual.widgets import Input
 
 from sqlit.domains.connections.app.credentials import CredentialsPersistError
@@ -21,6 +22,7 @@ from sqlit.domains.query.ui.screens import (
 )
 from sqlit.domains.shell.app.main import SSMSTUI
 from sqlit.shared.ui.screens.confirm import ConfirmScreen
+from sqlit.shared.ui.widgets import FilterInput
 
 from .mocks import (
     MockConnectionStore,
@@ -57,7 +59,8 @@ async def test_first_save_creates_lazy_library_and_clears_dirty_marker(
         app.query_input.text = "SELECT * FROM sales"
         await pilot.pause()
         assert app._document_is_dirty()
-        assert "●" in str(app.query_area.border_title)
+        assert "Untitled" not in str(app.query_area.border_title)
+        assert "●" not in str(app.query_area.border_title)
 
         app.action_save_query()
         await pilot.pause()
@@ -112,8 +115,8 @@ async def test_library_search_preview_and_open_never_executes(
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, QueryLibraryScreen)
-        screen.query_one("#query-library-filter", Input).value = "daily"
-        await pilot.pause()
+        screen.action_open_filter()
+        await pilot.press("d", "a", "i", "l", "y")
         assert "SELECT * FROM sales" in str(screen.query_one("#query-library-preview").render())
 
         screen.action_select()
@@ -154,12 +157,35 @@ async def test_library_search_accepts_q_character(tmp_path: Path) -> None:
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, QueryLibraryScreen)
-        screen.action_focus_filter()
+        screen.action_open_filter()
 
         await pilot.press("q")
 
         assert app.screen is screen
-        assert screen.query_one("#query-library-filter", Input).value == "q"
+        assert screen.query_one("#query-library-filter", FilterInput).filter_text == "q"
+
+
+@pytest.mark.asyncio
+async def test_library_search_accepts_folder_separator(tmp_path: Path) -> None:
+    app, store = _make_app(tmp_path)
+    store.save("production-reporting", "reports/quarterly", "SELECT 1")
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.action_query_library()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, QueryLibraryScreen)
+        screen.action_open_filter()
+
+        await pilot.press("r", "e", "p", "o", "r", "t", "s", "/")
+
+        assert screen.query_one(FilterInput).filter_text == "reports/"
+        assert screen._selected_entry() is not None
+        assert screen._selected_entry().relative_path == "reports/quarterly.sql"
+
+        screen.on_paste(events.Paste("quarterly"))
+
+        assert screen.query_one(FilterInput).filter_text == "reports/quarterly"
 
 
 @pytest.mark.asyncio
@@ -262,7 +288,7 @@ async def test_external_change_is_detected_before_save(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_new_query_prompts_before_discarding_unsaved_text(tmp_path: Path) -> None:
+async def test_new_query_replaces_scratchpad_without_prompt(tmp_path: Path) -> None:
     app, _store = _make_app(tmp_path)
 
     async with app.run_test(size=(120, 40)) as pilot:
@@ -270,23 +296,20 @@ async def test_new_query_prompts_before_discarding_unsaved_text(tmp_path: Path) 
         app.action_new_query()
         await pilot.pause()
 
-        screen = app.screen
-        assert isinstance(screen, UnsavedQueryChangesScreen)
-        assert app.query_input.text == "SELECT unfinished"
-        screen.query_one(".document-choice-list").highlighted = 2
-        screen.action_select()
-        await pilot.pause()
-        assert app.query_input.text == "SELECT unfinished"
+        assert app.query_input.text == ""
+        assert not isinstance(app.screen, UnsavedQueryChangesScreen)
 
 
 @pytest.mark.asyncio
 async def test_discard_marks_transition_clean_before_nested_connection_guard(
     tmp_path: Path,
 ) -> None:
-    app, _store = _make_app(tmp_path)
+    app, store = _make_app(tmp_path)
     continued: list[bool] = []
 
     async with app.run_test(size=(120, 40)) as pilot:
+        entry = store.save("production-reporting", "saved", "SELECT original")
+        app._load_saved_query_entry(entry)
         app.query_input.text = "SELECT unfinished"
         app._request_query_document_transition(lambda: app._request_query_document_transition(lambda: continued.append(True)))
         await pilot.pause()
@@ -302,12 +325,14 @@ async def test_discard_marks_transition_clean_before_nested_connection_guard(
 
 
 @pytest.mark.asyncio
-async def test_save_and_continue_finishes_transition_after_naming_query(
+async def test_save_and_continue_saves_named_query_before_new_scratchpad(
     tmp_path: Path,
 ) -> None:
     app, store = _make_app(tmp_path)
 
     async with app.run_test(size=(120, 40)) as pilot:
+        entry = store.save("production-reporting", "kept-before-new", "SELECT old")
+        app._load_saved_query_entry(entry)
         app.query_input.text = "SELECT worth_keeping"
         app.action_new_query()
         await pilot.pause()
@@ -316,12 +341,6 @@ async def test_save_and_continue_finishes_transition_after_naming_query(
         assert isinstance(prompt, UnsavedQueryChangesScreen)
         prompt.query_one(".document-choice-list").highlighted = 0
         prompt.action_select()
-        await pilot.pause()
-
-        name_screen = app.screen
-        assert isinstance(name_screen, SavedQueryNameScreen)
-        name_screen.query_one(Input).value = "kept-before-new"
-        name_screen.action_save()
         await pilot.pause()
 
         assert store.load("production-reporting", "kept-before-new.sql").query == ("SELECT worth_keeping")

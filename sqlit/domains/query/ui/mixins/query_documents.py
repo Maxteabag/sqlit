@@ -32,6 +32,8 @@ class QueryDocumentsMixin:
 
     def _query_document_label(self: QueryMixinHost) -> str:
         document = self._get_query_document()
+        if document.relative_path is None:
+            return "Query"
         name = document.name
         if len(name) > 42:
             name = f"…{name[-41:]}"
@@ -243,8 +245,7 @@ class QueryDocumentsMixin:
 
             self.push_screen(
                 ConfirmScreen(
-                    "Replace saved query?",
-                    f"{relative_path} already exists in this connection's library.",
+                    f"Replace {relative_path}?",
                     yes_label="Replace",
                     no_label="Cancel",
                 ),
@@ -335,7 +336,10 @@ class QueryDocumentsMixin:
 
     def _request_query_document_transition(self: QueryMixinHost, continuation: Callable[[], None]) -> bool:
         document = self._get_query_document()
-        if not document.is_dirty(self.query_input.text):
+        if (
+            document.relative_path is None
+            or not document.is_dirty(self.query_input.text)
+        ):
             continuation()
             return False
 

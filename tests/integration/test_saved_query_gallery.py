@@ -18,6 +18,7 @@ from sqlit.domains.query.ui.screens import (
 )
 from sqlit.domains.shell.app.main import SSMSTUI
 from sqlit.shared.ui.screens.confirm import ConfirmScreen
+from sqlit.shared.ui.widgets import FilterInput
 from tests.ui.mocks import (
     MockConnectionStore,
     MockHistoryStore,
@@ -96,9 +97,13 @@ async def test_saved_query_workflow_gallery(tmp_path: Path) -> None:
         await pilot.pause()
         assert isinstance(app.screen, QueryLibraryScreen)
         _shot(app, output, "04-query-library")
-        app.screen.query_one("#query-library-filter", Input).value = "blocked"
-        await pilot.pause()
+        app.screen.action_open_filter()
+        await pilot.press("b", "l", "o", "c", "k", "e", "d")
+        assert app.screen.query_one(FilterInput).filter_text == "blocked"
         _shot(app, output, "05-query-library-search")
+        # First Escape closes the transient filter, second closes the library.
+        app.screen.action_cancel()
+        await pilot.pause()
         app.screen.action_cancel()
         await pilot.pause()
 

@@ -6,6 +6,8 @@ import re
 
 from typing import TYPE_CHECKING, Any, Callable
 
+from textual.css.query import NoMatches
+
 from sqlit.domains.explorer.ui.tree import db_switching as tree_db_switching
 from sqlit.domains.process_worker.ui.mixins.process_worker_lifecycle import (
     ProcessWorkerLifecycleMixin,
@@ -756,7 +758,10 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         """Start a new query (clear input and results)."""
         def start_new_query() -> None:
             self.query_input.text = ""
-            self._replace_results_table([], [])
+            try:
+                self._replace_results_table([], [])
+            except NoMatches:
+                pass
             reset_document = getattr(self, "_reset_query_document", None)
             if callable(reset_document):
                 reset_document(clear_text=False)

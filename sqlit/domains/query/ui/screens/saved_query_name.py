@@ -21,7 +21,6 @@ class SavedQueryNameScreen(ModalScreen[str | None]):
     CSS = """
     SavedQueryNameScreen { align: center middle; background: transparent; }
     #saved-query-name-dialog { width: 64; max-width: 92%; height: auto; }
-    #saved-query-name-description { color: $text-muted; margin-bottom: 1; }
     #saved-query-name-error { color: $error; height: 1; margin-top: 1; }
     #saved-query-name-input { border: solid $panel; }
     #saved-query-name-input:focus { border: solid $primary; }
@@ -38,10 +37,6 @@ class SavedQueryNameScreen(ModalScreen[str | None]):
             title=self.title_text,
             shortcuts=[("Save", "enter"), ("Cancel", "esc")],
         ):
-            yield Static(
-                "Name this query. Use folders such as reports/daily-sales.",
-                id="saved-query-name-description",
-            )
             yield Input(
                 value=self.initial_name,
                 placeholder="reports/daily-sales.sql",
