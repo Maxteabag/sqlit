@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from rich.align import Align
 from rich.errors import MarkupError
@@ -18,6 +20,33 @@ from textual.strip import Strip
 from textual_fastdatatable import DataTable as FastDataTable
 
 
+def normalize_arrow_value(value: Any) -> Any:
+    """Keep Arrow from inferring its binary UUID extension type."""
+    return str(value) if isinstance(value, UUID) else value
+
+
+def _stringify_uuid_rows(rows: Iterable[Iterable[Any]]) -> list[tuple[Any, ...]]:
+    return [tuple(normalize_arrow_value(value) for value in row) for row in rows]
+
+
+def _stringify_uuid_data(data: Any) -> Any:
+    if isinstance(data, dict):
+        return {
+            name: [normalize_arrow_value(value) for value in values]
+            if isinstance(values, (list, tuple))
+            else values
+            for name, values in data.items()
+        }
+    if isinstance(data, (list, tuple)):
+        return [
+            tuple(normalize_arrow_value(value) for value in row)
+            if isinstance(row, (list, tuple))
+            else row
+            for row in data
+        ]
+    return data
+
+
 class SqlitDataTable(FastDataTable):
     """FastDataTable with correct header behavior when show_header is False.
 
@@ -26,6 +55,12 @@ class SqlitDataTable(FastDataTable):
 
     # Track if a manual tooltip is being shown (via 'v' key)
     _manual_tooltip_active: bool = False
+
+    def __init__(self, *, data: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(data=_stringify_uuid_data(data), **kwargs)
+
+    def add_rows(self, rows: Iterable[Iterable[Any]]) -> list[int]:
+        return super().add_rows(_stringify_uuid_rows(rows))
 
     def _set_tooltip_from_cell_at(self, coordinate: Any) -> None:
         """Override to disable hover tooltips entirely."""
