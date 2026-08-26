@@ -130,12 +130,16 @@ class ConnectionStore(JSONFileStore):
             config: ConnectionConfig to populate with credentials.
         """
         endpoint = config.tcp_endpoint
-        if endpoint and endpoint.password is None:
+        if endpoint and endpoint.password is None and not endpoint.password_command:
             password = self.credentials_service.get_password(config.name)
             if password is not None:
                 endpoint.password = password
 
-        if config.tunnel and config.tunnel.password is None:
+        if (
+            config.tunnel
+            and config.tunnel.password is None
+            and not config.tunnel.password_command
+        ):
             ssh_password = self.credentials_service.get_ssh_password(config.name)
             if ssh_password is not None:
                 config.tunnel.password = ssh_password
@@ -295,9 +299,17 @@ class ConnectionStore(JSONFileStore):
             target = copy.deepcopy(connection)
             try:
                 endpoint = target.tcp_endpoint
-                if endpoint and endpoint.password is None:
+                if (
+                    endpoint
+                    and endpoint.password is None
+                    and not endpoint.password_command
+                ):
                     endpoint.password = self.credentials_service.get_password_for_migration(previous_name)  # type: ignore[arg-type]
-                if target.tunnel and target.tunnel.password is None:
+                if (
+                    target.tunnel
+                    and target.tunnel.password is None
+                    and not target.tunnel.password_command
+                ):
                     target.tunnel.password = self.credentials_service.get_ssh_password_for_migration(previous_name)  # type: ignore[arg-type]
                 destination_db_password = self.credentials_service.get_password_for_migration(connection.name)
                 destination_ssh_password = self.credentials_service.get_ssh_password_for_migration(

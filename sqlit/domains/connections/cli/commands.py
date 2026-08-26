@@ -277,6 +277,12 @@ def cmd_connection_edit(args: Any, *, services: AppServices | None = None) -> in
             valid_types = ", ".join(t.value for t in AuthType)
             print(f"Error: Invalid auth type '{args.auth_type}'. Valid types: {valid_types}")
             return 1
+    postgres_auth_method = getattr(args, "postgres_auth_method", None)
+    if postgres_auth_method is not None:
+        if conn.db_type != "postgresql":
+            print("Error: --postgres-auth-method is only valid for PostgreSQL.")
+            return 1
+        conn.set_option("postgres_auth_method", postgres_auth_method)
     if endpoint:
         if args.username is not None:
             endpoint.username = args.username
@@ -286,6 +292,24 @@ def cmd_connection_edit(args: Any, *, services: AppServices | None = None) -> in
     password_command = getattr(args, "password_command", None)
     if password_command is not None and endpoint:
         endpoint.password_command = password_command or None
+        if conn.db_type == "postgresql":
+            from sqlit.domains.connections.providers.postgresql.auth import (
+                AZURE_ENTRA_PASSWORD_COMMAND,
+                POSTGRES_AUTH_AZURE_ENTRA_CLI,
+            )
+
+            if password_command == AZURE_ENTRA_PASSWORD_COMMAND:
+                conn.set_option("postgres_auth_method", POSTGRES_AUTH_AZURE_ENTRA_CLI)
+                postgres_auth_method = POSTGRES_AUTH_AZURE_ENTRA_CLI
+
+    if conn.db_type == "postgresql":
+        from sqlit.domains.connections.providers.config_service import (
+            normalize_connection_config,
+        )
+
+        conn = normalize_connection_config(conn)
+        connections[conn_idx] = conn
+        endpoint = conn.tcp_endpoint
 
     ssh_password_command = getattr(args, "ssh_password_command", None)
     if ssh_password_command is not None and conn.tunnel:
