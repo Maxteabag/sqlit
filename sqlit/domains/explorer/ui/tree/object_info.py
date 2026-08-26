@@ -81,4 +81,19 @@ def display_object_info(host: TreeMixinHost, object_type: str, info: dict[str, A
 
     definition = info.get("definition")
     if definition:
-        host.query_input.text = f"/*\n{definition}\n*/"
+        query = f"/*\n{definition}\n*/"
+
+        def load_definition() -> None:
+            load_unsaved = getattr(host, "_load_unsaved_query_text", None)
+            if callable(load_unsaved):
+                load_unsaved(query)
+            else:
+                host.query_input.text = query
+
+        request_transition = getattr(
+            host, "_request_query_document_transition", None
+        )
+        if callable(request_transition):
+            request_transition(load_definition)
+        else:
+            load_definition()

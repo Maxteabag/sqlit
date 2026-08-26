@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from textual.widgets import Tree
 
+from sqlit.domains.query.store.saved_queries import SavedQueryNameError
 from sqlit.shared.ui.protocols import TreeMixinHost
 
 from ..tree import builder as tree_builder
@@ -204,6 +205,10 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
         data = node.data
 
+        if self._get_node_kind(node) == "saved_query_file":
+            self._open_saved_query_node(data)
+            return
+
         if self._get_node_kind(node) == "connection":
             config = data.config
             self._emit_debug(
@@ -214,6 +219,28 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             if self.current_config and self.current_config.name == config.name:
                 return
             self.connect_to_server(config)
+
+    def _open_saved_query_node(self: TreeMixinHost, data: Any) -> None:
+        """Reload and open an explorer query file without executing it."""
+        try:
+            entry = self.services.saved_query_store.load(
+                data.connection_name,
+                data.entry.relative_path,
+            )
+        except (OSError, UnicodeError, SavedQueryNameError) as exc:
+            self.notify(f"Could not open saved query: {exc}", severity="error")
+            return
+
+        def open_query() -> None:
+            loader = getattr(self, "_load_saved_query_entry", None)
+            if callable(loader):
+                loader(entry)
+
+        request_transition = getattr(self, "_request_query_document_transition", None)
+        if callable(request_transition):
+            request_transition(open_query)
+        else:
+            open_query()
 
     def on_tree_node_highlighted(self: TreeMixinHost, event: Tree.NodeHighlighted) -> None:
         """Update footer when tree selection changes."""
@@ -314,9 +341,6 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
     def action_select_table(self: TreeMixinHost) -> None:
         """Generate and execute SELECT query for selected table/view, or show info for indexes/triggers/sequences."""
-        if not self.current_provider or not self._session:
-            return
-
         node = self.object_tree.cursor_node
 
         if not node or not node.data:
@@ -324,25 +348,44 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
         data = node.data
 
-        if self._get_node_kind(node) in ("table", "view"):
-            self._last_query_table = {
-                "database": data.database,
-                "schema": data.schema,
-                "name": data.name,
-                "columns": [],
-            }
-            # Stash per-result metadata so results can resolve PKs without relying on globals.
-            self._pending_result_table_info = self._last_query_table
-            self._prime_last_query_table_columns(data.database, data.schema, data.name)
+        if self._get_node_kind(node) == "saved_query_file":
+            self._open_saved_query_node(data)
+            return
 
-            self.query_input.text = self.current_provider.dialect.build_select_query(
-                data.name,
-                100,
-                data.database,
-                data.schema,
-            )
-            self._query_target_database = data.database
-            self.action_execute_query()
+        if not self.current_provider or not self._session:
+            return
+
+        if self._get_node_kind(node) in ("table", "view"):
+
+            def select_table() -> None:
+                self._last_query_table = {
+                    "database": data.database,
+                    "schema": data.schema,
+                    "name": data.name,
+                    "columns": [],
+                }
+                # Stash metadata so results can resolve keys without globals.
+                self._pending_result_table_info = self._last_query_table
+                self._prime_last_query_table_columns(data.database, data.schema, data.name)
+                query = self.current_provider.dialect.build_select_query(
+                    data.name,
+                    100,
+                    data.database,
+                    data.schema,
+                )
+                load_unsaved = getattr(self, "_load_unsaved_query_text", None)
+                if callable(load_unsaved):
+                    load_unsaved(query)
+                else:
+                    self.query_input.text = query
+                self._query_target_database = data.database
+                self.action_execute_query()
+
+            request_transition = getattr(self, "_request_query_document_transition", None)
+            if callable(request_transition):
+                request_transition(select_table)
+            else:
+                select_table()
             return
 
         if self._get_node_kind(node) == "index":
