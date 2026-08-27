@@ -12,7 +12,11 @@ from textual import events
 from textual.widgets import Input
 
 from sqlit.domains.connections.app.credentials import CredentialsPersistError
-from sqlit.domains.explorer.domain.tree_nodes import TableNode
+from sqlit.domains.explorer.domain.tree_nodes import (
+    SavedQueryFileNode,
+    SavedQueryFolderNode,
+    TableNode,
+)
 from sqlit.domains.query.store.saved_queries import SavedQueryStore
 from sqlit.domains.query.ui.screens import (
     ExternalQueryChangeScreen,
@@ -567,4 +571,66 @@ async def test_deleting_active_connection_protects_dirty_document(
         await pilot.pause()
 
         assert app.services.connection_store.get_by_name(config.name) is not None
+        assert app._document_is_dirty()
+
+
+@pytest.mark.asyncio
+async def test_explorer_rename_saved_query_updates_open_document(
+    tmp_path: Path,
+) -> None:
+    app, store = _make_app(tmp_path)
+    entry = store.save("production-reporting", "reports/daily", "SELECT 1")
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        app._load_saved_query_entry(entry)
+        app._refresh_connection_tree = MagicMock()  # type: ignore[method-assign]
+        node = app.object_tree.root.add_leaf("daily.sql")
+        node.data = SavedQueryFileNode("production-reporting", entry)
+        app.object_tree.root.expand()
+        app.object_tree.refresh(layout=True)
+        await pilot.pause()
+        app.object_tree.move_cursor(node)
+
+        app.action_rename_saved_query()
+        await pilot.pause()
+        prompt = app.screen
+        assert isinstance(prompt, SavedQueryNameScreen)
+        prompt.query_one("#saved-query-name-input", Input).value = "reports/weekly"
+        prompt.action_save()
+        await pilot.pause()
+
+        assert store.load("production-reporting", "reports/weekly.sql").query == ("SELECT 1")
+        assert app._get_query_document().relative_path == "reports/weekly.sql"
+        assert not app._document_is_dirty()
+
+
+@pytest.mark.asyncio
+async def test_explorer_delete_folder_keeps_open_query_as_scratch(
+    tmp_path: Path,
+) -> None:
+    app, store = _make_app(tmp_path)
+    entry = store.save("production-reporting", "reports/daily", "SELECT 1")
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        app._load_saved_query_entry(entry)
+        app.query_input.text = "SELECT edited"
+        app._refresh_connection_tree = MagicMock()  # type: ignore[method-assign]
+        node = app.object_tree.root.add("reports")
+        node.data = SavedQueryFolderNode("production-reporting", "reports")
+        app.object_tree.root.expand()
+        app.object_tree.refresh(layout=True)
+        await pilot.pause()
+        app.object_tree.move_cursor(node)
+
+        app.action_delete_saved_query()
+        await pilot.pause()
+        confirm = app.screen
+        assert isinstance(confirm, ConfirmScreen)
+        assert "1 saved query file" in str(confirm.query_one("#confirm-description").render())
+        confirm.action_yes()
+        await pilot.pause()
+
+        assert store.list_for_connection("production-reporting") == []
+        assert app.query_input.text == "SELECT edited"
+        assert app._get_query_document().relative_path is None
         assert app._document_is_dirty()

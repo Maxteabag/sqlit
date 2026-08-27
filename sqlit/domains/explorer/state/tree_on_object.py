@@ -13,6 +13,18 @@ class TreeOnObjectState(State):
 
     def _setup_actions(self) -> None:
         self.allows("select_table", label="Open", help="Open the selected object")
+        self.allows(
+            "rename_saved_query",
+            lambda app: app.tree_node_kind == "saved_query_file",
+            label="Rename",
+            help="Rename saved query",
+        )
+        self.allows(
+            "delete_saved_query",
+            lambda app: app.tree_node_kind == "saved_query_file",
+            label="Delete",
+            help="Delete saved query",
+        )
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
@@ -27,6 +39,22 @@ class TreeOnObjectState(State):
             )
         )
         seen.add("select_table")
+        if app.tree_node_kind == "saved_query_file":
+            left.extend(
+                (
+                    DisplayBinding(
+                        key=resolve_display_key("rename_saved_query") or "r",
+                        label="Rename",
+                        action="rename_saved_query",
+                    ),
+                    DisplayBinding(
+                        key=resolve_display_key("delete_saved_query") or "d",
+                        label="Delete",
+                        action="delete_saved_query",
+                    ),
+                )
+            )
+            seen.update({"rename_saved_query", "delete_saved_query"})
         left.append(
             DisplayBinding(
                 key=resolve_display_key("refresh_tree") or "f",

@@ -74,9 +74,7 @@ def test_list_is_recursive_sorted_and_ignores_hidden_files(
     ]
 
 
-def test_list_tolerates_directory_traversal_failure(
-    store: SavedQueryStore, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_list_tolerates_directory_traversal_failure(store: SavedQueryStore, monkeypatch: pytest.MonkeyPatch) -> None:
     store.save("production", "report", "SELECT 1")
 
     def fail_traversal(_self: Path, _pattern: str):
@@ -150,9 +148,7 @@ def test_fingerprint_bounds_externally_replaced_oversized_file(
     assert store.current_fingerprint("production", "report.sql") is None
 
 
-def test_save_revalidates_fingerprint_immediately_before_replace(
-    store: SavedQueryStore, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_save_revalidates_fingerprint_immediately_before_replace(store: SavedQueryStore, monkeypatch: pytest.MonkeyPatch) -> None:
     existing = store.save("production", "report", "SELECT original")
     changed = type(existing.fingerprint)(
         digest="changed",
@@ -174,9 +170,7 @@ def test_save_revalidates_fingerprint_immediately_before_replace(
     assert not list(existing.path.parent.glob(".sqlit-save-*"))
 
 
-def test_fallback_save_does_not_replace_concurrently_created_file(
-    store: SavedQueryStore, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_fallback_save_does_not_replace_concurrently_created_file(store: SavedQueryStore, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(store, "_secure_dir_fd_available", lambda: False)
     path, _ = store._path_for_name("production", "report")
     checks = 0
@@ -301,3 +295,87 @@ def test_connection_rename_reports_filesystem_failure(store: SavedQueryStore, mo
 
     assert store.rename_connection("old", "new") is False
     assert store.list_for_connection("old")[0].query == "SELECT 1"
+
+
+def test_rename_file_moves_query_and_removes_empty_folder(
+    store: SavedQueryStore,
+) -> None:
+    original = store.save("production", "old/report", "SELECT 1")
+
+    renamed = store.rename_file(
+        "production",
+        original.relative_path,
+        "new/daily",
+        expected=original.fingerprint,
+    )
+
+    assert renamed.relative_path == "new/daily.sql"
+    assert renamed.query == "SELECT 1"
+    assert not (store.connection_dir("production") / "old").exists()
+
+
+def test_rename_file_refuses_collision_and_external_change(
+    store: SavedQueryStore,
+) -> None:
+    original = store.save("production", "first", "SELECT 1")
+    store.save("production", "second", "SELECT 2")
+
+    with pytest.raises(FileExistsError):
+        store.rename_file("production", "first.sql", "second.sql")
+
+    original.path.write_text("SELECT changed", encoding="utf-8")
+    with pytest.raises(SavedQueryConflictError):
+        store.rename_file(
+            "production",
+            "first.sql",
+            "renamed.sql",
+            expected=original.fingerprint,
+        )
+
+
+def test_delete_file_checks_fingerprint_and_removes_empty_parents(
+    store: SavedQueryStore,
+) -> None:
+    entry = store.save("production", "reports/daily", "SELECT 1")
+    entry.path.write_text("SELECT changed", encoding="utf-8")
+
+    with pytest.raises(SavedQueryConflictError):
+        store.delete_file("production", entry.relative_path, expected=entry.fingerprint)
+
+    current = store.load("production", entry.relative_path)
+    store.delete_file("production", current.relative_path, expected=current.fingerprint)
+    assert store.list_for_connection("production") == []
+    assert not (store.connection_dir("production") / "reports").exists()
+
+
+def test_rename_and_delete_folder_update_all_nested_queries(
+    store: SavedQueryStore,
+) -> None:
+    store.save("production", "reports/daily", "SELECT 1")
+    store.save("production", "reports/monthly/summary", "SELECT 2")
+
+    new_path = store.rename_folder("production", "reports", "analytics")
+
+    assert new_path == "analytics"
+    assert [entry.relative_path for entry in store.list_for_connection("production")] == ["analytics/daily.sql", "analytics/monthly/summary.sql"]
+    assert store.delete_folder("production", "analytics") == 2
+    assert store.list_for_connection("production") == []
+
+
+def test_delete_folder_preserves_unrelated_files(store: SavedQueryStore) -> None:
+    store.save("production", "reports/daily", "SELECT 1")
+    notes = store.connection_dir("production") / "reports" / "README.md"
+    notes.write_text("keep me", encoding="utf-8")
+
+    assert store.delete_folder("production", "reports") == 1
+
+    assert notes.read_text(encoding="utf-8") == "keep me"
+
+
+@pytest.mark.parametrize("name", ["", ".", "..", "../outside", ".hidden"])
+def test_folder_operations_reject_unsafe_names(store: SavedQueryStore, name: str) -> None:
+    store.save("production", "reports/daily", "SELECT 1")
+    with pytest.raises(SavedQueryNameError):
+        store.rename_folder("production", "reports", name)
+    with pytest.raises(SavedQueryNameError):
+        store.delete_folder("production", name)
