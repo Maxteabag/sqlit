@@ -72,6 +72,44 @@ class ColumnInfo:
     is_primary_key: bool = False
 
 
+class RoutineInfo(str):
+    """String-compatible routine metadata used by autocomplete."""
+
+    schema: str
+    database: str
+    name: str
+    routine_type: str
+    return_type: str
+    parameters: tuple[str, ...]
+
+    def __new__(
+        cls,
+        name: str,
+        *,
+        schema: str = "",
+        database: str = "",
+        routine_type: str = "PROCEDURE",
+        return_type: str = "",
+        parameters: tuple[str, ...] = (),
+    ) -> RoutineInfo:
+        instance = super().__new__(cls, name)
+        instance.name = name
+        instance.schema = schema
+        instance.database = database
+        instance.routine_type = routine_type.upper()
+        instance.return_type = return_type.upper()
+        instance.parameters = parameters
+        return instance
+
+    @property
+    def qualified_name(self) -> str:
+        return f"{self.schema}.{self}" if self.schema else str(self)
+
+    @property
+    def is_table_valued(self) -> bool:
+        return self.routine_type == "FUNCTION" and self.return_type == "TABLE"
+
+
 @dataclass
 class IndexInfo:
     """Information about a database index."""

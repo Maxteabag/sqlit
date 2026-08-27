@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,19 +33,38 @@ class ConnectionManager:
             return config
 
         service = self._services.credentials_service
-        if endpoint and endpoint.password is None and uses_db_password(config):
+        if endpoint and endpoint.password is None and not endpoint.password_command and uses_db_password(config):
             password = service.get_password(config.name)
             if password is not None:
                 endpoint.password = password
-        if config.tunnel and config.tunnel.password is None:
+        if config.tunnel and config.tunnel.password is None and not config.tunnel.password_command:
             ssh_password = service.get_ssh_password(config.name)
             if ssh_password is not None:
                 config.tunnel.password = ssh_password
         return config
 
+    def _resolve_dynamic_credentials(self, config: ConnectionConfig) -> ConnectionConfig:
+        """Resolve commands on a copy so short-lived secrets are not persisted."""
+        from sqlit.domains.connections.domain.password_command import (
+            run_password_command,
+        )
+        from sqlit.domains.connections.providers.config_service import (
+            normalize_connection_config,
+        )
+
+        resolved = normalize_connection_config(copy.deepcopy(config))
+        endpoint = resolved.tcp_endpoint
+        if endpoint and endpoint.password is None and endpoint.password_command and resolved.db_type != "postgresql":
+            # PostgreSQL resolves this at the adapter boundary so reconnects and
+            # database switches always fetch a fresh short-lived token.
+            endpoint.password = run_password_command(endpoint.password_command)
+        if resolved.tunnel and resolved.tunnel.auth_type == "password" and resolved.tunnel.password is None and resolved.tunnel.password_command:
+            resolved.tunnel.password = run_password_command(resolved.tunnel.password_command)
+        return resolved
+
     def connect(self, config: ConnectionConfig) -> Any:
         """Create a session for the given config."""
-        return self._services.session_factory(config)
+        return self._services.session_factory(self._resolve_dynamic_credentials(config))
 
     def test_connection(self, config: ConnectionConfig) -> ConnectionTestResult:
         """Test a connection without mutating UI state."""
@@ -55,13 +75,14 @@ class ConnectionManager:
         error: Exception | None = None
 
         try:
-            tunnel, host, port = self._services.tunnel_factory(config)
+            resolved = self._resolve_dynamic_credentials(config)
+            tunnel, host, port = self._services.tunnel_factory(resolved)
             if tunnel:
-                connect_config = config.with_endpoint(host=host, port=str(port))
+                connect_config = resolved.with_endpoint(host=host, port=str(port))
             else:
-                connect_config = config
+                connect_config = resolved
 
-            provider = self._services.provider_factory(config.db_type)
+            provider = self._services.provider_factory(resolved.db_type)
             conn = provider.connection_factory.connect(connect_config)
             conn.close()
         except Exception as exc:

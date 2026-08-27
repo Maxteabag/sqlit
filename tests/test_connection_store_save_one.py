@@ -213,6 +213,20 @@ class TestSaveOne:
 
         assert self.creds.get_password("a") == "kept"
 
+    def test_save_one_password_command_removes_stored_password(self) -> None:
+        store = self._create_store()
+        store.save_one(self._make("a", password="stale"))
+        dynamic = self._make("a", password=None)
+        assert dynamic.tcp_endpoint is not None
+        dynamic.tcp_endpoint.password_command = "dynamic-token"
+
+        store.save_one(dynamic)
+
+        assert self.creds.get_password("a") is None
+        assert "a" in self.creds.delete_db
+        endpoint = self._json()[0]["endpoint"]
+        assert endpoint["password_command"] == "dynamic-token"
+
     # --- rename ------------------------------------------------------------
 
     def test_save_one_rename_moves_credentials(self) -> None:
@@ -246,6 +260,19 @@ class TestSaveOne:
         assert self.creds.get_ssh_password("old") is None
         assert self.creds.get_password("new") == "secret"
         assert self.creds.get_ssh_password("new") == "ssh_secret"
+
+    def test_save_one_rename_to_password_command_drops_old_password(self) -> None:
+        store = self._create_store()
+        store.save_one(self._make("old", password="stale"))
+        renamed = self._make("new", password=None)
+        assert renamed.tcp_endpoint is not None
+        renamed.tcp_endpoint.password_command = "dynamic-token"
+
+        store.save_one(renamed, previous_name="old")
+
+        assert self.creds.get_password("old") is None
+        assert self.creds.get_password("new") is None
+        assert {item["name"] for item in self._json()} == {"new"}
 
     def test_save_one_failed_rename_keeps_original_usable(self) -> None:
         store = self._create_store()

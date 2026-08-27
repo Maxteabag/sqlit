@@ -125,6 +125,31 @@ class TestConnectionStoreWithCredentials:
         assert loaded[0].tunnel is not None
         assert loaded[0].tunnel.password == "ssh_secret"
 
+    def test_load_ignores_stale_passwords_when_commands_are_configured(self) -> None:
+        """Dynamic credentials must take precedence over leftover keyring values."""
+        self.creds_service.set_password("test_db", "stale_password")
+        self.creds_service.set_ssh_password("test_db", "stale_ssh_password")
+        config = ConnectionConfig(
+            name="test_db",
+            db_type="postgresql",
+            server="localhost",
+            username="user",
+            password_command="dynamic-db-token",
+            ssh_enabled=True,
+            ssh_host="bastion",
+            ssh_username="ssh_user",
+            ssh_password_command="dynamic-ssh-token",
+        )
+        json_path = Path(self.tmpdir) / "connections.json"
+        with open(json_path, "w") as f:
+            json.dump([config.to_dict(include_passwords=False)], f)
+
+        loaded = self._create_store().load_all()
+
+        assert loaded[0].tcp_endpoint.password is None
+        assert loaded[0].tunnel is not None
+        assert loaded[0].tunnel.password is None
+
     def test_delete_removes_credentials(self) -> None:
         """Test that deleting a connection removes credentials."""
         store = self._create_store()

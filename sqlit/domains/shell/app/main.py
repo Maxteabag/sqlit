@@ -705,6 +705,10 @@ class SSMSTUI(
                 self.exit()
             return
 
+        if cmd in {"s", "suspend"}:
+            self.action_suspend_process()
+            return
+
         command_actions = {
             "help": "show_help",
             "h": "show_help",
@@ -806,6 +810,7 @@ class SSMSTUI(
             ("General", ":version, :ver", "Show version and git hash", ""),
             ("General", ":help, :h", "Show keyboard shortcuts", ""),
             ("General", ":q, :quit, :exit", "Quit sqlit", ""),
+            ("General", ":s, :suspend", "Suspend sqlit; resume with fg", "Unix only"),
             ("Connection", ":connect, :c", "Open connection picker", ""),
             ("Connection", ":disconnect, :dc", "Disconnect from current server", ""),
             (

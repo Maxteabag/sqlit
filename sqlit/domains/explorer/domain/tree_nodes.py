@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
+    from sqlit.domains.query.store.saved_queries import SavedQueryEntry
 
 
 @dataclass(frozen=True)
@@ -234,6 +235,40 @@ class LoadingNode:
         return ""
 
 
+@dataclass(frozen=True)
+class SavedQueryFolderNode:
+    """Folder from the active connection's saved-query library."""
+
+    connection_name: str
+    relative_path: str = ""
+
+    def get_label_text(self) -> str:
+        return self.relative_path.rsplit("/", 1)[-1] if self.relative_path else "Saved Queries"
+
+    def get_node_kind(self) -> str:
+        return "saved_query_folder"
+
+    def get_node_path_part(self) -> str:
+        return f"saved_query_folder:{self.relative_path or '/'}"
+
+
+@dataclass(frozen=True)
+class SavedQueryFileNode:
+    """One SQL file in the active connection's saved-query library."""
+
+    connection_name: str
+    entry: SavedQueryEntry
+
+    def get_label_text(self) -> str:
+        return self.entry.relative_path.rsplit("/", 1)[-1]
+
+    def get_node_kind(self) -> str:
+        return "saved_query_file"
+
+    def get_node_path_part(self) -> str:
+        return f"saved_query:{self.entry.relative_path}"
+
+
 # Type alias for all node data types
 NodeData = (
     ConnectionNode
@@ -247,5 +282,7 @@ NodeData = (
     | TriggerNode
     | SequenceNode
     | ColumnNode
+    | SavedQueryFolderNode
+    | SavedQueryFileNode
     | LoadingNode
 )

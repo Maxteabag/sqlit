@@ -139,9 +139,63 @@ class QueryTextArea(TextArea):
         super()._watch_has_focus(focus)
         self._sync_terminal_cursor()
 
+    async def _dispatch_query_insert_action(self, key: str) -> bool:
+        """Run a query-insert binding before TextArea consumes the key."""
+        if not self._is_insert_mode():
+            return False
+
+        from sqlit.core.keymap import get_keymap
+
+        clipboard_actions = {"select_all", "copy_selection", "paste"}
+        for binding in get_keymap().get_action_keys():
+            if (
+                binding.key == key
+                and binding.context == "query_insert"
+                and binding.action not in clipboard_actions
+                and self.app.check_action(binding.action, ()) is not False
+            ):
+                return await self.app.run_action(binding.action)
+        return False
+
+    async def _handle_autocomplete_enter(self) -> bool:
+        """Honor an explicit Enter autocomplete binding, or insert a newline."""
+        app = cast("AutocompleteProtocol", self.app)
+        if not getattr(app, "_autocomplete_visible", False):
+            return False
+
+        from sqlit.core.keymap import get_keymap
+
+        enter_accepts = any(
+            binding.key == "enter"
+            and binding.action == "autocomplete_accept"
+            and binding.context == "autocomplete"
+            for binding in get_keymap().get_action_keys()
+        )
+        dropdown = getattr(app, "autocomplete_dropdown", None)
+        if (
+            enter_accepts
+            and dropdown is not None
+            and getattr(dropdown, "filtered_items", None)
+        ):
+            return await self.app.run_action("autocomplete_accept")
+
+        if hasattr(app, "_hide_autocomplete"):
+            app._hide_autocomplete()
+        app._suppress_autocomplete_on_newline = True
+        return False
+
     async def _on_key(self, event: Key) -> None:
         """Intercept clipboard, undo/redo, Enter, and Tab keys."""
         normalized_key = self._normalize_key(event.key)
+
+        # TextArea consumes editing keys before they reach the app-level key
+        # router. Forward query-insert actions explicitly so shortcuts such as
+        # Ctrl+Enter (and user rebindings such as F5 or Enter) execute instead
+        # of being interpreted as editor input.
+        if await self._dispatch_query_insert_action(normalized_key):
+            event.prevent_default()
+            event.stop()
+            return
 
         # Tab inserts a real tab character in INSERT mode. We do this manually
         # so the widget can keep the default tab_behavior='focus' and not let
@@ -246,14 +300,13 @@ class QueryTextArea(TextArea):
         # Note: Shift+Arrow selection is handled natively by TextArea
         # (shift+left/right/up/down, shift+home/end)
 
-        # Handle Enter key when autocomplete is visible
-        if event.key == "enter":
-            app = cast("AutocompleteProtocol", self.app)
-            if getattr(app, "_autocomplete_visible", False):
-                # Hide autocomplete and suppress re-triggering from the newline
-                if hasattr(app, "_hide_autocomplete"):
-                    app._hide_autocomplete()
-                app._suppress_autocomplete_on_newline = True
+        # Handle Enter key when autocomplete is visible. TextArea handles the
+        # event before the app mixin sees it, so accept here when there is an
+        # actual suggestion; otherwise preserve Enter's newline behaviour.
+        if event.key == "enter" and await self._handle_autocomplete_enter():
+            event.prevent_default()
+            event.stop()
+            return
 
         # For text-modifying keys, push undo state before the change
         if self._is_text_modifying_key(normalized_key):

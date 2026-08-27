@@ -6,6 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 from textual.widgets import Tree
 
+from sqlit.domains.query.store.saved_queries import (
+    SavedQueryConflictError,
+    SavedQueryNameError,
+)
 from sqlit.shared.ui.protocols import TreeMixinHost
 
 from ..tree import builder as tree_builder
@@ -95,12 +99,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
         if self._get_node_kind(node) == "connection":
             config = getattr(data, "config", None)
-            if (
-                config
-                and self.current_config
-                and self.current_config.name == config.name
-                and not list(node.children)
-            ):
+            if config and self.current_config and self.current_config.name == config.name and not list(node.children):
                 tree_builder.populate_connected_tree(self)
             return
 
@@ -204,6 +203,10 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
         data = node.data
 
+        if self._get_node_kind(node) == "saved_query_file":
+            self._open_saved_query_node(data)
+            return
+
         if self._get_node_kind(node) == "connection":
             config = data.config
             self._emit_debug(
@@ -214,6 +217,203 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             if self.current_config and self.current_config.name == config.name:
                 return
             self.connect_to_server(config)
+
+    def _open_saved_query_node(self: TreeMixinHost, data: Any) -> None:
+        """Reload and open an explorer query file without executing it."""
+        try:
+            entry = self.services.saved_query_store.load(
+                data.connection_name,
+                data.entry.relative_path,
+            )
+        except (OSError, UnicodeError, SavedQueryNameError) as exc:
+            self.notify(f"Could not open saved query: {exc}", severity="error")
+            return
+
+        def open_query() -> None:
+            loader = getattr(self, "_load_saved_query_entry", None)
+            if callable(loader):
+                loader(entry)
+
+        request_transition = getattr(self, "_request_query_document_transition", None)
+        if callable(request_transition):
+            request_transition(open_query)
+        else:
+            open_query()
+
+    def _saved_query_document_moved(
+        self: TreeMixinHost,
+        connection_name: str,
+        old_path: str,
+        new_path: str,
+        *,
+        folder: bool,
+    ) -> None:
+        document = getattr(self, "_query_document", None)
+        if document is None or document.connection_name != connection_name:
+            return
+        current = document.relative_path
+        if not current:
+            return
+        if folder:
+            prefix = f"{old_path}/"
+            if not current.startswith(prefix):
+                return
+            replacement = f"{new_path}/{current[len(prefix) :]}"
+        elif current == old_path:
+            replacement = new_path
+        else:
+            return
+        setter = getattr(self, "_set_query_document", None)
+        if callable(setter):
+            setter(
+                connection_name=connection_name,
+                relative_path=replacement,
+                saved_text=document.saved_text,
+                fingerprint=document.fingerprint,
+            )
+
+    def _saved_query_document_deleted(
+        self: TreeMixinHost,
+        connection_name: str,
+        path: str,
+        *,
+        folder: bool,
+    ) -> None:
+        document = getattr(self, "_query_document", None)
+        if document is None or document.connection_name != connection_name:
+            return
+        current = document.relative_path
+        matches = current == path or (folder and bool(current) and current.startswith(f"{path}/"))
+        if not matches:
+            return
+        setter = getattr(self, "_set_query_document", None)
+        if callable(setter):
+            setter(
+                connection_name=connection_name,
+                relative_path=None,
+                saved_text="",
+                fingerprint=None,
+            )
+
+    def action_rename_saved_query(self: TreeMixinHost) -> None:
+        node = self.object_tree.cursor_node
+        if not node or not node.data:
+            return
+        data = node.data
+        kind = self._get_node_kind(node)
+        if kind == "saved_query_file":
+            from sqlit.domains.query.ui.screens import SavedQueryNameScreen
+
+            old_path = data.entry.relative_path
+
+            def on_name(name: str | None) -> None:
+                if not name:
+                    return
+                try:
+                    entry = self.services.saved_query_store.rename_file(
+                        data.connection_name,
+                        old_path,
+                        name,
+                        expected=data.entry.fingerprint,
+                    )
+                except FileExistsError:
+                    self.notify("A saved query already uses that name", severity="warning")
+                    return
+                except (OSError, SavedQueryConflictError, SavedQueryNameError) as exc:
+                    self.notify(f"Could not rename saved query: {exc}", severity="error")
+                    return
+                self._saved_query_document_moved(
+                    data.connection_name,
+                    old_path,
+                    entry.relative_path,
+                    folder=False,
+                )
+                self._refresh_connection_tree()
+                self.notify(f"Renamed to {entry.relative_path}")
+
+            self.push_screen(
+                SavedQueryNameScreen(initial_name=old_path, title="Rename Saved Query"),
+                on_name,
+            )
+            return
+        if kind != "saved_query_folder" or not data.relative_path:
+            return
+        from sqlit.domains.connections.ui.screens import FolderInputScreen
+
+        old_path = data.relative_path
+
+        def on_folder(name: str | None) -> None:
+            if not name:
+                return
+            try:
+                new_path = self.services.saved_query_store.rename_folder(data.connection_name, old_path, name)
+            except FileExistsError:
+                self.notify("A saved-query folder already uses that name", severity="warning")
+                return
+            except (OSError, SavedQueryNameError) as exc:
+                self.notify(f"Could not rename saved-query folder: {exc}", severity="error")
+                return
+            self._saved_query_document_moved(data.connection_name, old_path, new_path, folder=True)
+            self._refresh_connection_tree()
+            self.notify(f"Renamed folder to {new_path}")
+
+        self.push_screen(
+            FolderInputScreen(
+                data.connection_name,
+                current_value=old_path,
+                title="Rename Saved-Query Folder",
+                description="New folder path (use / for nesting):",
+            ),
+            on_folder,
+        )
+
+    def action_delete_saved_query(self: TreeMixinHost) -> None:
+        node = self.object_tree.cursor_node
+        if not node or not node.data:
+            return
+        data = node.data
+        kind = self._get_node_kind(node)
+        if kind == "saved_query_file":
+            path = data.entry.relative_path
+            folder = False
+            description = "The query text will remain open if this file is active."
+        elif kind == "saved_query_folder" and data.relative_path:
+            path = data.relative_path
+            folder = True
+            count = sum(1 for entry in self.services.saved_query_store.list_for_connection(data.connection_name) if entry.relative_path.startswith(f"{path}/"))
+            description = f"This permanently deletes {count} saved query file{'s' if count != 1 else ''}."
+        else:
+            return
+        from sqlit.shared.ui.screens.confirm import ConfirmScreen
+
+        def on_confirm(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            try:
+                if folder:
+                    self.services.saved_query_store.delete_folder(data.connection_name, path)
+                else:
+                    self.services.saved_query_store.delete_file(
+                        data.connection_name,
+                        path,
+                        expected=data.entry.fingerprint,
+                    )
+            except (OSError, SavedQueryConflictError, SavedQueryNameError) as exc:
+                self.notify(f"Could not delete saved query: {exc}", severity="error")
+                return
+            self._saved_query_document_deleted(data.connection_name, path, folder=folder)
+            self._refresh_connection_tree()
+            self.notify(f"Deleted {path}")
+
+        self.push_screen(
+            ConfirmScreen(
+                f"Delete {'folder' if folder else 'saved query'} '{path}'?",
+                description,
+                yes_label="Delete",
+                no_label="Cancel",
+            ),
+            on_confirm,
+        )
 
     def on_tree_node_highlighted(self: TreeMixinHost, event: Tree.NodeHighlighted) -> None:
         """Update footer when tree selection changes."""
@@ -314,9 +514,6 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
     def action_select_table(self: TreeMixinHost) -> None:
         """Generate and execute SELECT query for selected table/view, or show info for indexes/triggers/sequences."""
-        if not self.current_provider or not self._session:
-            return
-
         node = self.object_tree.cursor_node
 
         if not node or not node.data:
@@ -324,25 +521,44 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
         data = node.data
 
-        if self._get_node_kind(node) in ("table", "view"):
-            self._last_query_table = {
-                "database": data.database,
-                "schema": data.schema,
-                "name": data.name,
-                "columns": [],
-            }
-            # Stash per-result metadata so results can resolve PKs without relying on globals.
-            self._pending_result_table_info = self._last_query_table
-            self._prime_last_query_table_columns(data.database, data.schema, data.name)
+        if self._get_node_kind(node) == "saved_query_file":
+            self._open_saved_query_node(data)
+            return
 
-            self.query_input.text = self.current_provider.dialect.build_select_query(
-                data.name,
-                100,
-                data.database,
-                data.schema,
-            )
-            self._query_target_database = data.database
-            self.action_execute_query()
+        if not self.current_provider or not self._session:
+            return
+
+        if self._get_node_kind(node) in ("table", "view"):
+
+            def select_table() -> None:
+                self._last_query_table = {
+                    "database": data.database,
+                    "schema": data.schema,
+                    "name": data.name,
+                    "columns": [],
+                }
+                # Stash metadata so results can resolve keys without globals.
+                self._pending_result_table_info = self._last_query_table
+                self._prime_last_query_table_columns(data.database, data.schema, data.name)
+                query = self.current_provider.dialect.build_select_query(
+                    data.name,
+                    100,
+                    data.database,
+                    data.schema,
+                )
+                load_unsaved = getattr(self, "_load_unsaved_query_text", None)
+                if callable(load_unsaved):
+                    load_unsaved(query)
+                else:
+                    self.query_input.text = query
+                self._query_target_database = data.database
+                self.action_execute_query()
+
+            request_transition = getattr(self, "_request_query_document_transition", None)
+            if callable(request_transition):
+                request_transition(select_table)
+            else:
+                select_table()
             return
 
         if self._get_node_kind(node) == "index":
@@ -402,9 +618,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             incoming_fks: list[Any] = []
             try:
                 runtime = getattr(self.services, "runtime", None)
-                use_worker = bool(getattr(runtime, "process_worker", False)) and not bool(
-                    getattr(getattr(runtime, "mock", None), "enabled", False)
-                )
+                use_worker = bool(getattr(runtime, "process_worker", False)) and not bool(getattr(getattr(runtime, "mock", None), "enabled", False))
                 client = None
                 if use_worker and hasattr(self, "_get_process_worker_client_async"):
                     client = await self._get_process_worker_client_async()  # type: ignore[attr-defined]
@@ -430,28 +644,37 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
                 schema_service = self._get_schema_service()
                 if schema_service:
                     if not columns:
-                        columns = await asyncio.to_thread(
-                            schema_service.list_columns,
-                            database,
-                            schema,
-                            name,
-                        ) or []
+                        columns = (
+                            await asyncio.to_thread(
+                                schema_service.list_columns,
+                                database,
+                                schema,
+                                name,
+                            )
+                            or []
+                        )
                     try:
-                        outgoing_fks = await asyncio.to_thread(
-                            schema_service.list_foreign_keys,
-                            database,
-                            schema,
-                            name,
-                        ) or []
+                        outgoing_fks = (
+                            await asyncio.to_thread(
+                                schema_service.list_foreign_keys,
+                                database,
+                                schema,
+                                name,
+                            )
+                            or []
+                        )
                     except Exception:
                         outgoing_fks = []
                     try:
-                        incoming_fks = await asyncio.to_thread(
-                            schema_service.list_referencing_foreign_keys,
-                            database,
-                            schema,
-                            name,
-                        ) or []
+                        incoming_fks = (
+                            await asyncio.to_thread(
+                                schema_service.list_referencing_foreign_keys,
+                                database,
+                                schema,
+                                name,
+                            )
+                            or []
+                        )
                     except Exception:
                         incoming_fks = []
             except Exception:
@@ -487,11 +710,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         table_info = getattr(self, "_last_query_table", None)
         if not table_info:
             return
-        if (
-            table_info.get("database") != database
-            or table_info.get("schema") != schema
-            or table_info.get("name") != name
-        ):
+        if table_info.get("database") != database or table_info.get("schema") != schema or table_info.get("name") != name:
             return
         table_info["columns"] = columns
         if foreign_keys is not None:

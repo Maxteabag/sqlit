@@ -6,6 +6,8 @@ import re
 
 from typing import TYPE_CHECKING, Any, Callable
 
+from textual.css.query import NoMatches
+
 from sqlit.domains.explorer.ui.tree import db_switching as tree_db_switching
 from sqlit.domains.process_worker.ui.mixins.process_worker_lifecycle import (
     ProcessWorkerLifecycleMixin,
@@ -415,7 +417,11 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         self._pending_telescope_query = None
         if database:
             self._active_database = database
-        self._apply_history_query(query)
+        load_unsaved = getattr(self, "_load_unsaved_query_text", None)
+        if callable(load_unsaved):
+            load_unsaved(query)
+        else:
+            self._apply_history_query(query)
 
     @property
     def in_transaction(self: QueryMixinHost) -> bool:
@@ -750,8 +756,21 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
     def action_new_query(self: QueryMixinHost) -> None:
         """Start a new query (clear input and results)."""
-        self.query_input.text = ""
-        self._replace_results_table([], [])
+        def start_new_query() -> None:
+            self.query_input.text = ""
+            try:
+                self._replace_results_table([], [])
+            except NoMatches:
+                pass
+            reset_document = getattr(self, "_reset_query_document", None)
+            if callable(reset_document):
+                reset_document(clear_text=False)
+
+        request_transition = getattr(self, "_request_query_document_transition", None)
+        if callable(request_transition):
+            request_transition(start_new_query)
+        else:
+            start_new_query()
 
     def _apply_history_query(self: QueryMixinHost, query: str) -> None:
         """Load a query into the editor and restore cursor position if possible."""
@@ -911,7 +930,17 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
         action, data = result
         if action == "select":
-            self._apply_history_query(data)
+            load_unsaved = getattr(self, "_load_unsaved_query_text", None)
+            request_transition = getattr(self, "_request_query_document_transition", None)
+            load = (
+                (lambda: load_unsaved(data))
+                if callable(load_unsaved)
+                else (lambda: self._apply_history_query(data))
+            )
+            if callable(request_transition):
+                request_transition(load)
+            else:
+                load()
         elif action == "delete":
             self._delete_history_entry(data)
             self.action_show_history()
@@ -983,7 +1012,13 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             query = data.get("query", "")
             connection_name = data.get("connection_name", "")
             database = data.get("database", "")
-            self._run_telescope_query(connection_name, query, database=database)
+            def run_query() -> None:
+                self._run_telescope_query(connection_name, query, database=database)
+            request_transition = getattr(self, "_request_query_document_transition", None)
+            if callable(request_transition):
+                request_transition(run_query)
+            else:
+                run_query()
         elif action == "delete":
             timestamp = data.get("timestamp", "")
             connection_name = data.get("connection_name", "")
@@ -1024,13 +1059,16 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         if not database:
             database = self._infer_database_from_history(connection_name)
 
-        self._apply_history_query(query)
-
         if (
             self.current_connection is not None
             and self.current_config is not None
             and self.current_config.name == connection_name
         ):
+            load_unsaved = getattr(self, "_load_unsaved_query_text", None)
+            if callable(load_unsaved):
+                load_unsaved(query)
+            else:
+                self._apply_history_query(query)
             if database:
                 self._active_database = database
             self._pending_telescope_query = None

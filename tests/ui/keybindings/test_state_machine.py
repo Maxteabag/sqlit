@@ -58,7 +58,7 @@ class TestQueryExecutingState:
         sm = UIStateMachine()
         ctx = make_context(query_executing=True)
 
-        left, right = sm.get_display_bindings(ctx)
+        left, _right = sm.get_display_bindings(ctx)
         actions = [b.action for b in left]
         assert "cancel_operation" in actions
 
@@ -326,3 +326,45 @@ class TestResultsTransposeState:
         assert "edit_cell" in actions
         assert "delete_row" in actions
         assert "results_filter" in actions
+
+
+class TestFormatQueryLeaderCommand:
+    def test_allowed_when_query_focused(self):
+        sm = UIStateMachine()
+        ctx = make_context(
+            focus="query",
+            leader_pending=True,
+            leader_menu="leader",
+        )
+        assert sm.check_action(ctx, "leader_format_query") is True
+
+    def test_blocked_when_explorer_focused(self):
+        sm = UIStateMachine()
+        ctx = make_context(
+            focus="explorer",
+            leader_pending=True,
+            leader_menu="leader",
+        )
+        assert sm.check_action(ctx, "leader_format_query") is False
+
+    def test_blocked_when_results_focused(self):
+        sm = UIStateMachine()
+        ctx = make_context(
+            focus="results",
+            leader_pending=True,
+            leader_menu="leader",
+        )
+        assert sm.check_action(ctx, "leader_format_query") is False
+
+    def test_help_lists_space_p_format_binding(self):
+        sm = UIStateMachine()
+        query_help = next(
+            section for section in sm.generate_help_sections() if section.id == "query_normal"
+        )
+
+        assert any(
+            item.kind == "binding"
+            and item.key == "<space>p"
+            and item.description == "Format query"
+            for item in query_help.items
+        )

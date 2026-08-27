@@ -1286,12 +1286,25 @@ class ResultsMixin:
         self: ResultsMixinHost, query: str, database: str | None
     ) -> None:
         """Inject `query` into the editor and execute it (mirrors explorer's pattern)."""
-        self.query_input.text = query
-        if hasattr(self, "_query_target_database"):
-            self._query_target_database = database
-        action_execute = getattr(self, "action_execute_query", None)
-        if callable(action_execute):
-            action_execute()
+        def run_navigation() -> None:
+            load_unsaved = getattr(self, "_load_unsaved_query_text", None)
+            if callable(load_unsaved):
+                load_unsaved(query)
+            else:
+                self.query_input.text = query
+            if hasattr(self, "_query_target_database"):
+                self._query_target_database = database
+            action_execute = getattr(self, "action_execute_query", None)
+            if callable(action_execute):
+                action_execute()
+
+        request_transition = getattr(
+            self, "_request_query_document_transition", None
+        )
+        if callable(request_transition):
+            request_transition(run_navigation)
+        else:
+            run_navigation()
 
     def _stash_navigation_table_info(
         self: ResultsMixinHost,
@@ -1543,16 +1556,25 @@ class ResultsMixin:
         # Generate DELETE query for the row
         query = f"DELETE FROM {qualified_name} WHERE {where_clause};"
 
-        # Set query and switch to insert mode
-        self._suppress_autocomplete_once = True
-        self.query_input.text = query
-        # Position cursor before the trailing semicolon
-        cursor_pos = max(len(query) - 1, 0)
-        self.query_input.cursor_location = (0, cursor_pos)
+        def load_delete_query() -> None:
+            self._suppress_autocomplete_once = True
+            load_unsaved = getattr(self, "_load_unsaved_query_text", None)
+            if callable(load_unsaved):
+                load_unsaved(query)
+            else:
+                self.query_input.text = query
+            cursor_pos = max(len(query) - 1, 0)
+            self.query_input.cursor_location = (0, cursor_pos)
+            self.action_focus_query()
+            self._update_footer_bindings()
 
-        # Focus query editor but keep NORMAL mode (no INSERT for deletes)
-        self.action_focus_query()
-        self._update_footer_bindings()
+        request_transition = getattr(
+            self, "_request_query_document_transition", None
+        )
+        if callable(request_transition):
+            request_transition(load_delete_query)
+        else:
+            load_delete_query()
 
     def action_edit_cell(self: ResultsMixinHost) -> None:
         """Generate an UPDATE query for the selected cell and enter insert mode."""
@@ -1643,20 +1665,30 @@ class ResultsMixin:
         set_prefix = f"SET {column_name} = '"
         cursor_pos = query.find(set_prefix) + len(set_prefix)
 
-        # Set query and switch to insert mode
-        self._suppress_autocomplete_once = True
-        self.query_input.text = query
-        self.query_input.focus()
+        def load_edit_query() -> None:
+            self._suppress_autocomplete_once = True
+            load_unsaved = getattr(self, "_load_unsaved_query_text", None)
+            if callable(load_unsaved):
+                load_unsaved(query)
+            else:
+                self.query_input.text = query
+            self.query_input.focus()
+            self.query_input.cursor_location = (0, cursor_pos)
 
-        # Position cursor inside the empty quotes
-        self.query_input.cursor_location = (0, cursor_pos)
+            from sqlit.core.vim import VimMode
 
-        # Enter insert mode
-        from sqlit.core.vim import VimMode
-        self.vim_mode = VimMode.INSERT
-        self.query_input.read_only = False
-        self._update_vim_mode_visuals()
-        self._update_footer_bindings()
+            self.vim_mode = VimMode.INSERT
+            self.query_input.read_only = False
+            self._update_vim_mode_visuals()
+            self._update_footer_bindings()
+
+        request_transition = getattr(
+            self, "_request_query_document_transition", None
+        )
+        if callable(request_transition):
+            request_transition(load_edit_query)
+        else:
+            load_edit_query()
 
     # Stacked results navigation
 

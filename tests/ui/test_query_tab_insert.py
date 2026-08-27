@@ -9,6 +9,7 @@ from sqlit.core.keymap import ActionKeyDef, DefaultKeymapProvider, reset_keymap,
 from sqlit.core.vim import VimMode
 from sqlit.domains.shell.app.keymap_manager import FileBasedKeymapProvider
 from sqlit.domains.shell.app.main import SSMSTUI
+from sqlit.shared.ui.widgets_autocomplete import AutocompleteItem
 
 from .mocks import MockConnectionStore, MockSettingsStore, build_test_services
 
@@ -72,6 +73,145 @@ class TestQueryTabInsertion:
 
             assert app._autocomplete_visible is False
             assert app.query_input.text == "select"
+
+    @pytest.mark.asyncio
+    async def test_enter_inserts_newline_with_default_tab_accept_binding(self) -> None:
+        app = _make_app()
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.action_focus_query()
+            await pilot.press("i")
+            app.query_input.text = "sel"
+            app.query_input.cursor_location = (0, 3)
+            app._show_autocomplete(["select", "set"], "sel")
+            await pilot.pause()
+
+            await pilot.press("enter")
+            await pilot.pause()
+
+            assert app._autocomplete_visible is False
+            assert app.query_input.text == "sel\n"
+
+    @pytest.mark.asyncio
+    async def test_enter_accepts_autocomplete_when_explicitly_rebound(self) -> None:
+        app = _make_app()
+
+        try:
+            async with app.run_test(size=(100, 35)) as pilot:
+                app.action_focus_query()
+                await pilot.press("i")
+                defaults = DefaultKeymapProvider()
+                action_keys = [
+                    binding
+                    for binding in defaults.get_action_keys()
+                    if not (
+                        binding.action == "autocomplete_accept"
+                        and binding.context == "autocomplete"
+                    )
+                ]
+                action_keys.append(
+                    ActionKeyDef("enter", "autocomplete_accept", "autocomplete")
+                )
+                set_keymap(
+                    FileBasedKeymapProvider(
+                        "enter-to-accept",
+                        defaults.get_leader_commands(),
+                        action_keys,
+                    )
+                )
+                app.query_input.text = "sel"
+                app.query_input.cursor_location = (0, 3)
+                app._show_autocomplete(["select", "set"], "sel")
+                await pilot.pause()
+
+                await pilot.press("enter")
+                await pilot.pause()
+
+                assert app._autocomplete_visible is False
+                assert app.query_input.text == "select"
+        finally:
+            reset_keymap()
+
+    @pytest.mark.asyncio
+    async def test_clicking_autocomplete_suggestion_applies_clicked_item(self) -> None:
+        app = _make_app()
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.action_focus_query()
+            await pilot.press("i")
+            app.query_input.text = "se"
+            app.query_input.cursor_location = (0, 2)
+            app._show_autocomplete(["select", "set"], "se")
+            await pilot.pause()
+
+            items = list(app.autocomplete_dropdown.query(AutocompleteItem))
+            assert await pilot.click(items[1])
+            await pilot.pause()
+
+            assert app._autocomplete_visible is False
+            assert app.query_input.text == "set"
+
+    @pytest.mark.asyncio
+    async def test_ctrl_enter_executes_in_insert_mode_without_newline(self) -> None:
+        app = _make_app()
+        calls: list[bool] = []
+        app._execute_query_common = (  # type: ignore[method-assign]
+            lambda *, keep_insert_mode: calls.append(keep_insert_mode)
+        )
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.action_focus_query()
+            await pilot.press("i")
+            app.query_input.text = "select 1"
+            await pilot.pause()
+
+            await pilot.press("ctrl+enter")
+            await pilot.pause()
+
+            assert calls == [True]
+            assert app.query_input.text == "select 1"
+
+    @pytest.mark.asyncio
+    async def test_enter_rebinding_executes_instead_of_inserting_newline(self) -> None:
+        app = _make_app()
+        calls: list[bool] = []
+        app._execute_query_common = (  # type: ignore[method-assign]
+            lambda *, keep_insert_mode: calls.append(keep_insert_mode)
+        )
+
+        try:
+            async with app.run_test(size=(100, 35)) as pilot:
+                app.action_focus_query()
+                await pilot.press("i")
+                defaults = DefaultKeymapProvider()
+                action_keys = [
+                    binding
+                    for binding in defaults.get_action_keys()
+                    if not (
+                        binding.action == "execute_query_insert"
+                        and binding.context == "query_insert"
+                    )
+                ]
+                action_keys.append(
+                    ActionKeyDef("enter", "execute_query_insert", "query_insert")
+                )
+                set_keymap(
+                    FileBasedKeymapProvider(
+                        "enter-to-execute",
+                        defaults.get_leader_commands(),
+                        action_keys,
+                    )
+                )
+                app.query_input.text = "select 1"
+                await pilot.pause()
+
+                await pilot.press("enter")
+                await pilot.pause()
+
+                assert calls == [True]
+                assert app.query_input.text == "select 1"
+        finally:
+            reset_keymap()
 
     @pytest.mark.asyncio
     async def test_tab_does_not_insert_in_normal_mode(self) -> None:
