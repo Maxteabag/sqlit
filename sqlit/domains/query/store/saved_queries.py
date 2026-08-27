@@ -64,16 +64,12 @@ def _fingerprint(path: Path, data: bytes | None = None) -> FileFingerprint:
             while chunk := handle.read(64 * 1024):
                 size += len(chunk)
                 if size > _MAX_QUERY_BYTES:
-                    raise OSError(
-                        f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB"
-                    )
+                    raise OSError(f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB")
                 digest.update(chunk)
         digest_value = digest.hexdigest()
     else:
         if len(data) > _MAX_QUERY_BYTES:
-            raise OSError(
-                f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB"
-            )
+            raise OSError(f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB")
         size = len(data)
         digest_value = hashlib.sha256(data).hexdigest()
     return FileFingerprint(
@@ -88,15 +84,24 @@ def _normalize_relative_name(name: str) -> PurePosixPath:
     if not raw:
         raise SavedQueryNameError("Enter a query name")
     relative = PurePosixPath(raw)
+    if not relative.parts or relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts) or any(part.startswith(".") for part in relative.parts):
+        raise SavedQueryNameError("Use a relative name inside the query library")
+    if relative.suffix.lower() != ".sql":
+        relative = relative.with_suffix(".sql")
+    return relative
+
+
+def _normalize_relative_folder(name: str) -> PurePosixPath:
+    raw = name.strip().replace("\\", "/").strip("/")
+    relative = PurePosixPath(raw)
     if (
-        not relative.parts
+        not raw
+        or raw in {".", ".."}
         or relative.is_absolute()
         or any(part in {"", ".", ".."} for part in relative.parts)
         or any(part.startswith(".") for part in relative.parts)
     ):
-        raise SavedQueryNameError("Use a relative name inside the query library")
-    if relative.suffix.lower() != ".sql":
-        relative = relative.with_suffix(".sql")
+        raise SavedQueryNameError("Use a relative folder inside the query library")
     return relative
 
 
@@ -122,9 +127,7 @@ class SavedQueryStore:
     def _read_entry(self, root: Path, path: Path) -> SavedQueryEntry:
         if self._secure_dir_fd_available():
             relative_path = path.relative_to(root).as_posix()
-            directory_fd, filename = self._open_secure_parent(
-                root, relative_path, create=False
-            )
+            directory_fd, filename = self._open_secure_parent(root, relative_path, create=False)
             try:
                 try:
                     file_fd = os.open(
@@ -133,24 +136,16 @@ class SavedQueryStore:
                         dir_fd=directory_fd,
                     )
                 except OSError as exc:
-                    raise SavedQueryNameError(
-                        "Symlinks inside a query library are not supported"
-                    ) from exc
+                    raise SavedQueryNameError("Symlinks inside a query library are not supported") from exc
                 try:
                     file_stat = os.fstat(file_fd)
                     if file_stat.st_size > _MAX_QUERY_BYTES:
-                        raise OSError(
-                            "Query file is larger than "
-                            f"{_MAX_QUERY_BYTES // (1024 * 1024)} MiB"
-                        )
+                        raise OSError(f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB")
                     payload = bytearray()
                     while chunk := os.read(file_fd, 64 * 1024):
                         payload.extend(chunk)
                         if len(payload) > _MAX_QUERY_BYTES:
-                            raise OSError(
-                                "Query file is larger than "
-                                f"{_MAX_QUERY_BYTES // (1024 * 1024)} MiB"
-                            )
+                            raise OSError(f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB")
                 finally:
                     os.close(file_fd)
             finally:
@@ -195,9 +190,7 @@ class SavedQueryStore:
             return []
         entries: list[SavedQueryEntry] = []
         try:
-            paths = sorted(
-                root.rglob("*"), key=lambda item: item.as_posix().lower()
-            )
+            paths = sorted(root.rglob("*"), key=lambda item: item.as_posix().lower())
         except OSError:
             return []
         for path in paths:
@@ -223,20 +216,117 @@ class SavedQueryStore:
         except OSError:
             return None
 
+    def _remove_empty_parents(self, root: Path, parent: Path) -> None:
+        while parent != root:
+            try:
+                parent.rmdir()
+            except OSError:
+                return
+            parent = parent.parent
+
+    def delete_file(
+        self,
+        connection_name: str,
+        relative_path: str,
+        *,
+        expected: FileFingerprint | None = None,
+    ) -> None:
+        """Delete one saved query without following links or stale selections."""
+        path, normalized = self._path_for_name(connection_name, relative_path)
+        root = self.connection_dir(connection_name)
+        if self._secure_dir_fd_available():
+            directory_fd, filename = self._open_secure_parent(root, normalized, create=False)
+            try:
+                current = self._fingerprint_at(directory_fd, filename)
+                if current is None:
+                    raise FileNotFoundError(normalized)
+                if expected is not None and current != expected:
+                    raise SavedQueryConflictError(f"{normalized} changed on disk")
+                os.unlink(filename, dir_fd=directory_fd)
+            finally:
+                os.close(directory_fd)
+        else:
+            self._reject_nested_symlink(root, path)
+            current = _fingerprint(path) if path.exists() else None
+            if current is None:
+                raise FileNotFoundError(normalized)
+            if expected is not None and current != expected:
+                raise SavedQueryConflictError(f"{normalized} changed on disk")
+            path.unlink()
+        self._remove_empty_parents(root, path.parent)
+
+    def delete_folder(self, connection_name: str, relative_path: str) -> int:
+        """Delete visible SQL files in a folder, preserving unrelated files."""
+        relative = _normalize_relative_folder(relative_path)
+        prefix = f"{relative.as_posix()}/"
+        entries = [
+            entry
+            for entry in self.list_for_connection(connection_name)
+            if entry.relative_path.startswith(prefix)
+        ]
+        for entry in entries:
+            self.delete_file(
+                connection_name,
+                entry.relative_path,
+                expected=entry.fingerprint,
+            )
+        return len(entries)
+
+    def rename_file(
+        self,
+        connection_name: str,
+        old_relative_path: str,
+        new_name: str,
+        *,
+        expected: FileFingerprint | None = None,
+    ) -> SavedQueryEntry:
+        """Rename or move one saved query without overwriting another file."""
+        old_path, old_relative = self._path_for_name(connection_name, old_relative_path)
+        new_path, new_relative = self._path_for_name(connection_name, new_name)
+        root = self.connection_dir(connection_name)
+        if old_relative == new_relative:
+            return self.load(connection_name, old_relative)
+        if new_path.exists():
+            raise FileExistsError(new_relative)
+        if expected is not None and self.current_fingerprint(connection_name, old_relative) != expected:
+            raise SavedQueryConflictError(f"{old_relative} changed on disk")
+        self._reject_nested_symlink(root, old_path)
+        self._reject_nested_symlink(root, new_path)
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        old_path.rename(new_path)
+        self._remove_empty_parents(root, old_path.parent)
+        return self._read_entry(root, new_path)
+
+    def rename_folder(
+        self,
+        connection_name: str,
+        old_relative_path: str,
+        new_name: str,
+    ) -> str:
+        """Rename or move a saved-query folder without overwriting."""
+        old_relative = _normalize_relative_folder(old_relative_path)
+        new_relative = _normalize_relative_folder(new_name)
+        root = self.connection_dir(connection_name)
+        old_path = root.joinpath(*old_relative.parts)
+        new_path = root.joinpath(*new_relative.parts)
+        if old_path == new_path:
+            return new_relative.as_posix()
+        if new_path.exists():
+            raise FileExistsError(new_relative.as_posix())
+        if new_path == old_path or old_path in new_path.parents:
+            raise SavedQueryNameError("A folder cannot be moved inside itself")
+        self._reject_nested_symlink(root, old_path)
+        self._reject_nested_symlink(root, new_path)
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        old_path.rename(new_path)
+        self._remove_empty_parents(root, old_path.parent)
+        return new_relative.as_posix()
+
     @staticmethod
     def _secure_dir_fd_available() -> bool:
-        return (
-            os.name != "nt"
-            and hasattr(os, "O_DIRECTORY")
-            and hasattr(os, "O_NOFOLLOW")
-            and os.open in os.supports_dir_fd
-            and os.mkdir in os.supports_dir_fd
-            and os.rename in os.supports_dir_fd
-        )
+        return os.name != "nt" and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW") and os.open in os.supports_dir_fd and os.mkdir in os.supports_dir_fd and os.rename in os.supports_dir_fd
 
-    def _open_secure_parent(
-        self, root: Path, relative_path: str, *, create: bool = True
-    ) -> tuple[int, str]:
+    def _open_secure_parent(self, root: Path, relative_path: str, *, create: bool = True) -> tuple[int, str]:
         """Open and pin every directory below an intentionally trusted root."""
         if create:
             root.parent.mkdir(parents=True, exist_ok=True)
@@ -262,9 +352,7 @@ class SavedQueryStore:
                         dir_fd=directory_fd,
                     )
                 except OSError as exc:
-                    raise SavedQueryNameError(
-                        "Symlinks inside a query library are not supported"
-                    ) from exc
+                    raise SavedQueryNameError("Symlinks inside a query library are not supported") from exc
                 os.close(directory_fd)
                 directory_fd = child_fd
             return directory_fd, parts[-1]
@@ -283,23 +371,17 @@ class SavedQueryStore:
         except FileNotFoundError:
             return None
         except OSError as exc:
-            raise SavedQueryNameError(
-                "Symlinks inside a query library are not supported"
-            ) from exc
+            raise SavedQueryNameError("Symlinks inside a query library are not supported") from exc
         try:
             file_stat = os.fstat(file_fd)
             if file_stat.st_size > _MAX_QUERY_BYTES:
-                raise OSError(
-                    f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB"
-                )
+                raise OSError(f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB")
             digest = hashlib.sha256()
             size = 0
             while chunk := os.read(file_fd, 64 * 1024):
                 size += len(chunk)
                 if size > _MAX_QUERY_BYTES:
-                    raise OSError(
-                        f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB"
-                    )
+                    raise OSError(f"Query file is larger than {_MAX_QUERY_BYTES // (1024 * 1024)} MiB")
                 digest.update(chunk)
             return FileFingerprint(
                 digest=digest.hexdigest(),
