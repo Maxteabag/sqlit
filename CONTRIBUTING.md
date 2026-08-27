@@ -46,7 +46,7 @@ To run the complete test suite including SQL Server, PostgreSQL, MySQL, MariaDB,
    ```bash
    docker compose -f infra/docker/docker-compose.test.yml up -d
    ```
-   To include the enterprise test containers (Db2, Trino, Presto, Oracle 11g):
+   To include the enterprise test containers (Db2, Trino, Presto, Oracle 11g, Exasol):
    ```bash
    docker compose -f infra/docker/docker-compose.test.yml --profile enterprise up -d
    ```
@@ -175,6 +175,18 @@ The database tests can be configured with these environment variables:
 | `ORACLE11G_SERVICE` | `XE` | Oracle 11g service name |
 | `ORACLE11G_CLIENT_MODE` | `thick` | Oracle client mode |
 | `ORACLE11G_CLIENT_LIB_DIR` | `` | Oracle Instant Client library directory |
+
+**Exasol:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EXASOL_HOST` | `localhost` | Exasol hostname |
+| `EXASOL_PORT` | `8563` | Exasol port |
+| `EXASOL_USER` | `sys` | Exasol username |
+| `EXASOL_PASSWORD` | `exasol` | Exasol password |
+| `EXASOL_SCHEMA` | `TEST_SQLIT` | Schema the Exasol fixtures create and drop |
+| `EXASOL_READY_TIMEOUT` | `300` | Seconds to wait for Exasol to accept a login |
+
+**Note:** Exasol runs in the `enterprise` profile and needs minutes, not seconds, before it accepts connections. `exasol/docker-db` binds port 8563 long before it will authenticate, so an open port is not yet a database that accepts a login. The fixtures retry a real connect until `EXASOL_READY_TIMEOUT` elapses; raise that value on slower hardware or a cold image pull.
 
 **Flight SQL:**
 | Variable | Default | Description |

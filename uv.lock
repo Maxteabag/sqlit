@@ -1912,27 +1912,6 @@ wheels = [
 ]
 
 [[package]]
-name = "mariadb"
-version = "1.1.14"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c4/ba/cedef19833be88e07bfff11964441cda8a998f1628dd3b2fa3e7751d36e0/mariadb-1.1.14.tar.gz", hash = "sha256:e6d702a53eccf20922e47f2f45cfb5c7a0c2c6c0a46e4ee2d8a80d0ff4a52f34", size = 111715, upload-time = "2025-10-07T06:45:48.017Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/bf/5e1a3a5be297c3a679e08f5359165491508fbfb64faf854dc1d626cea9c0/mariadb-1.1.14-cp310-cp310-win32.whl", hash = "sha256:4c7f33578da163a1b79929aae241f5f981d7b9d5a94d89e589aad7ec58e313ea", size = 185064, upload-time = "2025-10-07T06:45:24.858Z" },
-    { url = "https://files.pythonhosted.org/packages/31/30/3a61991c13cb8257f5db64aca12bafaa3d811d407e1fae019139fd17c99b/mariadb-1.1.14-cp310-cp310-win_amd64.whl", hash = "sha256:3f6fdc4ded5e0500a6a29bf0c8bf1be94189dcef5a8d5e0e154a4b3456f86bcc", size = 202020, upload-time = "2025-10-07T06:45:27.785Z" },
-    { url = "https://files.pythonhosted.org/packages/56/aa/a7b3c66b2792e8319ec9157d63851ff2e0b26496a05044e22b50a012a05e/mariadb-1.1.14-cp311-cp311-win32.whl", hash = "sha256:932a95016b7e9b8d78893aa5ee608e74199e3c6dd607dbe5e4da2010a4f67b88", size = 185061, upload-time = "2025-10-07T06:45:29.964Z" },
-    { url = "https://files.pythonhosted.org/packages/54/04/ea2374867756b4082764484bc8b82e1798d94f171bcc914e08c60d640f8f/mariadb-1.1.14-cp311-cp311-win_amd64.whl", hash = "sha256:55ddbe5272c292cbcb2968d87681b5d2b327e65646a015e324b8eeb804d14531", size = 202016, upload-time = "2025-10-07T06:45:32.151Z" },
-    { url = "https://files.pythonhosted.org/packages/00/04/659a8d30513700b5921ec96bddc07f550016c045fcbeb199d8cd18476ecc/mariadb-1.1.14-cp312-cp312-win32.whl", hash = "sha256:98d552a8bb599eceaa88f65002ad00bd88aeed160592c273a7e5c1d79ab733dd", size = 185266, upload-time = "2025-10-07T06:45:34.164Z" },
-    { url = "https://files.pythonhosted.org/packages/e4/a9/8f210291bc5fc044e20497454f40d35b3bab326e2cab6fccdc38121cb2c1/mariadb-1.1.14-cp312-cp312-win_amd64.whl", hash = "sha256:685a1ad2a24fd0aae1c4416fe0ac794adc84ab9209c8d0c57078f770d39731db", size = 202112, upload-time = "2025-10-07T06:45:35.824Z" },
-    { url = "https://files.pythonhosted.org/packages/f3/42/51130048bcce038bb859978250515f1aad90e9c4d273630a704e0a8b1ae1/mariadb-1.1.14-cp313-cp313-win32.whl", hash = "sha256:3d2c795cde606f4e12c0d73282b062433f414cae035675b0d81f2d65c9b79ac5", size = 185221, upload-time = "2025-10-07T06:45:37.848Z" },
-    { url = "https://files.pythonhosted.org/packages/af/23/e952a7e442913abd8079cd27b80b69474895c93b3727fad41c7642a80c62/mariadb-1.1.14-cp313-cp313-win_amd64.whl", hash = "sha256:7fd603c5cf23c47ef0d28fdc2b4b79919ee7f75d00ed070d3cd1054dcf816aeb", size = 202121, upload-time = "2025-10-07T06:45:39.453Z" },
-    { url = "https://files.pythonhosted.org/packages/e7/f2/7059f83543a4264b98777d7cc8aa203e1ca6a13a461f730d1c97f29628d4/mariadb-1.1.14-cp314-cp314-win32.whl", hash = "sha256:1a50b4612c0dd5b69690cebb34cef552a7f64dcadeb5aa91d70cd99bf01bc5b3", size = 190620, upload-time = "2025-10-07T06:45:41.349Z" },
-    { url = "https://files.pythonhosted.org/packages/f8/7c/7e094b0b396d742494f6346f2ffa9709e429970b0461aca50526f5f02f12/mariadb-1.1.14-cp314-cp314-win_amd64.whl", hash = "sha256:6659725837e48fa6af05e20128fb525029f706f1921d5dbf639a25b2f80b9f93", size = 206263, upload-time = "2025-10-07T06:45:43.227Z" },
-]
-
-[[package]]
 name = "markdown-it-py"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3370,6 +3349,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pyexasol"
+version = "2.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "packaging" },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/46/5a/362f7b99b7ac888e03eae6454013f7c5b0640c07433bcef390d30d204d8d/pyexasol-2.3.2.tar.gz", hash = "sha256:7a60517432122d60a217909f3bfdfeba171f79146cc55e8f5a24f4a744d9ccba", size = 64409, upload-time = "2026-08-25T09:26:26.018Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/74/fa606a85e80255a6ee1269bca4e952b2eff8bdd883b8933f6c14f94e2821/pyexasol-2.3.2-py3-none-any.whl", hash = "sha256:7e0277577bcaf211bbe3b8676faf815af5c6ef337d2d6358b0a07bfd3ed74e0d", size = 76296, upload-time = "2026-08-25T09:26:27.001Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3894,7 +3887,6 @@ all = [
     { name = "ibm-db" },
     { name = "impyla" },
     { name = "libsql" },
-    { name = "mariadb" },
     { name = "mssql-python" },
     { name = "oracledb" },
     { name = "osquery" },
@@ -3902,6 +3894,7 @@ all = [
     { name = "presto-python-client" },
     { name = "psycopg2-binary" },
     { name = "pyathena" },
+    { name = "pyexasol" },
     { name = "pymysql" },
     { name = "redshift-connector" },
     { name = "requests" },
@@ -3932,6 +3925,9 @@ db2 = [
 duckdb = [
     { name = "duckdb" },
 ]
+exasol = [
+    { name = "pyexasol" },
+]
 firebird = [
     { name = "firebirdsql" },
 ]
@@ -3945,7 +3941,7 @@ impala = [
     { name = "impyla" },
 ]
 mariadb = [
-    { name = "mariadb" },
+    { name = "pymysql" },
 ]
 mssql = [
     { name = "mssql-python" },
@@ -4037,8 +4033,6 @@ requires-dist = [
     { name = "keyring", specifier = ">=24.0.0" },
     { name = "libsql", marker = "extra == 'all'", specifier = ">=0.1.0" },
     { name = "libsql", marker = "extra == 'turso'", specifier = ">=0.1.0" },
-    { name = "mariadb", marker = "extra == 'all'", specifier = ">=1.1.0" },
-    { name = "mariadb", marker = "extra == 'mariadb'", specifier = ">=1.1.0" },
     { name = "mssql-python", marker = "extra == 'all'", specifier = ">=1.1.0" },
     { name = "mssql-python", marker = "extra == 'mssql'", specifier = ">=1.1.0" },
     { name = "oracledb", marker = "extra == 'all'", specifier = ">=2.0.0" },
@@ -4054,7 +4048,10 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9.0" },
     { name = "pyathena", marker = "extra == 'all'", specifier = ">=3.22.0" },
     { name = "pyathena", marker = "extra == 'athena'", specifier = ">=3.22.0" },
+    { name = "pyexasol", marker = "extra == 'all'", specifier = ">=2.0.0" },
+    { name = "pyexasol", marker = "extra == 'exasol'", specifier = ">=2.0.0" },
     { name = "pymysql", marker = "extra == 'all'", specifier = ">=1.1.0" },
+    { name = "pymysql", marker = "extra == 'mariadb'", specifier = ">=1.1.0" },
     { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1.0" },
     { name = "pyperclip", specifier = ">=1.8.2" },
     { name = "redshift-connector", marker = "extra == 'all'" },
@@ -4075,7 +4072,7 @@ requires-dist = [
     { name = "trino", marker = "extra == 'all'", specifier = ">=0.329.0" },
     { name = "trino", marker = "extra == 'trino'", specifier = ">=0.329.0" },
 ]
-provides-extras = ["all", "athena", "bigquery", "clickhouse", "cockroachdb", "d1", "db2", "duckdb", "firebird", "flight", "hana", "impala", "mariadb", "mssql", "mysql", "oracle", "osquery", "postgres", "presto", "redshift", "snowflake", "spanner", "ssh", "surrealdb", "teradata", "trino", "turso"]
+provides-extras = ["all", "athena", "bigquery", "clickhouse", "cockroachdb", "d1", "db2", "duckdb", "exasol", "firebird", "flight", "hana", "impala", "mariadb", "mssql", "mysql", "oracle", "osquery", "postgres", "presto", "redshift", "snowflake", "spanner", "ssh", "surrealdb", "teradata", "trino", "turso"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -4652,6 +4649,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/20/28/e6f1a6f655d620846bd9df527390ecc26b3805a0c5989048c210e22c5ca9/virtualenv-20.35.4.tar.gz", hash = "sha256:643d3914d73d3eeb0c552cbb12d7e82adf0e504dbf86a3182f8771a153a1971c", size = 6028799, upload-time = "2025-10-29T06:57:40.511Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/79/0c/c05523fa3181fdf0c9c52a6ba91a23fbf3246cc095f26f6516f9c60e6771/virtualenv-20.35.4-py3-none-any.whl", hash = "sha256:c21c9cede36c9753eeade68ba7d523529f228a403463376cf821eaae2b650f1b", size = 6005095, upload-time = "2025-10-29T06:57:37.598Z" },
+]
+
+[[package]]
+name = "websocket-client"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/41/aa4bf9664e4cda14c3b39865b12251e8e7d239f4cd0e3cc1b6c2ccde25c1/websocket_client-1.9.0.tar.gz", hash = "sha256:9e813624b6eb619999a97dc7958469217c3176312b3a16a4bd1bc7e08a46ec98", size = 70576, upload-time = "2025-10-07T21:16:36.495Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/34/db/b10e48aa8fff7407e67470363eac595018441cf32d5e1001567a7aeba5d2/websocket_client-1.9.0-py3-none-any.whl", hash = "sha256:af248a825037ef591efbf6ed20cc5faa03d3b47b9e5a2230a529eeee1c1fc3ef", size = 82616, upload-time = "2025-10-07T21:16:34.951Z" },
 ]
 
 [[package]]

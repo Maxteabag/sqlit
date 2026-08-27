@@ -25,7 +25,7 @@
 ---
 
 ### Connect
-Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
+Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Exasol, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
 
 ![Database Providers](docs/demos/demo-providers.gif)
 
@@ -291,6 +291,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   |
 | BigQuery                            | `google-cloud-bigquery`      | `pipx inject sqlit-tui google-cloud-bigquery`      | `python -m pip install google-cloud-bigquery`      |
 | Spanner                             | `google-cloud-spanner`       | `pipx inject sqlit-tui google-cloud-spanner`       | `python -m pip install google-cloud-spanner`       |
+| Exasol                              | `pyexasol`                   | `pipx inject sqlit-tui pyexasol`                   | `python -m pip install pyexasol`                   |
 | Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      |
 | Apache Impala                       | `impyla`                     | `pipx inject sqlit-tui impyla`                     | `python -m pip install impyla`                     |
 | SurrealDB                           | `surrealdb`                  | `pipx inject sqlit-tui surrealdb`                  | `python -m pip install surrealdb`                  |
