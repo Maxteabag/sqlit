@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -36,12 +37,99 @@ def test_cli_connections_list_empty(tmp_path: Path, monkeypatch):
     assert "No saved connections." in result.stdout
 
 
+def test_cli_edit_selects_postgres_entra_auth(tmp_path: Path, monkeypatch):
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text('{"allow_plaintext_credentials": true}', encoding="utf-8")
+    monkeypatch.setenv("SQLIT_CONFIG_DIR", str(tmp_path))
+    created = run_cli(
+        "connections",
+        "add",
+        "postgresql",
+        "--name",
+        "Azure",
+        "--server",
+        "localhost",
+        "--username",
+        "developer",
+        "--password",
+        "old-password",
+        check=False,
+    )
+    assert created.returncode == 0, created.stderr
+
+    edited = run_cli(
+        "connections",
+        "edit",
+        "Azure",
+        "--postgres-auth-method",
+        "azure_entra_cli",
+        "--password",
+        "must-not-be-kept",
+        check=False,
+    )
+
+    assert edited.returncode == 0, edited.stderr
+    payload = json.loads((tmp_path / "connections.json").read_text())
+    saved = payload["connections"][0]
+    assert saved["options"]["postgres_auth_method"] == "azure_entra_cli"
+    assert saved["endpoint"]["password"] is None
+    assert saved["endpoint"]["password_command"].startswith("az account get-access-token")
+
+    edited_again = run_cli(
+        "connections",
+        "edit",
+        "Azure",
+        "--password",
+        "still-must-not-be-kept",
+        check=False,
+    )
+    assert edited_again.returncode == 0, edited_again.stderr
+    payload = json.loads((tmp_path / "connections.json").read_text())
+    assert payload["connections"][0]["endpoint"]["password"] is None
+    assert payload["connections"][0]["options"]["postgres_auth_method"] == "azure_entra_cli"
+
+
+def test_cli_preserves_legacy_azure_password_command(tmp_path: Path, monkeypatch):
+    from sqlit.domains.connections.providers.postgresql.auth import (
+        AZURE_ENTRA_PASSWORD_COMMAND,
+    )
+
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text('{"allow_plaintext_credentials": true}', encoding="utf-8")
+    monkeypatch.setenv("SQLIT_CONFIG_DIR", str(tmp_path))
+
+    result = run_cli(
+        "connections",
+        "add",
+        "postgresql",
+        "--name",
+        "LegacyAzure",
+        "--server",
+        "localhost",
+        "--username",
+        "developer",
+        "--password-command",
+        AZURE_ENTRA_PASSWORD_COMMAND,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads((tmp_path / "connections.json").read_text())
+    saved = payload["connections"][0]
+    assert saved["options"]["postgres_auth_method"] == "azure_entra_cli"
+    assert saved["endpoint"]["password_command"] == AZURE_ENTRA_PASSWORD_COMMAND
+
+
 def test_url_stdin_creates_connection(tmp_path: Path):
     settings_path = tmp_path / "settings.json"
     settings_path.write_text('{"allow_plaintext_credentials": true}', encoding="utf-8")
 
     result = _run_cli_with_stdin(
-        "connections", "add", "--url-stdin", "--name", "StdinURL",
+        "connections",
+        "add",
+        "--url-stdin",
+        "--name",
+        "StdinURL",
         stdin="sqlite:///tmp/sqlit-stdin-test.db\n",
         env_config_dir=tmp_path,
     )
@@ -55,10 +143,13 @@ def test_url_stdin_rejects_when_url_also_provided(tmp_path: Path):
     settings_path.write_text('{"allow_plaintext_credentials": true}', encoding="utf-8")
 
     result = _run_cli_with_stdin(
-        "connections", "add",
-        "--url", "sqlite:///tmp/a.db",
+        "connections",
+        "add",
+        "--url",
+        "sqlite:///tmp/a.db",
         "--url-stdin",
-        "--name", "X",
+        "--name",
+        "X",
         stdin="sqlite:///tmp/b.db\n",
         env_config_dir=tmp_path,
     )
@@ -72,13 +163,20 @@ def test_password_stdin_mutex_with_password(tmp_path: Path):
     settings_path.write_text('{"allow_plaintext_credentials": true}', encoding="utf-8")
 
     result = _run_cli_with_stdin(
-        "connect", "postgresql",
-        "--name", "X",
-        "--server", "localhost",
-        "--port", "5432",
-        "--database", "d",
-        "--username", "u",
-        "--password", "cleartext",
+        "connect",
+        "postgresql",
+        "--name",
+        "X",
+        "--server",
+        "localhost",
+        "--port",
+        "5432",
+        "--database",
+        "d",
+        "--username",
+        "u",
+        "--password",
+        "cleartext",
         "--password-stdin",
         stdin="frompipe\n",
         env_config_dir=tmp_path,
@@ -93,7 +191,9 @@ def test_multiple_stdin_flags_rejected(tmp_path: Path):
     settings_path.write_text('{"allow_plaintext_credentials": true}', encoding="utf-8")
 
     result = _run_cli_with_stdin(
-        "connections", "edit", "Nonexistent",
+        "connections",
+        "edit",
+        "Nonexistent",
         "--password-stdin",
         "--ssh-password-stdin",
         stdin="x\n",
@@ -110,12 +210,18 @@ def test_password_stdin_eof_errors_cleanly(tmp_path: Path):
     settings_path.write_text('{"allow_plaintext_credentials": true}', encoding="utf-8")
 
     result = _run_cli_with_stdin(
-        "connect", "postgresql",
-        "--name", "X",
-        "--server", "localhost",
-        "--port", "5432",
-        "--database", "d",
-        "--username", "u",
+        "connect",
+        "postgresql",
+        "--name",
+        "X",
+        "--server",
+        "localhost",
+        "--port",
+        "5432",
+        "--database",
+        "d",
+        "--username",
+        "u",
         "--password-stdin",
         stdin="",
         env_config_dir=tmp_path,

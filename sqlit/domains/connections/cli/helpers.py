@@ -15,11 +15,7 @@ from sqlit.domains.connections.providers.schema_helpers import ConnectionSchema,
 def _get_connection_arg_names() -> set[str]:
     from sqlit.domains.connections.providers.catalog import get_all_schemas
 
-    names = {
-        field.name
-        for schema in get_all_schemas().values()
-        for field in schema.fields
-    }
+    names = {field.name for schema in get_all_schemas().values() for field in schema.fields}
     names.add("host")
     return names
 
@@ -119,6 +115,14 @@ def build_connection_config_from_args(
     password_command = getattr(args, "password_command", None)
     if password_command:
         config_values["password_command"] = password_command
+        if schema.db_type == "postgresql":
+            from sqlit.domains.connections.providers.postgresql.auth import (
+                AZURE_ENTRA_PASSWORD_COMMAND,
+                POSTGRES_AUTH_AZURE_ENTRA_CLI,
+            )
+
+            if password_command == AZURE_ENTRA_PASSWORD_COMMAND:
+                config_values["postgres_auth_method"] = POSTGRES_AUTH_AZURE_ENTRA_CLI
     ssh_password_command = getattr(args, "ssh_password_command", None)
     if ssh_password_command:
         config_values["ssh_password_command"] = ssh_password_command
