@@ -27,17 +27,15 @@ class TestExasolIntegration(BaseDatabaseTestsWithLimit):
     def test_docker_container_connection(self, request):
         """Docker-discovered credentials cannot connect to exasol/docker-db.
 
-        Two independent properties of the image, neither fixable from tests/:
-        exasol/docker-db publishes no credentials through environment variables
+        A property of the image, not fixable from tests/: exasol/docker-db
+        publishes no credentials through environment variables
         (SPEC.docker_detector has env_vars={}), so the discovered config carries
-        no password; and a discovery-built config carries no tls_mode, so the
-        adapter verifies TLS against the image's self-signed certificate.
+        no password.
         """
         pytest.skip(
             "exasol/docker-db publishes no credentials through environment "
-            "variables (docker_detector env_vars={}), and a discovery-built "
-            "config has no tls_mode, so it verifies TLS against the image's "
-            "self-signed certificate"
+            "variables (docker_detector env_vars={}), so the discovered config "
+            "carries no password"
         )
 
     def test_primary_key_detection(self, request):

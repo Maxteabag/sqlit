@@ -16,7 +16,6 @@ from sqlit.domains.connections.providers.adapters.base import (
 from sqlit.domains.connections.providers.registry import get_default_port
 from sqlit.domains.connections.providers.tls import (
     TLS_MODE_DISABLE,
-    TLS_MODE_REQUIRE,
     get_tls_files,
     get_tls_mode,
     tls_mode_verifies_cert,
@@ -87,17 +86,17 @@ class ExasolAdapter(DatabaseAdapter):
     def _tls_args(self, config: ConnectionConfig) -> dict[str, Any]:
         """Map the shared tls_mode option onto pyexasol encryption kwargs.
 
-        pyexasol defaults to encryption=True, but exasol/docker-db and most
-        on-premise installations present a self-signed certificate, so an
-        unmapped connect fails certificate validation.
+        Since pyexasol 1.0.0 an omitted websocket_sslopt means CERT_REQUIRED, but
+        exasol/docker-db and most on-premise installations present a self-signed
+        certificate, so deferring to that driver default fails every out-of-the-box
+        connect. The default mode therefore encrypts without verifying, matching how
+        the other providers here treat it; verification starts at verify-ca.
         """
         tls_mode = get_tls_mode(config)
         if tls_mode == TLS_MODE_DISABLE:
             return {"encryption": False}
-        if tls_mode == TLS_MODE_REQUIRE:
-            return {"encryption": True, "websocket_sslopt": {"cert_reqs": ssl.CERT_NONE}}
         if not tls_mode_verifies_cert(tls_mode):
-            return {"encryption": True}
+            return {"encryption": True, "websocket_sslopt": {"cert_reqs": ssl.CERT_NONE}}
 
         sslopt: dict[str, Any] = {"cert_reqs": ssl.CERT_REQUIRED}
         tls_ca, tls_cert, tls_key, _ = get_tls_files(config)

@@ -141,11 +141,13 @@ def test_tls_disable_turns_encryption_off() -> None:
 
 
 @pytest.mark.parametrize("options", [{}, {"tls_mode": "default"}], ids=["unset", "explicit"])
-def test_tls_default_encrypts_and_leaves_ssl_options_to_the_driver(options: dict[str, Any]) -> None:
+def test_tls_default_encrypts_without_verifying_the_certificate(options: dict[str, Any]) -> None:
+    # Not left to the driver: pyexasol would demand CERT_REQUIRED, which no
+    # self-signed server - exasol/docker-db included - can satisfy.
     kwargs = _connect_kwargs(_config(options=options))
 
     assert kwargs["encryption"] is True
-    assert "websocket_sslopt" not in kwargs
+    assert kwargs["websocket_sslopt"] == {"cert_reqs": ssl.CERT_NONE}
 
 
 def test_tls_require_encrypts_without_verifying_the_certificate() -> None:
