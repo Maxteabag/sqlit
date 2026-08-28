@@ -135,6 +135,35 @@ class _RaisesOnPickle:
         raise RuntimeError("DPY-1001: not connected to database")
 
 
+class _RaisesOSErrorOnPickle:
+    """Simulate serialization code raising an exception also used by pipes."""
+
+    def __reduce__(self) -> Any:
+        raise OSError("LOB read failed")
+
+
+def test_worker_send_pickle_raising_oserror_emits_error() -> None:
+    """An OSError during serialization must not be mistaken for a closed pipe."""
+    state, parent = _make_state_with_pipe()
+    try:
+        payload: dict[str, Any] = {
+            "type": "result",
+            "id": 8,
+            "kind": "query",
+            "result": _RaisesOSErrorOnPickle(),
+        }
+        state.send(payload)
+
+        assert parent.poll(timeout=2.0), "client would hang; no error message was sent"
+        message = parent.recv()
+        assert message["type"] == "error"
+        assert message["id"] == 8
+        assert "LOB read failed" in message["message"]
+    finally:
+        parent.close()
+        state.conn.close()
+
+
 def test_worker_send_pickle_raising_driver_error_emits_error() -> None:
     """Regression test for issue #276: oracledb CLOB/BLOB results raised
     InterfaceError during pickling, which fell through to a bare

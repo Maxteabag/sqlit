@@ -251,7 +251,7 @@ jobs:
 
     services:
       oracle:
-        image: gvenzl/oracle-free:23-slim
+        image: gvenzl/oracle-free:23-slim@sha256:fbbd3023d5abc33e36d3814816e6fd740e8efabeaa70cf470ddeab5874a3f6f8
         env:
           ORACLE_PASSWORD: TestPassword123!
           APP_USER: testuser
@@ -287,6 +287,53 @@ jobs:
           ORACLE_PASSWORD: TestPassword123!
           ORACLE_SERVICE: FREEPDB1
         run: uv run pytest tests/test_oracle.py -v --timeout=120
+
+      - name: Require Oracle Native Network Encryption
+        env:
+          ORACLE_CONTAINER: ${{ job.services.oracle.id }}
+        run: |
+          docker exec --user root "$ORACLE_CONTAINER" sh -lc 'printf "\nSQLNET.CRYPTO_CHECKSUM_SERVER = required\nSQLNET.CRYPTO_CHECKSUM_TYPES_SERVER = (SHA512)\nSQLNET.ENCRYPTION_SERVER = required\nSQLNET.ENCRYPTION_TYPES_SERVER = (AES256)\n" >> /opt/oracle/oradata/dbconfig/FREE/sqlnet.ora'
+          docker restart "$ORACLE_CONTAINER"
+          for attempt in {1..60}; do
+            if docker exec "$ORACLE_CONTAINER" healthcheck.sh; then
+              exit 0
+            fi
+            echo "Waiting for NNE-enabled Oracle restart ($attempt/60)"
+            sleep 2
+          done
+          docker logs "$ORACLE_CONTAINER"
+          exit 1
+
+      - name: Install Oracle Instant Client
+        env:
+          INSTANT_CLIENT_URL: https://download.oracle.com/otn_software/linux/instantclient/2326300/instantclient-basiclite-linux.x64-23.26.3.0.0.zip
+          INSTANT_CLIENT_SHA256: 88c2b59d473f0d34615556dbee51cb90cce61a9104b4c1c772d13c344fba19c9
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libaio1t64 || sudo apt-get install -y libaio1
+          libaio_path=$(ldconfig -p | awk '/libaio\.so\.1t64/{path=$NF} END{print path}')
+          if [ -n "$libaio_path" ]; then
+            sudo ln -sf "$libaio_path" "$(dirname "$libaio_path")/libaio.so.1"
+            sudo ldconfig
+          fi
+          curl --fail --location --retry 3 "$INSTANT_CLIENT_URL" --output "$RUNNER_TEMP/instantclient.zip"
+          echo "$INSTANT_CLIENT_SHA256  $RUNNER_TEMP/instantclient.zip" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/instantclient"
+          unzip -q "$RUNNER_TEMP/instantclient.zip" -d "$RUNNER_TEMP/instantclient"
+          client_dir=$(find "$RUNNER_TEMP/instantclient" -mindepth 1 -maxdepth 1 -type d -name 'instantclient_*' -print -quit)
+          test -n "$client_dir"
+          echo "ORACLE_CLIENT_LIB_DIR=$client_dir" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$client_dir" >> "$GITHUB_ENV"
+
+      - name: Verify Oracle Thin rejection and Thick connection
+        env:
+          SQLIT_ORACLE_NNE_TEST: "1"
+          ORACLE_HOST: localhost
+          ORACLE_PORT: 1521
+          ORACLE_USER: testuser
+          ORACLE_PASSWORD: TestPassword123!
+          ORACLE_SERVICE: FREEPDB1
+        run: uv run pytest tests/integration/test_oracle_nne.py -v --timeout=60
 
   test-mariadb:
     runs-on: ubuntu-latest

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -32,6 +33,10 @@ class SQLiteAdapter(DatabaseAdapter):
     @property
     def supports_stored_procedures(self) -> bool:
         return False
+
+    @property
+    def supports_foreign_keys(self) -> bool:
+        return True
 
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to SQLite database file."""
@@ -120,6 +125,94 @@ class SQLiteAdapter(DatabaseAdapter):
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         """SQLite doesn't support sequences - return empty list."""
         return []
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Read FK constraints declared on `table` via PRAGMA foreign_key_list.
+
+        PRAGMA columns: id, seq, table, from, to, on_update, on_delete, match.
+        `seq` is the column ordinal within a composite FK; `id` groups them.
+        """
+        cursor = conn.cursor()
+        quoted = self.quote_identifier(table)
+        cursor.execute(f"PRAGMA foreign_key_list({quoted})")
+        results: list[ForeignKeyInfo] = []
+        for row in cursor.fetchall():
+            referenced_column = self._resolve_referenced_column(conn, row[2], row[4], int(row[1]))
+            if not referenced_column:
+                continue
+            results.append(ForeignKeyInfo(
+                owner_table=table,
+                column=row[3],
+                referenced_table=row[2],
+                referenced_column=referenced_column,
+                constraint_name=f"fk_{row[0]}",
+                ordinal=int(row[1]) + 1,
+            ))
+        return results
+
+    def _resolve_referenced_column(self, conn: Any, table: str, column: Any, ordinal: int) -> str | None:
+        """Resolve SQLite's omitted REFERENCES column from the target primary key."""
+        if isinstance(column, str) and column:
+            return column
+        cursor = conn.cursor()
+        cursor.execute(f"PRAGMA table_info({self.quote_identifier(table)})")
+        primary_key_columns = sorted(
+            ((int(row[5]), str(row[1])) for row in cursor.fetchall() if int(row[5]) > 0),
+            key=lambda item: item[0],
+        )
+        if ordinal >= len(primary_key_columns):
+            return None
+        return primary_key_columns[ordinal][1]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Find tables that reference `table` by scanning every user table.
+
+        SQLite has no catalog view of incoming FKs, so we run PRAGMA
+        foreign_key_list on each table and filter. For typical small SQLite
+        DBs this is cheap; on large schemas the explorer prime worker absorbs
+        the latency off the main thread.
+        """
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+        all_tables = [row[0] for row in cursor.fetchall()]
+
+        target_lower = table.lower()
+        results: list[ForeignKeyInfo] = []
+        for other in all_tables:
+            quoted = self.quote_identifier(other)
+            cursor.execute(f"PRAGMA foreign_key_list({quoted})")
+            for row in cursor.fetchall():
+                if row[2].lower() != target_lower:
+                    continue
+                referenced_column = self._resolve_referenced_column(conn, table, row[4], int(row[1]))
+                if not referenced_column:
+                    continue
+                results.append(
+                    ForeignKeyInfo(
+                        owner_table=other,
+                        column=row[3],
+                        referenced_table=table,
+                        referenced_column=referenced_column,
+                        constraint_name=f"{other}_fk_{row[0]}",
+                        ordinal=int(row[1]) + 1,
+                    )
+                )
+        return results
 
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None

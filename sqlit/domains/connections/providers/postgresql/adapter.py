@@ -72,8 +72,16 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
     def driver_import_names(self) -> tuple[str, ...]:
         return ("psycopg2",)
 
+    def normalize_config(self, config: ConnectionConfig) -> ConnectionConfig:
+        from sqlit.domains.connections.providers.postgresql.auth import (
+            normalize_postgres_auth,
+        )
+
+        return normalize_postgres_auth(config)
+
     def connect(self, config: ConnectionConfig) -> Any:
         """Connect to PostgreSQL database."""
+        config = self.normalize_config(config)
         psycopg2 = self._import_driver_module(
             "psycopg2",
             driver_name=self.name,
@@ -100,8 +108,15 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
             connect_args["port"] = int(endpoint.port or get_default_port("postgresql"))
         if endpoint.username:
             connect_args["user"] = endpoint.username
-        if endpoint.password is not None:
-            connect_args["password"] = endpoint.password
+        password = endpoint.password
+        if password is None and endpoint.password_command:
+            from sqlit.domains.connections.domain.password_command import (
+                run_password_command,
+            )
+
+            password = run_password_command(endpoint.password_command)
+        if password is not None:
+            connect_args["password"] = password
 
         tls_mode = get_tls_mode(config)
         tls_ca, tls_cert, tls_key, tls_key_password = get_tls_files(config)

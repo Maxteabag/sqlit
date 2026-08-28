@@ -8,10 +8,12 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     DatabaseAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
     TriggerInfo,
+    _strip_leading_sql_comments,
 )
 from sqlit.domains.connections.providers.tls import (
     TLS_MODE_DEFAULT,
@@ -123,6 +125,30 @@ class SQLServerAdapter(DatabaseAdapter):
     def supports_stored_procedures(self) -> bool:
         return True
 
+    def classify_query(self, query: str) -> bool:
+        """Treat T-SQL procedure execution as potentially row-returning."""
+        return self._is_procedure_call(query) or super().classify_query(query)
+
+    @staticmethod
+    def _is_procedure_call(query: str) -> bool:
+        """Distinguish procedure calls from EXECUTE AS and dynamic SQL."""
+        statement = _strip_leading_sql_comments(query)
+        parts = statement.split(maxsplit=1)
+        if not parts or parts[0].upper() not in {"EXEC", "EXECUTE"} or len(parts) == 1:
+            return False
+        target = _strip_leading_sql_comments(parts[1])
+        if not target:
+            return False
+        upper_target = target.upper()
+        if upper_target.split(maxsplit=1)[0] == "AS":
+            return False
+        if target.startswith(("(", "'", '"')) or upper_target.startswith("N'"):
+            return False
+        if target.startswith("@"):
+            _return_variable, separator, procedure = target.partition("=")
+            return bool(separator and procedure.strip())
+        return True
+
     @property
     def system_databases(self) -> frozenset[str]:
         return frozenset({"master", "tempdb", "model", "msdb"})
@@ -149,6 +175,10 @@ class SQLServerAdapter(DatabaseAdapter):
     @property
     def supports_sequences(self) -> bool:
         """SQL Server 2012+ supports sequences."""
+        return True
+
+    @property
+    def supports_foreign_keys(self) -> bool:
         return True
 
     def normalize_config(self, config: ConnectionConfig) -> ConnectionConfig:
@@ -391,6 +421,43 @@ class SQLServerAdapter(DatabaseAdapter):
         )
         return [row[0] for row in cursor.fetchall()]
 
+    def get_completion_routines(
+        self, conn: Any, database: str | None = None
+    ) -> list[Any]:
+        """Get procedures/functions with parameter metadata for autocomplete."""
+        from sqlit.domains.connections.providers.adapters.base import RoutineInfo
+
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT r.ROUTINE_SCHEMA, r.ROUTINE_NAME, r.ROUTINE_TYPE, r.DATA_TYPE, "
+            "p.PARAMETER_NAME, p.ORDINAL_POSITION "
+            "FROM INFORMATION_SCHEMA.ROUTINES r "
+            "LEFT JOIN INFORMATION_SCHEMA.PARAMETERS p "
+            "ON p.SPECIFIC_SCHEMA = r.SPECIFIC_SCHEMA "
+            "AND p.SPECIFIC_NAME = r.SPECIFIC_NAME "
+            "ORDER BY r.ROUTINE_SCHEMA, r.ROUTINE_NAME, p.ORDINAL_POSITION"
+        )
+
+        grouped: dict[tuple[str, str, str, str], list[str]] = {}
+        for schema, name, routine_type, return_type, parameter, ordinal in cursor.fetchall():
+            key = (schema, name, routine_type, return_type or "")
+            if parameter and (ordinal is None or ordinal > 0):
+                grouped.setdefault(key, []).append(parameter)
+            else:
+                grouped.setdefault(key, [])
+
+        return [
+            RoutineInfo(
+                name,
+                schema=schema,
+                database=database or "",
+                routine_type=routine_type,
+                return_type=return_type,
+                parameters=tuple(parameters),
+            )
+            for (schema, name, routine_type, return_type), parameters in grouped.items()
+        ]
+
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes from SQL Server."""
         cursor = self._get_cursor_for_database(conn, database)
@@ -419,6 +486,85 @@ class SQLServerAdapter(DatabaseAdapter):
         cursor = self._get_cursor_for_database(conn, database)
         cursor.execute("SELECT name FROM sys.sequences ORDER BY name")
         return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs via sys.foreign_keys + sys.foreign_key_columns."""
+        cursor = self._get_cursor_for_database(conn, database)
+        schema = schema or self.default_schema
+        cursor.execute(
+            "SELECT fk.name, fkc.constraint_column_id, "
+            "       pc.name, SCHEMA_NAME(rt.schema_id), rt.name, rc.name "
+            "FROM sys.foreign_keys fk "
+            "JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id "
+            "JOIN sys.tables pt ON fk.parent_object_id = pt.object_id "
+            "JOIN sys.columns pc ON pc.object_id = pt.object_id "
+            "  AND pc.column_id = fkc.parent_column_id "
+            "JOIN sys.tables rt ON fk.referenced_object_id = rt.object_id "
+            "JOIN sys.columns rc ON rc.object_id = rt.object_id "
+            "  AND rc.column_id = fkc.referenced_column_id "
+            "WHERE SCHEMA_NAME(pt.schema_id) = ? AND pt.name = ? "
+            "ORDER BY fk.name, fkc.constraint_column_id",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=schema,
+                referenced_schema=row[3] or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List FKs from other tables that reference `table`."""
+        cursor = self._get_cursor_for_database(conn, database)
+        schema = schema or self.default_schema
+        cursor.execute(
+            "SELECT fk.name, fkc.constraint_column_id, "
+            "       SCHEMA_NAME(pt.schema_id), pt.name, pc.name, rc.name "
+            "FROM sys.foreign_keys fk "
+            "JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id "
+            "JOIN sys.tables pt ON fk.parent_object_id = pt.object_id "
+            "JOIN sys.columns pc ON pc.object_id = pt.object_id "
+            "  AND pc.column_id = fkc.parent_column_id "
+            "JOIN sys.tables rt ON fk.referenced_object_id = rt.object_id "
+            "JOIN sys.columns rc ON rc.object_id = rt.object_id "
+            "  AND rc.column_id = fkc.referenced_column_id "
+            "WHERE SCHEMA_NAME(rt.schema_id) = ? AND rt.name = ? "
+            "ORDER BY SCHEMA_NAME(pt.schema_id), pt.name, "
+            "         fk.name, fkc.constraint_column_id",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[3],
+                column=row[4],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[2] or "",
+                referenced_schema=schema,
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None
@@ -545,10 +691,41 @@ class SQLServerAdapter(DatabaseAdapter):
         schema = schema or "dbo"
         return f"SELECT TOP {limit} * FROM [{schema}].[{table}]"
 
+    def build_filtered_select_query(self, table: str, column: str, value: Any, limit: int, database: str | None = None, schema: str | None = None) -> str:
+        qualified = self.catalog_qualified_name(database, schema, table)
+        return f"SELECT TOP {limit} * FROM {qualified} WHERE {self.quote_identifier(column)} = {self.quote_literal(value)}"
+
+    def quote_literal(self, value: Any) -> str:
+        """Render SQL Server bit and binary literals using T-SQL syntax."""
+        if isinstance(value, bool):
+            return "1" if value else "0"
+        if isinstance(value, bytes | bytearray | memoryview):
+            return "0x" + bytes(value).hex()
+        return super().quote_literal(value)
+
     def execute_query(self, conn: Any, query: str, max_rows: int | None = None) -> tuple[list[str], list[tuple], bool]:
         """Execute a query on SQL Server with optional row limit."""
         cursor = conn.cursor()
         cursor.execute(query)
+        if self._is_procedure_call(query):
+            result: tuple[list[str], list[tuple], bool] | None = None
+            while True:
+                if cursor.description and result is None:
+                    columns = [col[0] for col in cursor.description]
+                    if max_rows is not None:
+                        rows = cursor.fetchmany(max_rows + 1)
+                        truncated = len(rows) > max_rows
+                        rows = rows[:max_rows]
+                    else:
+                        rows = cursor.fetchall()
+                        truncated = False
+                    result = (columns, [tuple(row) for row in rows], truncated)
+
+                nextset = getattr(cursor, "nextset", None)
+                if not callable(nextset) or not nextset():
+                    break
+            return result or ([], [], False)
+
         if cursor.description:
             columns = [col[0] for col in cursor.description]
             if max_rows is not None:

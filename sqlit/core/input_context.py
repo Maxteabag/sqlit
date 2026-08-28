@@ -34,3 +34,9 @@ class InputContext:
     has_results: bool
     stacked_result_count: int = 0
     count_buffer: str = ""
+    # True when the column under the results-table cursor is an outgoing FK column
+    # (i.e. pressing the navigate-FK key would take you to the referenced row).
+    cursor_column_is_foreign_key: bool = False
+    # True when the column under the cursor is referenced by some other table's FK
+    # (i.e. pressing the navigate-referrers key would open the picker).
+    cursor_column_is_foreign_key_target: bool = False

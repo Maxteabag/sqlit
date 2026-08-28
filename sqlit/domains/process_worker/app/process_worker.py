@@ -79,9 +79,6 @@ class _WorkerState:
             try:
                 self.conn.send(payload)
                 return
-            except OSError:
-                # Pipe closed; nothing we can do.
-                return
             except Exception as exc:
                 # Result couldn't be serialized: not picklable, or a driver
                 # error raised while pickling — e.g. oracledb LOB locators

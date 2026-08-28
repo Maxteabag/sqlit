@@ -69,7 +69,10 @@ class AutocompleteMixin(AutocompleteSchemaMixin, AutocompleteSuggestionsMixin):
         cursor_pos = self._location_to_offset(text, cursor_loc)
 
         word_start = cursor_pos
-        while word_start > 0 and text[word_start - 1] not in " \t\n,()[].":
+        while word_start > 0:
+            previous = text[word_start - 1]
+            if previous in " \t\r\n,()[].":
+                break
             word_start -= 1
 
         if word_start > 0 and text[word_start - 1] == ".":
@@ -88,20 +91,28 @@ class AutocompleteMixin(AutocompleteSchemaMixin, AutocompleteSuggestionsMixin):
     def _location_to_offset(self, text: str, location: tuple[int, int]) -> int:
         """Convert (row, col) location to text offset."""
         row, col = location
-        lines = text.split("\n")
-        offset = sum(len(lines[i]) + 1 for i in range(row))
-        offset += col
+        lines = text.splitlines(keepends=True)
+        offset = sum(len(line) for line in lines[:row]) + col
         return min(offset, len(text))
 
     def _offset_to_location(self, text: str, offset: int) -> tuple[int, int]:
         """Convert text offset to (row, col) location."""
-        lines = text.split("\n")
+        lines = text.splitlines(keepends=True)
+        if not lines:
+            return (0, 0)
+
         current_offset = 0
         for row, line in enumerate(lines):
-            if current_offset + len(line) >= offset:
+            content_length = len(line.rstrip("\r\n"))
+            if current_offset + content_length >= offset:
                 return (row, offset - current_offset)
-            current_offset += len(line) + 1
-        return (len(lines) - 1, len(lines[-1]) if lines else 0)
+            current_offset += len(line)
+            if offset < current_offset:
+                return (row, content_length)
+
+        if lines and lines[-1].endswith(("\r", "\n")):
+            return (len(lines), 0)
+        return (len(lines) - 1, len(lines[-1]))
 
     def on_text_area_changed(self: AutocompleteMixinHost, event: TextArea.Changed) -> None:
         """Handle text changes in the query editor for autocomplete."""
@@ -113,6 +124,10 @@ class AutocompleteMixin(AutocompleteSchemaMixin, AutocompleteSuggestionsMixin):
 
         if event.text_area.id != "query-input":
             return
+
+        update_document_title = getattr(self, "_update_query_document_title", None)
+        if callable(update_document_title):
+            update_document_title()
 
         # Mark that text just changed so selection_changed knows to ignore cursor movement
         self._text_just_changed = True

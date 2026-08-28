@@ -110,6 +110,8 @@ class TcpEndpoint:
     password: str | None = None
     password_command: str | None = None
     kind: str = "tcp"
+    # Original server name when the transport endpoint is rewritten, for example by an SSH tunnel.
+    original_host: str | None = None
 
 
 @dataclass
@@ -371,6 +373,8 @@ class ConnectionConfig:
 
         if not isinstance(self.endpoint, TcpEndpoint):
             return self
+        if "host" in kwargs and kwargs["host"] != self.endpoint.host and "original_host" not in kwargs:
+            kwargs["original_host"] = self.endpoint.original_host or self.endpoint.host
         endpoint = replace(self.endpoint, **kwargs)
         return replace(self, endpoint=endpoint)
 

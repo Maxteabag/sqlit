@@ -26,6 +26,7 @@ class TestKeymapProvider:
         assert keymap.leader("show_help") is not None
         assert keymap.leader("toggle_explorer") is not None
         assert keymap.leader("change_theme") is not None
+        assert keymap.leader("format_query") == "p"
 
     def test_default_keymap_has_expected_action_keys(self):
         """Default keymap should have standard action keys."""

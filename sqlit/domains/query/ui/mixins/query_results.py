@@ -8,6 +8,7 @@ from typing import Any
 from sqlit.shared.core.utils import format_duration_ms
 from sqlit.shared.ui.protocols import QueryMixinHost
 from sqlit.shared.ui.widgets import SqlitDataTable
+from sqlit.shared.ui.widgets_tables import normalize_arrow_value
 
 from .query_constants import MAX_COLUMN_CONTENT_WIDTH, MAX_RENDER_ROWS
 
@@ -258,13 +259,17 @@ class QueryResultsMixin:
             if has_decimal_in_initial:
                 decimal_types = self._get_decimal_column_types(rows)
                 if decimal_types:
-                    from textual_fastdatatable.backend import ArrowBackend
                     import pyarrow as pa
+                    from textual_fastdatatable.backend import ArrowBackend
 
                     arrays = []
                     coerce_to_str_columns = set()
                     for idx, _name in enumerate(columns):
-                        values = [row[idx] for row in initial_rows] if initial_rows else []
+                        values = (
+                            [normalize_arrow_value(row[idx]) for row in initial_rows]
+                            if initial_rows
+                            else []
+                        )
                         col_type = decimal_types.get(idx)
                         try:
                             if col_type is not None:

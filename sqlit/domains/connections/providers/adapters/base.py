@@ -13,6 +13,33 @@ if TYPE_CHECKING:
 SELECT_KEYWORDS = frozenset(["SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA"])
 
 
+def _strip_leading_sql_comments(query: str) -> str:
+    """Strip whitespace and consecutive SQL comments from a statement."""
+    remaining = query.lstrip()
+    while remaining:
+        if remaining.startswith("--") or remaining.startswith("#"):
+            newline = remaining.find("\n")
+            if newline < 0:
+                return ""
+            remaining = remaining[newline + 1 :].lstrip()
+            continue
+        if remaining.startswith("/*"):
+            end = remaining.find("*/", 2)
+            if end < 0:
+                return ""
+            remaining = remaining[end + 2 :].lstrip()
+            continue
+        break
+    return remaining
+
+
+def _first_keyword(query: str) -> str:
+    """Return the first SQL token, ignoring whitespace and leading comments."""
+    remaining = _strip_leading_sql_comments(query)
+    parts = remaining.split(maxsplit=1)
+    return parts[0].rstrip(";").upper() if parts else ""
+
+
 def resolve_file_path(path_str: str) -> Path:
     """Resolve a file path for file-based databases (SQLite, DuckDB).
 
@@ -45,6 +72,44 @@ class ColumnInfo:
     is_primary_key: bool = False
 
 
+class RoutineInfo(str):
+    """String-compatible routine metadata used by autocomplete."""
+
+    schema: str
+    database: str
+    name: str
+    routine_type: str
+    return_type: str
+    parameters: tuple[str, ...]
+
+    def __new__(
+        cls,
+        name: str,
+        *,
+        schema: str = "",
+        database: str = "",
+        routine_type: str = "PROCEDURE",
+        return_type: str = "",
+        parameters: tuple[str, ...] = (),
+    ) -> RoutineInfo:
+        instance = super().__new__(cls, name)
+        instance.name = name
+        instance.schema = schema
+        instance.database = database
+        instance.routine_type = routine_type.upper()
+        instance.return_type = return_type.upper()
+        instance.parameters = parameters
+        return instance
+
+    @property
+    def qualified_name(self) -> str:
+        return f"{self.schema}.{self}" if self.schema else str(self)
+
+    @property
+    def is_table_valued(self) -> bool:
+        return self.routine_type == "FUNCTION" and self.return_type == "TABLE"
+
+
 @dataclass
 class IndexInfo:
     """Information about a database index."""
@@ -67,6 +132,41 @@ class SequenceInfo:
     """Information about a database sequence."""
 
     name: str
+
+
+@dataclass(frozen=True)
+class ForeignKeyInfo:
+    """A single foreign-key relationship between two columns.
+
+    The FK is declared on the *owner* (child) side, which has `column`,
+    and points to the *referenced* (parent) side, which has
+    `referenced_column` on `referenced_table`.
+
+    For outgoing FKs returned by `get_foreign_keys(T)`, every entry has
+    `owner_table == T`. For incoming refs returned by
+    `get_referencing_foreign_keys(T)`, every entry has
+    `referenced_table == T` and `owner_table` is whatever table is
+    pointing in.
+
+    Composite FKs are represented as multiple entries sharing
+    `constraint_name`, ordered by `ordinal`. The navigation UI only
+    auto-jumps single-column FKs; composite ones surface but require
+    user disambiguation.
+
+    Schema/database fields are empty strings on engines that don't
+    expose them (e.g. SQLite).
+    """
+
+    owner_table: str
+    column: str
+    referenced_table: str
+    referenced_column: str
+    owner_schema: str = ""
+    owner_database: str = ""
+    referenced_schema: str = ""
+    referenced_database: str = ""
+    constraint_name: str = ""
+    ordinal: int = 1
 
 
 # Type alias for table/view info: (schema, name)
@@ -195,6 +295,16 @@ class DatabaseAdapter(ABC):
         return False
 
     @property
+    def supports_foreign_keys(self) -> bool:
+        """Whether this database exposes foreign-key relationships via catalog queries.
+
+        Override in subclasses that implement `get_foreign_keys` /
+        `get_referencing_foreign_keys`. Defaults to False so the FK
+        navigation UI is hidden for adapters without an implementation.
+        """
+        return False
+
+    @property
     def supports_process_worker(self) -> bool:
         """Whether this adapter supports running queries in a separate process."""
         return True
@@ -209,8 +319,7 @@ class DatabaseAdapter(ABC):
 
     def classify_query(self, query: str) -> bool:
         """Return True if the query is expected to return rows."""
-        query_type = query.strip().upper().split()[0] if query.strip() else ""
-        return query_type in SELECT_KEYWORDS
+        return _first_keyword(query) in SELECT_KEYWORDS
 
     def execute_test_query(self, conn: Any) -> None:
         """Execute a simple query to verify the connection works.
@@ -343,6 +452,36 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Get outgoing foreign keys defined on `table` (FKs whose owner is this table).
+
+        Default returns []. Override in adapters that support FK introspection
+        and also set `supports_foreign_keys = True`.
+        """
+        return []
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """Get incoming foreign keys that reference `table`.
+
+        Each entry's `column` is the FK column on the *referring* table;
+        `referenced_table` and `referenced_column` point back to this table.
+
+        Default returns []. Override in adapters that support FK introspection.
+        """
+        return []
+
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None
     ) -> dict[str, Any]:
@@ -416,6 +555,50 @@ class DatabaseAdapter(ABC):
     def quote_identifier(self, name: str) -> str:
         """Quote an identifier (table name, column name, etc.)."""
         pass
+
+    def quote_literal(self, value: Any) -> str:
+        """Render a Python value as a SQL literal.
+
+        Used by the FK-navigation feature to build WHERE clauses against
+        cell values. Default handles None, bool, int/float, str, and bytes
+        with single-quote escaping (the SQL-standard form supported by
+        SQLite, Postgres, MySQL with NO_BACKSLASH_ESCAPES, and MSSQL).
+        Subclasses can override for engines with different conventions
+        (e.g. mysql backslash escaping, mssql bytes as 0x...).
+        """
+        if value is None:
+            return "NULL"
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, int | float):
+            return repr(value) if isinstance(value, float) else str(value)
+        if isinstance(value, bytes | bytearray | memoryview):
+            return "X'" + bytes(value).hex() + "'"
+        text = str(value)
+        return "'" + text.replace("'", "''") + "'"
+
+    def build_filtered_select_query(
+        self,
+        table: str,
+        column: str,
+        value: Any,
+        limit: int,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> str:
+        """Build a limited SELECT filtered to one column value."""
+        qualified = self.catalog_qualified_name(database, schema, table)
+        return f"SELECT * FROM {qualified} WHERE {self.quote_identifier(column)} = {self.quote_literal(value)} LIMIT {limit}"
+
+    def catalog_qualified_name(self, database: str | None, schema: str | None, name: str) -> str:
+        """Quote an exact catalog identity without omitting the default schema."""
+        parts: list[str] = []
+        if database and self.supports_cross_database_queries:
+            parts.append(self.quote_identifier(database))
+        if schema:
+            parts.append(self.quote_identifier(schema))
+        parts.append(self.quote_identifier(name))
+        return ".".join(parts)
 
     def format_autocomplete_identifier(self, name: str) -> str:
         """Format an identifier for insertion from autocomplete.

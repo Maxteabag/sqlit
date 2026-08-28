@@ -727,6 +727,11 @@ def main() -> int:
         choices=[t.value for t in AuthType],
         help="Authentication type (SQL Server only)",
     )
+    edit_parser.add_argument(
+        "--postgres-auth-method",
+        choices=["password", "azure_entra_cli"],
+        help="PostgreSQL authentication method",
+    )
     edit_parser.add_argument("--file-path", help="Database file path (SQLite only)")
     edit_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
     edit_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")

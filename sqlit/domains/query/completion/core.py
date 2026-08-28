@@ -23,6 +23,7 @@ class SuggestionType(Enum):
     SCHEMA = auto()
     DATABASE = auto()
     PROCEDURE = auto()
+    PARAMETER = auto()
     ALIAS_COLUMN = auto()  # Column for a specific table/alias
     OPERATOR = auto()  # Comparison operators (=, <, >, etc.)
 

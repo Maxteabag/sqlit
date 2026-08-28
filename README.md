@@ -294,6 +294,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Exasol                              | `pyexasol`                   | `pipx inject sqlit-tui pyexasol`                   | `python -m pip install pyexasol`                   |
 | Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      |
 | Apache Impala                       | `impyla`                     | `pipx inject sqlit-tui impyla`                     | `python -m pip install impyla`                     |
+| Trino                               | `trino`                      | `pipx inject sqlit-tui trino`                      | `python -m pip install trino`                      |
 | SurrealDB                           | `surrealdb`                  | `pipx inject sqlit-tui surrealdb`                  | `python -m pip install surrealdb`                  |
 | osquery                             | `osquery`                    | `pipx inject sqlit-tui osquery`                    | `python -m pip install osquery`                    |
 
@@ -318,7 +319,7 @@ If you try to create an SSH connection without these dependencies, sqlit will de
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Maxteabag/sqlit&type=Date)](https://star-history.com/#Maxteabag/sqlit&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=Maxteabag/sqlit&type=Date)](https://star-history.dera.page/#Maxteabag/sqlit&Date)
 
 ---
 
