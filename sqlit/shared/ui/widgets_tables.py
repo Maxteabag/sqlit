@@ -21,8 +21,12 @@ from textual_fastdatatable import DataTable as FastDataTable
 
 
 def normalize_arrow_value(value: Any) -> Any:
-    """Keep Arrow from inferring its binary UUID extension type."""
-    return str(value) if isinstance(value, UUID) else value
+    """Convert values Arrow cannot safely render as text."""
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return f"0x{bytes(value).hex()}"
+    return value
 
 
 def _stringify_uuid_rows(rows: Iterable[Iterable[Any]]) -> list[tuple[Any, ...]]:
