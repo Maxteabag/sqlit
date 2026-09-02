@@ -159,6 +159,49 @@ class TestDatabricksAdapter:
         assert "`main`.information_schema.tables" in sql
         assert tables == [("default", "trips"), ("analytics", "events")]
 
+    def test_get_tables_excludes_only_view_types(self):
+        """Tables list keeps FOREIGN/STREAMING_TABLE/shallow clones, drops views."""
+        from sqlit.domains.connections.providers.databricks.adapter import DatabricksAdapter
+
+        adapter = DatabricksAdapter()
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = []
+
+        adapter.get_tables(mock_conn, database="main")
+        sql = mock_cursor.execute.call_args[0][0]
+
+        assert "table_type NOT IN ('VIEW', 'MATERIALIZED_VIEW')" in sql
+        # These are real Unity Catalog table_type values and must not be filtered out.
+        for table_type in (
+            "MANAGED",
+            "EXTERNAL",
+            "FOREIGN",
+            "STREAMING_TABLE",
+            "MANAGED_SHALLOW_CLONE",
+            "EXTERNAL_SHALLOW_CLONE",
+        ):
+            assert table_type not in sql
+        # 'BASE TABLE' is not a Unity Catalog table_type.
+        assert "BASE TABLE" not in sql
+
+    def test_get_views_reads_view_types_from_tables(self):
+        from sqlit.domains.connections.providers.databricks.adapter import DatabricksAdapter
+
+        adapter = DatabricksAdapter()
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [("default", "trips_daily")]
+
+        views = adapter.get_views(mock_conn, database="main")
+        sql = mock_cursor.execute.call_args[0][0]
+
+        assert "`main`.information_schema.tables" in sql
+        assert "table_type IN ('VIEW', 'MATERIALIZED_VIEW')" in sql
+        assert views == [("default", "trips_daily")]
+
     def test_get_columns_uses_info_schema(self):
         from sqlit.domains.connections.providers.databricks.adapter import DatabricksAdapter
 

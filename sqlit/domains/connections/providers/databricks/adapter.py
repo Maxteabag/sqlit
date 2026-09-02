@@ -24,6 +24,14 @@ if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
 
 
+# Unity Catalog `information_schema.tables.table_type` values that are views
+# rather than tables. Everything else -- MANAGED, EXTERNAL, FOREIGN,
+# STREAMING_TABLE, MANAGED_SHALLOW_CLONE, EXTERNAL_SHALLOW_CLONE and any type
+# added later -- is listed as a table.
+_VIEW_TABLE_TYPES = ("VIEW", "MATERIALIZED_VIEW")
+_VIEW_TABLE_TYPES_SQL = ", ".join(f"'{t}'" for t in _VIEW_TABLE_TYPES)
+
+
 class DatabricksAdapter(CursorBasedAdapter):
     """Adapter for Databricks SQL warehouses and clusters."""
 
@@ -156,7 +164,7 @@ class DatabricksAdapter(CursorBasedAdapter):
             cursor.execute(
                 "SELECT table_schema, table_name FROM "
                 f"{self.quote_identifier(database)}.information_schema.tables "
-                "WHERE table_type IN ('MANAGED', 'EXTERNAL', 'BASE TABLE') "
+                f"WHERE table_type NOT IN ({_VIEW_TABLE_TYPES_SQL}) "
                 "ORDER BY table_schema, table_name"
             )
             return [(row[0], row[1]) for row in cursor.fetchall()]
@@ -169,7 +177,8 @@ class DatabricksAdapter(CursorBasedAdapter):
         if database:
             cursor.execute(
                 "SELECT table_schema, table_name FROM "
-                f"{self.quote_identifier(database)}.information_schema.views "
+                f"{self.quote_identifier(database)}.information_schema.tables "
+                f"WHERE table_type IN ({_VIEW_TABLE_TYPES_SQL}) "
                 "ORDER BY table_schema, table_name"
             )
             return [(row[0], row[1]) for row in cursor.fetchall()]
