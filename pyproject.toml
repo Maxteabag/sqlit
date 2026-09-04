@@ -42,6 +42,7 @@ all = [
     "PyMySQL>=1.1.0",
     "oracledb>=2.0.0",
     "ibm_db>=3.2.0",
+    "pyodbc>=5.0.0",
     "hdbcli>=2.20.0",
     "teradatasql>=20.0.0",
     "trino>=0.329.0",
@@ -70,6 +71,7 @@ mysql = ["PyMySQL>=1.1.0"]
 mariadb = ["PyMySQL>=1.1.0"]
 oracle = ["oracledb>=2.0.0"]
 db2 = ["ibm_db>=3.2.0"]
+db2i = ["pyodbc>=5.0.0"]
 hana = ["hdbcli>=2.20.0"]
 teradata = ["teradatasql>=20.0.0"]
 trino = ["trino>=0.329.0"]
