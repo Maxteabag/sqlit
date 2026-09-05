@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+import weakref
 from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.adapters.base import (
@@ -87,11 +88,24 @@ def _first_actionable_line(text: str) -> str:
     return ""
 
 
+def _is_use_unsupported_error(exc: Exception) -> bool:
+    """True for Azure SQL Database's refusal to run a USE statement."""
+    return "USE statement is not supported" in str(exc)
+
+
 class SQLServerAdapter(DatabaseAdapter):
     """Adapter for Microsoft SQL Server using the mssql-python driver."""
 
     def __init__(self) -> None:
         self._supports_cross_database_queries_override: bool | None = None
+        # Azure SQL Database rejects USE, so metadata for a database other than
+        # the one the connection is bound to needs its own connection. The
+        # config a connection was opened with is kept so we can rebuild the
+        # connection string with DATABASE= swapped; the extra connections are
+        # keyed by (id(parent), lowercased database name).
+        self._configs: dict[int, Any] = {}
+        self._db_conns: dict[tuple[int, str], Any] = {}
+        self._conn_refs: dict[int, Any] = {}
 
     @property
     def name(self) -> str:
@@ -293,7 +307,41 @@ class SQLServerAdapter(DatabaseAdapter):
         conn = mssql_python.connect(conn_str, attrs_before=attrs_before)
         # Enable autocommit to allow DDL statements like CREATE DATABASE
         conn.autocommit = True
+        self._track(conn, config)
         return conn
+
+    def _track(self, conn: Any, config: ConnectionConfig) -> None:
+        """Remember the config a connection was opened with.
+
+        Entries are keyed by id(), so they have to go before the id can be
+        handed to a different object: a weakref callback drops them when the
+        connection is collected without an explicit disconnect(). Drivers whose
+        connection objects don't support weak references keep the entry until
+        disconnect() clears it.
+        """
+        key = id(conn)
+        try:
+            self._conn_refs[key] = weakref.ref(conn, lambda _ref, key=key: self._forget(key))
+        except TypeError:
+            pass
+        self._configs[key] = config
+
+    def _forget(self, parent_id: int) -> None:
+        """Drop the bookkeeping for a connection and its per-database siblings."""
+        for key in [k for k in self._db_conns if k[0] == parent_id]:
+            sibling = self._db_conns.pop(key)
+            self._forget(id(sibling))
+            try:
+                sibling.close()
+            except Exception:
+                pass
+        self._configs.pop(parent_id, None)
+        self._conn_refs.pop(parent_id, None)
+
+    def disconnect(self, conn: Any) -> None:
+        """Close the connection plus any per-database siblings opened for it."""
+        self._forget(id(conn))
+        super().disconnect(conn)
 
     def _preflight_azure_credentials(self, config: ConnectionConfig) -> str | None:
         """Acquire a SQL Entra token and return it for direct ODBC attach.
@@ -360,11 +408,61 @@ class SQLServerAdapter(DatabaseAdapter):
         return [row[0] for row in cursor.fetchall()]
 
     def _get_cursor_for_database(self, conn: Any, database: str | None) -> Any:
-        """Get a cursor for the specified database using USE statement."""
-        cursor = conn.cursor()
-        if database:
+        """Get a cursor scoped to `database`.
+
+        On a normal SQL Server instance that is a `USE`. Azure SQL Database
+        (EngineEdition 5/6) rejects USE outright — "USE statement is not
+        supported to switch between databases" — so there we open a second
+        connection bound to the target database and cache it per parent
+        connection. The first rejected USE also flips the cross-database
+        capability off, so later calls skip straight to the sibling path even
+        when detect_capabilities never ran (the process worker reads
+        capabilities before it connects).
+        """
+        if not database:
+            return conn.cursor()
+
+        if self._connection_database(conn) == database.lower():
+            return conn.cursor()
+
+        if self.supports_cross_database_queries:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(f"USE [{database}]")
+            except Exception as exc:
+                if not _is_use_unsupported_error(exc):
+                    raise
+                self._supports_cross_database_queries_override = False
+            else:
+                return cursor
+
+        target = self._connection_for_database(conn, database)
+        return target.cursor()
+
+    def _connection_database(self, conn: Any) -> str:
+        """Lowercased database the connection was opened against, or ''."""
+        config = self._configs.get(id(conn))
+        endpoint = config.tcp_endpoint if config is not None else None
+        return (endpoint.database or "").lower() if endpoint is not None else ""
+
+    def _connection_for_database(self, conn: Any, database: str) -> Any:
+        """Return a connection bound to `database`, opening one if needed."""
+        key = (id(conn), database.lower())
+        cached = self._db_conns.get(key)
+        if cached is not None:
+            return cached
+
+        config = self._configs.get(id(conn))
+        if config is None:
+            # Connection came from somewhere other than our connect() — nothing
+            # to rebuild a connection string from, so USE is the only option.
+            cursor = conn.cursor()
             cursor.execute(f"USE [{database}]")
-        return cursor
+            return conn
+
+        sibling = self.connect(self.apply_database_override(config, database))
+        self._db_conns[key] = sibling
+        return sibling
 
     def get_tables(self, conn: Any, database: str | None = None) -> list[TableInfo]:
         """Get list of tables with schema from SQL Server."""
