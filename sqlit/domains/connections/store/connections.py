@@ -79,19 +79,37 @@ class ConnectionStore(JSONFileStore):
             return []
         version, raw_connections, needs_migration = self._unpack_connections_payload(data)
         try:
+            from sqlit.domains.connections.domain.credential_aliases import credential_option, secret_option_names
             from sqlit.domains.connections.providers.config_service import normalize_connection_config
 
             configs = []
+            migrated_provider_secret = False
             for conn in raw_connections:
                 if not isinstance(conn, dict):
                     continue
                 config = ConnectionConfig.from_dict(conn)
                 config = normalize_connection_config(config)
+                legacy_secrets = any(
+                    source.get(key)
+                    for source in (conn, conn.get("options") or {}, conn.get("extra_options") or {})
+                    if isinstance(source, dict)
+                    for key in secret_option_names(config)
+                )
+                if legacy_secrets:
+                    # Move old plaintext token fields before rewriting any index.
+                    # Otherwise saving an unrelated connection could redact the
+                    # old token without ever storing it in the credential backend.
+                    endpoint = config.tcp_endpoint
+                    if credential_option(config) and endpoint and endpoint.password is not None:
+                        self.credentials_service.set_password(config.name, endpoint.password)
+                    migrated_provider_secret = True
                 if load_credentials:
                     # Retrieve passwords from credentials service
                     self._load_credentials(config)
                 configs.append(config)
-            if needs_migration:
+            if migrated_provider_secret:
+                self._write_index(configs)
+            elif needs_migration:
                 self._migrate_connections_payload(raw_connections, version)
             return configs
         except (TypeError, KeyError):
@@ -153,6 +171,9 @@ class ConnectionStore(JSONFileStore):
         Note: Empty string "" is a valid password (e.g., CockroachDB insecure mode).
               Only None means "delete/no password stored".
         """
+        from sqlit.domains.connections.domain.credential_aliases import normalize_credential_options
+
+        normalize_credential_options(config)
         errors: list[CredentialsStoreError] = []
 
         endpoint = config.tcp_endpoint
