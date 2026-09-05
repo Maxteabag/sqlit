@@ -117,3 +117,39 @@ def test_failed_legacy_migration_preserves_original_file(tmp_path):
     with pytest.raises(CredentialsStoreError):
         store.load_all()
     assert path.read_text() == original
+
+
+@pytest.mark.parametrize('save_all', [False, True])
+def test_auth_mode_change_without_a_new_secret_clears_old_credential(tmp_path, save_all):
+    provider = 'databricks' if 'databricks' in get_supported_db_types() else 'exasol'
+    selector = 'auth_type' if provider == 'databricks' else 'authenticator'
+    old_mode, new_mode, new_field = ('pat', 'oauth-m2m', 'client_secret') if provider == 'databricks' else ('access_token', 'refresh_token', 'refresh_token')
+    credentials = PlaintextCredentialsService()
+    store = ConnectionStore(credentials, file_path=tmp_path / 'connections.json')
+    store.save_one(config_for(provider, selector, old_mode, 'access_token'))
+    changed = store.load_all(load_credentials=False)[0]
+    changed.set_option(selector, new_mode)
+    if save_all:
+        store.save_all([changed])
+    else:
+        store.save_one(changed)
+    assert credentials.get_password(changed.name) is None
+    assert store.load_all()[0].get_option(new_field) is None
+
+
+def test_empty_token_field_means_no_new_credential():
+    config = ConnectionConfig(name='blank', db_type='databricks', options={'access_token': ''})
+    assert config.tcp_endpoint.password is None
+
+
+@pytest.mark.parametrize(('provider', 'selector', 'mode', 'field'), CASES)
+def test_driver_restart_cache_does_not_persist_provider_secrets(tmp_path, monkeypatch, provider, selector, mode, field):
+    from sqlit.domains.connections.ui import restart_cache
+
+    path = tmp_path / 'restart.json'
+    monkeypatch.setattr(restart_cache, 'get_restart_cache_path', lambda: path)
+    values = config_for(provider, selector, mode, field).to_form_values()
+    restart_cache.write_restart_cache({'version': 1, 'values': values})
+    assert 'SYNTHETIC_SECRET' not in path.read_text()
+    assert 'SYNTHETIC_URL_SECRET' not in path.read_text()
+    assert values[field] == 'SYNTHETIC_SECRET'

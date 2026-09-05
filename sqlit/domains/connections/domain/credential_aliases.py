@@ -48,7 +48,13 @@ def normalize_credential_options(config: ConnectionConfig) -> None:
         extra_value = config.extra_options.pop(name, None)
         value = config.options.pop(name, extra_value)
         if name == selected and value is not None and config.tcp_endpoint is not None:
-            config.tcp_endpoint.password = value
+            config.tcp_endpoint.password = value or None
+
+
+def credential_kind_changed(previous: ConnectionConfig | None, current: ConnectionConfig) -> bool:
+    if previous is None or not (secret_option_names(previous) or secret_option_names(current)):
+        return False
+    return (previous.db_type, credential_option(previous)) != (current.db_type, credential_option(current))
 
 
 def without_secret_options(config: ConnectionConfig, options: dict[str, Any]) -> dict[str, Any]:

@@ -273,10 +273,14 @@ class ConnectionStore(JSONFileStore):
             connections: List of ConnectionConfig objects to save.
         """
         from sqlit.domains.connections.app.persist_utils import build_persist_connections
+        from sqlit.domains.connections.domain.credential_aliases import credential_kind_changed
 
         errors: list[CredentialsStoreError] = []
+        existing = {config.name: config for config in self.load_all(load_credentials=False)}
         persist_connections = build_persist_connections(connections, self.credentials_service)
-        for config in persist_connections:
+        for source, config in zip(connections, persist_connections, strict=True):
+            if credential_kind_changed(existing.get(source.name), source) and source.tcp_endpoint and source.tcp_endpoint.password is None and config.tcp_endpoint is not None:
+                config.tcp_endpoint.password = None
             errors.extend(self._save_credentials(config))
 
         self._write_index(persist_connections)
@@ -302,10 +306,13 @@ class ConnectionStore(JSONFileStore):
             previous_name: The connection's prior name when renaming.
         """
         from sqlit.domains.connections.app.persist_utils import build_persist_connections
+        from sqlit.domains.connections.domain.credential_aliases import credential_kind_changed
 
         renamed = bool(previous_name and previous_name != connection.name)
 
         existing = self.load_all(load_credentials=False)
+        previous = next((config for config in existing if config.name == (previous_name or connection.name)), None)
+        credential_changed = credential_kind_changed(previous, connection)
         filtered = [
             c
             for c in existing
@@ -324,6 +331,7 @@ class ConnectionStore(JSONFileStore):
                     endpoint
                     and endpoint.password is None
                     and not endpoint.password_command
+                    and not credential_changed
                 ):
                     endpoint.password = self.credentials_service.get_password_for_migration(previous_name)  # type: ignore[arg-type]
                 if (
@@ -383,7 +391,7 @@ class ConnectionStore(JSONFileStore):
                     errors.append(exc)
         else:
             self._write_index(filtered)
-            target = build_persist_connections([connection], self.credentials_service)[0]
+            target = copy.deepcopy(connection) if credential_changed else build_persist_connections([connection], self.credentials_service)[0]
             errors.extend(self._save_credentials(target))
         if errors:
             raise CredentialsPersistError(errors)
