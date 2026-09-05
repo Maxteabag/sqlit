@@ -25,7 +25,7 @@
 ---
 
 ### Connect
-Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
+Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Databricks, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
 
 ![Database Providers](docs/demos/demo-providers.gif)
 
@@ -245,6 +245,15 @@ Edit the `keymap.json` file in your sqlit config dir. See [`config/keymap.templa
 
 ## FAQ
 
+### Databricks authentication
+
+The Databricks extra includes the SQL connector and the SDK required for service-principal OAuth.
+PATs and client secrets are kept in the OS credential store, including connections created with
+`connections add --url-stdin`. A PAT URL has this shape:
+`databricks://token:TOKEN@HOST/CATALOG?http_path=/sql/1.0/warehouses/WAREHOUSE_ID`.
+Use stdin to keep the URL out of shell history and process arguments. Browser OAuth does not ask
+for a database password. Unity Catalog and the legacy Hive metastore use their respective metadata APIs.
+
 ### How are sensitive credentials stored?
 
 Connection details are stored in `connections.json` inside the config directory, but passwords are stored in your OS keyring when available (macOS Keychain, Windows Credential Locker, Linux Secret Service).
@@ -287,6 +296,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Turso                               | `libsql`                     | `pipx inject sqlit-tui libsql`                     | `python -m pip install libsql`                     |
 | Cloudflare D1                       | `requests`                   | `pipx inject sqlit-tui requests`                   | `python -m pip install requests`                   |
 | Snowflake                           | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` |
+| Databricks                          | `databricks-sql-connector`   | `pipx inject sqlit-tui databricks-sql-connector databricks-sdk`   | `python -m pip install databricks-sql-connector databricks-sdk`   |
 | Firebird                            | `firebirdsql`                | `pipx inject sqlit-tui firebirdsql`                | `python -m pip install firebirdsql`                |
 | Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   |
 | BigQuery                            | `google-cloud-bigquery`      | `pipx inject sqlit-tui google-cloud-bigquery`      | `python -m pip install google-cloud-bigquery`      |

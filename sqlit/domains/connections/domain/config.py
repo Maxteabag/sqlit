@@ -14,6 +14,7 @@ class DatabaseType(str, Enum):
     CLICKHOUSE = "clickhouse"
     COCKROACHDB = "cockroachdb"
     D1 = "d1"
+    DATABRICKS = "databricks"
     DUCKDB = "duckdb"
     DB2 = "db2"
     FIREBIRD = "firebird"
@@ -53,6 +54,7 @@ DATABASE_TYPE_DISPLAY_ORDER: list[DatabaseType] = [
     DatabaseType.HANA,
     DatabaseType.TERADATA,
     DatabaseType.SNOWFLAKE,
+    DatabaseType.DATABRICKS,
     DatabaseType.BIGQUERY,
     DatabaseType.SPANNER,
     DatabaseType.TRINO,
@@ -143,6 +145,11 @@ class ConnectionConfig:
     folder_path: str = ""
     extra_options: dict[str, str] = field(default_factory=dict)
     options: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        from sqlit.domains.connections.domain.credential_aliases import normalize_credential_options
+
+        normalize_credential_options(self)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ConnectionConfig:
@@ -262,10 +269,21 @@ class ConnectionConfig:
         )
 
     def get_option(self, name: str, default: Any | None = None) -> Any:
+        from sqlit.domains.connections.domain.credential_aliases import credential_option
+
+        if name == credential_option(self) and self.tcp_endpoint is not None:
+            fallback = self.tcp_endpoint.password
+            return self.options.get(name, fallback if fallback is not None else default)
         return self.options.get(name, default)
 
     def set_option(self, name: str, value: Any) -> None:
+        from sqlit.domains.connections.domain.credential_aliases import credential_option, normalize_credential_options
+
+        previous_credential = credential_option(self)
         self.options[name] = value
+        if previous_credential != credential_option(self) and self.tcp_endpoint is not None:
+            self.tcp_endpoint.password = None
+        normalize_credential_options(self)
 
     def get_field_value(self, name: str, default: Any = "") -> Any:
         values = self.to_form_values()
@@ -317,17 +335,24 @@ class ConnectionConfig:
             values["ssh_enabled"] = "disabled"
 
         values.update(self.options)
+        from sqlit.domains.connections.domain.credential_aliases import credential_option
+
+        alias = credential_option(self)
+        if alias:
+            values[alias] = self.get_option(alias)
         return values
 
     def to_dict(self, *, include_passwords: bool = True) -> dict[str, Any]:
+        from sqlit.domains.connections.domain.credential_aliases import public_connection_url, without_secret_options
+
         data: dict[str, Any] = {
             "name": self.name,
             "db_type": self.db_type,
             "source": self.source,
-            "connection_url": self.connection_url,
+            "connection_url": self.connection_url if include_passwords else public_connection_url(self),
             "folder_path": self.folder_path,
-            "extra_options": dict(self.extra_options),
-            "options": dict(self.options),
+            "extra_options": dict(self.extra_options) if include_passwords else without_secret_options(self, self.extra_options),
+            "options": dict(self.options) if include_passwords else without_secret_options(self, self.options),
         }
 
         if isinstance(self.endpoint, FileEndpoint):

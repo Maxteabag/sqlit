@@ -262,3 +262,21 @@ sqlit should provide fun and a feeling of mastery and satisfaction for those who
 **Example:**
 <e> = explorer pane, <q> = query pane, <r> = results pane.
 Rationale: E;Q;R satisfies both intuitiveness (each binding is the first letter of the pane), harmony (proximity: qwerty speaks for itself)
+
+### Cloud credential regression test
+
+`tests/integration/test_cloud_provider_credentials.py` is an opt-in test against an owned cloud
+database. It requires a working OS keyring and creates a temporary schema and connection, then
+removes them. It verifies CLI creation via stdin, separate-process queries, credential redaction,
+metadata, row limits and rename. Load the test token from your secret manager into the process
+environment; do not commit it or pass it as a command-line argument.
+
+Set `SQLIT_LIVE_PROVIDER=databricks`, `SQLIT_LIVE_HOST`, `SQLIT_LIVE_HTTP_PATH`,
+`SQLIT_LIVE_TOKEN`, and optionally `SQLIT_LIVE_CATALOG` (default `workspace`), then run:
+
+```bash
+uv run --no-sync pytest tests/integration/test_cloud_provider_credentials.py -v --timeout=240
+```
+
+The ordinary CI lane runs without cloud credentials. A configured live run fails on missing
+configuration or an unavailable keyring; it does not silently skip those checks.
