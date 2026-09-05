@@ -40,3 +40,5 @@ class InputContext:
     # True when the column under the cursor is referenced by some other table's FK
     # (i.e. pressing the navigate-referrers key would open the picker).
     cursor_column_is_foreign_key_target: bool = False
+    # True when the active results table is showing the transposed (columns-as-rows) view.
+    results_transposed: bool = False
