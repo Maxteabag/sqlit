@@ -65,6 +65,7 @@ class ActionKeyDef:
     primary: bool = True  # Primary key for display vs secondary aliases
     show: bool = False  # Whether to show in Textual's binding hints
     priority: bool = False  # Whether to give priority to this binding
+    leader_command: bool = False  # Explicit direct binding for a main leader command
 
 
 class KeymapProvider(ABC):

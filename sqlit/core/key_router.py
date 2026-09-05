@@ -31,7 +31,12 @@ def resolve_action(
 
     contexts = get_binding_contexts(ctx)
     keymap = get_keymap()
-    for action_key in keymap.get_action_keys():
+    bindings = keymap.get_action_keys()
+    if ctx.autocomplete_visible:
+        # Autocomplete overlays query-insert mode. Preserve that precedence
+        # even when user overrides are appended in a different JSON order.
+        bindings = sorted(bindings, key=lambda binding: binding.context != "autocomplete")
+    for action_key in bindings:
         if action_key.key != key:
             continue
         if action_key.context is not None and action_key.context not in contexts:

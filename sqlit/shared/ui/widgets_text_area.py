@@ -152,9 +152,36 @@ class QueryTextArea(TextArea):
                 binding.key == key
                 and binding.context == "query_insert"
                 and binding.action not in clipboard_actions
+                and not binding.leader_command
                 and self.app.check_action(binding.action, ()) is not False
             ):
                 return await self.app.run_action(binding.action)
+        return False
+
+    async def _dispatch_direct_leader_action(self, key: str) -> bool:
+        """Honor scoped command bindings before editor shortcuts consume them."""
+        from sqlit.core.binding_contexts import get_binding_contexts
+        from sqlit.core.key_router import resolve_action
+        from sqlit.core.keymap import get_keymap
+
+        get_context = getattr(self.app, "_get_input_context", None)
+        if get_context is None or getattr(self.app, "_command_mode", False):
+            return False
+        ctx = get_context()
+        if ctx.modal_open or ctx.leader_pending:
+            return False
+        contexts = get_binding_contexts(ctx)
+        if any(
+            binding.leader_command and binding.key == key and binding.context in contexts
+            for binding in get_keymap().get_action_keys()
+        ):
+            # Another active context (such as autocomplete) may own this key.
+            # Forward the router's winner, not necessarily the promoted command.
+            action = resolve_action(
+                key, ctx, is_allowed=lambda name: self.app.check_action(name, ()) is not False
+            )
+            if action:
+                return await self.app.run_action(action)
         return False
 
     async def _handle_autocomplete_enter(self) -> bool:
@@ -187,6 +214,11 @@ class QueryTextArea(TextArea):
     async def _on_key(self, event: Key) -> None:
         """Intercept clipboard, undo/redo, Enter, and Tab keys."""
         normalized_key = self._normalize_key(event.key)
+
+        if await self._dispatch_direct_leader_action(event.key):
+            event.prevent_default()
+            event.stop()
+            return
 
         # TextArea consumes editing keys before they reach the app-level key
         # router. Forward query-insert actions explicitly so shortcuts such as

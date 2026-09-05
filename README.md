@@ -243,6 +243,25 @@ Connections and settings are stored in `$XDG_CONFIG_HOME/sqlit/` (default: `~/.c
 
 Edit the `keymap.json` file in your sqlit config dir. See [`config/keymap.template.json`](config/keymap.template.json) for the full default keymap. Keymap.json need to only contain the overriding keymaps.
 
+Commands from the main leader menu can also be bound directly in an app scope:
+
+```json
+{
+  "keymap": {
+    "action_keys": {
+      "query_normal": { "edit_query_in_editor": "ctrl+g" }
+    }
+  }
+}
+```
+
+This keeps the leader shortcut and adds `ctrl+g` in the query editor's normal
+mode. Other examples include `format_query`, `telescope`, and `change_theme`.
+Direct bindings retain command guards and state restrictions. Conflicting keys
+are rejected; unbind or remap the existing action to free its key. Use a list for
+aliases, or `null` to remove a direct binding without changing the leader menu.
+Vim submenu motions and dialog scopes are not supported for this promotion.
+
 ## FAQ
 
 ### How are sensitive credentials stored?
