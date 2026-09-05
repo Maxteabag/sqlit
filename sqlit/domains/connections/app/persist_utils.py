@@ -21,6 +21,9 @@ def build_persist_connections(
     """
     persist_connections = copy.deepcopy(connections)
     for conn in persist_connections:
+        from sqlit.domains.connections.domain.credential_aliases import normalize_credential_options
+
+        normalize_credential_options(conn)
         endpoint = conn.tcp_endpoint
         if endpoint and endpoint.password is None and not endpoint.password_command:
             stored = credentials_service.get_password(conn.name)
