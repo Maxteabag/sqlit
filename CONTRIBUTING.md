@@ -278,19 +278,24 @@ Rationale: E;Q;R satisfies both intuitiveness (each binding is the first letter 
 
 ### Cloud credential regression test
 
-`tests/integration/test_cloud_provider_credentials.py` tests an owned cloud database through the
-real CLI and OS keyring. It creates a unique schema and connection, checks queries, metadata,
-row limits and rename, and removes its test data afterward. It never opts into plaintext
-credentials. Load the token from your secret manager into the process environment.
+`tests/integration/test_cloud_provider_credentials.py` is an opt-in test against an owned cloud
+database. It requires a working OS keyring and creates a temporary schema and connection, then
+removes them. It verifies CLI creation via stdin, separate-process queries, credential redaction,
+metadata, row limits and rename. Load the test token from your secret manager into the process
+environment; do not commit it or pass it as a command-line argument.
 
-Set `SQLIT_LIVE_PROVIDER=exasol`, `SQLIT_LIVE_HOST`, `SQLIT_LIVE_USERNAME`, and
-`SQLIT_LIVE_TOKEN` (the SaaS PAT), with optional `SQLIT_LIVE_PORT` (default 8563), then run:
+Set `SQLIT_LIVE_HOST` and `SQLIT_LIVE_TOKEN`, plus the provider-specific settings:
+
+- Databricks: `SQLIT_LIVE_PROVIDER=databricks`, `SQLIT_LIVE_HTTP_PATH`, and optionally
+  `SQLIT_LIVE_CATALOG` (default `workspace`).
+- Exasol: `SQLIT_LIVE_PROVIDER=exasol`, `SQLIT_LIVE_USERNAME`, and optionally
+  `SQLIT_LIVE_PORT` (default 8563). Use the SaaS PAT as the token.
 
 ```bash
 uv run --no-sync pytest tests/integration/test_cloud_provider_credentials.py -v --timeout=240
 ```
 
-The ordinary CI lane has no cloud credentials. Configured live runs fail on missing settings or
-a missing OS keyring. The dedicated Docker lane sets `EXASOL_REQUIRE_LIVE=1`; schema setup errors
-fail the suite, rather than becoming skipped tests. The Docker TLS regression uses `openssl` to
-retrieve the test server's public certificate chain.
+The ordinary CI lane runs without cloud credentials. Configured live runs fail on missing
+settings or an unavailable OS keyring. The dedicated Exasol Docker lane sets
+`EXASOL_REQUIRE_LIVE=1`; schema setup errors fail the suite instead of becoming skipped tests.
+The Docker TLS regression uses `openssl` to retrieve the test server's public certificate chain.

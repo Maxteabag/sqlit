@@ -18,6 +18,9 @@ def uses_db_password(config: ConnectionConfig) -> bool:
     if auth_type in ("ad_default", "ad_integrated", "windows"):
         return False
 
+    if config.db_type == "databricks" and auth_type == "oauth-u2m":
+        return False
+
     if config.db_type == "postgresql":
         from sqlit.domains.connections.providers.postgresql.auth import (
             POSTGRES_AUTH_AZURE_ENTRA_CLI,
