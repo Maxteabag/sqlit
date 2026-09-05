@@ -3641,6 +3641,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pyexasol"
+version = "2.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "packaging" },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/46/5a/362f7b99b7ac888e03eae6454013f7c5b0640c07433bcef390d30d204d8d/pyexasol-2.3.2.tar.gz", hash = "sha256:7a60517432122d60a217909f3bfdfeba171f79146cc55e8f5a24f4a744d9ccba", size = 64409, upload-time = "2026-08-25T09:26:26.018Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/74/fa606a85e80255a6ee1269bca4e952b2eff8bdd883b8933f6c14f94e2821/pyexasol-2.3.2-py3-none-any.whl", hash = "sha256:7e0277577bcaf211bbe3b8676faf815af5c6ef337d2d6358b0a07bfd3ed74e0d", size = 76296, upload-time = "2026-08-25T09:26:27.001Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -4087,8 +4101,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "(python_full_version < '3.11' and sys_platform == 'emscripten') or (python_full_version < '3.11' and sys_platform == 'win32') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
+    { name = "jeepney", marker = "(python_full_version < '3.11' and sys_platform == 'emscripten') or (python_full_version < '3.11' and sys_platform == 'win32') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -4220,6 +4234,7 @@ all = [
     { name = "presto-python-client" },
     { name = "psycopg2-binary" },
     { name = "pyathena" },
+    { name = "pyexasol" },
     { name = "pymysql" },
     { name = "redshift-connector" },
     { name = "requests" },
@@ -4253,6 +4268,9 @@ db2 = [
 ]
 duckdb = [
     { name = "duckdb" },
+]
+exasol = [
+    { name = "pyexasol" },
 ]
 firebird = [
     { name = "firebirdsql" },
@@ -4384,6 +4402,8 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9.0" },
     { name = "pyathena", marker = "extra == 'all'", specifier = ">=3.22.0" },
     { name = "pyathena", marker = "extra == 'athena'", specifier = ">=3.22.0" },
+    { name = "pyexasol", marker = "extra == 'all'", specifier = ">=2.0.0" },
+    { name = "pyexasol", marker = "extra == 'exasol'", specifier = ">=2.0.0" },
     { name = "pymysql", marker = "extra == 'all'", specifier = ">=1.1.0" },
     { name = "pymysql", marker = "extra == 'mariadb'", specifier = ">=1.1.0" },
     { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1.0" },
@@ -4408,7 +4428,7 @@ requires-dist = [
     { name = "trino", extras = ["gssapi"], marker = "extra == 'trino-gssapi'", specifier = ">=0.329.0" },
     { name = "trino", extras = ["kerberos"], marker = "extra == 'trino-kerberos'", specifier = ">=0.329.0" },
 ]
-provides-extras = ["all", "athena", "bigquery", "clickhouse", "cockroachdb", "d1", "databricks", "db2", "duckdb", "firebird", "flight", "hana", "impala", "mariadb", "mssql", "mysql", "oracle", "osquery", "postgres", "presto", "redshift", "snowflake", "spanner", "ssh", "surrealdb", "teradata", "trino", "trino-gssapi", "trino-kerberos", "turso"]
+provides-extras = ["all", "athena", "bigquery", "clickhouse", "cockroachdb", "d1", "databricks", "db2", "duckdb", "exasol", "firebird", "flight", "hana", "impala", "mariadb", "mssql", "mysql", "oracle", "osquery", "postgres", "presto", "redshift", "snowflake", "spanner", "ssh", "surrealdb", "teradata", "trino", "trino-gssapi", "trino-kerberos", "turso"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -5043,6 +5063,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/20/28/e6f1a6f655d620846bd9df527390ecc26b3805a0c5989048c210e22c5ca9/virtualenv-20.35.4.tar.gz", hash = "sha256:643d3914d73d3eeb0c552cbb12d7e82adf0e504dbf86a3182f8771a153a1971c", size = 6028799, upload-time = "2025-10-29T06:57:40.511Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/79/0c/c05523fa3181fdf0c9c52a6ba91a23fbf3246cc095f26f6516f9c60e6771/virtualenv-20.35.4-py3-none-any.whl", hash = "sha256:c21c9cede36c9753eeade68ba7d523529f228a403463376cf821eaae2b650f1b", size = 6005095, upload-time = "2025-10-29T06:57:37.598Z" },
+]
+
+[[package]]
+name = "websocket-client"
+version = "1.9.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/cb/a5abcc2891249f393827c650c6296660ce40374ac22d99ab9aea41f9d2a2/websocket_client-1.9.2.tar.gz", hash = "sha256:0fcb57545848be86992e128218fd96dd87a6769ffdb1a968dff79632b85604d0", size = 84110, upload-time = "2026-08-31T14:08:40.964Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/d2/cc4dc1271e464942db7ee278baae2daa99ee77cb2af744025c04da585a3e/websocket_client-1.9.2-py3-none-any.whl", hash = "sha256:e1a673830a9c7bfa47b1cd3d5e4178f4c9651d80a4eab02c9c23a1c3ec6250ce", size = 95786, upload-time = "2026-08-31T14:08:39.899Z" },
 ]
 
 [[package]]

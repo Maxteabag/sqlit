@@ -44,6 +44,7 @@ all = [
     "ibm_db>=3.2.0",
     "hdbcli>=2.20.0",
     "teradatasql>=20.0.0",
+    "pyexasol>=2.0.0",
     "trino>=0.329.0",
     "presto-python-client>=0.8.4",
     "google-cloud-bigquery",
@@ -74,6 +75,7 @@ oracle = ["oracledb>=2.0.0"]
 db2 = ["ibm_db>=3.2.0"]
 hana = ["hdbcli>=2.20.0"]
 teradata = ["teradatasql>=20.0.0"]
+exasol = ["pyexasol>=2.0.0"]
 trino = ["trino>=0.329.0"]
 trino-kerberos = ["trino[kerberos]>=0.329.0"]
 trino-gssapi = ["trino[gssapi]>=0.329.0"]
@@ -201,6 +203,7 @@ markers = [
     "clickhouse: ClickHouse database tests",
     "flight: Apache Arrow Flight SQL database tests",
     "spanner: Google Cloud Spanner database tests",
+    "exasol: Exasol database tests",
     "asyncio: async tests",
     "integration: integration tests (may require external services)",
 ]
@@ -243,6 +246,7 @@ module = [
     "hdbcli",
     "hdbcli.dbapi",
     "teradatasql",
+    "pyexasol",
     "trino",
     "trino.dbapi",
     "trino.auth",

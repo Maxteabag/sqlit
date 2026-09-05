@@ -25,7 +25,7 @@
 ---
 
 ### Connect
-Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Databricks, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
+Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Databricks, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Exasol, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
 
 ![Database Providers](docs/demos/demo-providers.gif)
 
@@ -254,6 +254,15 @@ PATs and client secrets are kept in the OS credential store, including connectio
 Use stdin to keep the URL out of shell history and process arguments. Browser OAuth does not ask
 for a database password. Unity Catalog and the legacy Hive metastore use their respective metadata APIs.
 
+### Exasol authentication and TLS
+
+For Exasol SaaS, select username/password authentication and use the database username from
+connection details with your personal access token as the password. OpenID access/refresh token
+modes are for those credential types, not SaaS PATs. The selected secret uses the OS credential
+store. Default TLS follows pyexasol's certificate verification; use `--tls-mode require` only
+when deliberately connecting to a self-signed development server. `verify-ca` validates the CA,
+while `verify-full` also checks the hostname.
+
 ### How are sensitive credentials stored?
 
 Connection details are stored in `connections.json` inside the config directory, but passwords are stored in your OS keyring when available (macOS Keychain, Windows Credential Locker, Linux Secret Service).
@@ -301,6 +310,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   |
 | BigQuery                            | `google-cloud-bigquery`      | `pipx inject sqlit-tui google-cloud-bigquery`      | `python -m pip install google-cloud-bigquery`      |
 | Spanner                             | `google-cloud-spanner`       | `pipx inject sqlit-tui google-cloud-spanner`       | `python -m pip install google-cloud-spanner`       |
+| Exasol                              | `pyexasol`                   | `pipx inject sqlit-tui pyexasol`                   | `python -m pip install pyexasol`                   |
 | Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      |
 | Apache Impala                       | `impyla`                     | `pipx inject sqlit-tui impyla`                     | `python -m pip install impyla`                     |
 | Trino                               | `trino`                      | `pipx inject sqlit-tui trino`                      | `python -m pip install trino`                      |

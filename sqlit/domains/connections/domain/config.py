@@ -17,6 +17,7 @@ class DatabaseType(str, Enum):
     DATABRICKS = "databricks"
     DUCKDB = "duckdb"
     DB2 = "db2"
+    EXASOL = "exasol"
     FIREBIRD = "firebird"
     FLIGHT = "flight"
     HANA = "hana"
@@ -53,6 +54,7 @@ DATABASE_TYPE_DISPLAY_ORDER: list[DatabaseType] = [
     DatabaseType.DB2,
     DatabaseType.HANA,
     DatabaseType.TERADATA,
+    DatabaseType.EXASOL,
     DatabaseType.SNOWFLAKE,
     DatabaseType.DATABRICKS,
     DatabaseType.BIGQUERY,
