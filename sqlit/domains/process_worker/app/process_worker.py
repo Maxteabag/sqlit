@@ -2,13 +2,37 @@
 
 from __future__ import annotations
 
-import pickle
+import faulthandler
+import os
+import sys
+import tempfile
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from multiprocessing.connection import Connection
+from pathlib import Path
 from typing import Any
+
+
+def _open_worker_log() -> Any | None:
+    """Open the worker log file, honoring SQLIT_WORKER_LOG when set.
+
+    The parent process may attach this worker to a Textual-managed pipe;
+    libpq notice writes or unexpected stderr output would then SIGPIPE the
+    child. Redirecting both streams to a real file avoids that and gives a
+    place to land C-level fault tracebacks for future diagnosis.
+    """
+    override = os.environ.get("SQLIT_WORKER_LOG")
+    if override:
+        path = Path(override).expanduser()
+    else:
+        path = Path(tempfile.gettempdir()) / "sqlit-worker.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path.open("a", buffering=1)
+    except OSError:
+        return None
 
 from sqlit.domains.connections.domain.config import ConnectionConfig
 from sqlit.domains.connections.providers.catalog import get_provider
@@ -55,9 +79,12 @@ class _WorkerState:
             try:
                 self.conn.send(payload)
                 return
-            except (TypeError, AttributeError, pickle.PickleError) as exc:
-                # Result isn't picklable. Replace with an error so the
-                # client surfaces it instead of hanging on recv().
+            except Exception as exc:
+                # Result couldn't be serialized: not picklable, or a driver
+                # error raised while pickling — e.g. oracledb LOB locators
+                # read from an already-closed connection (DPY-1001). Replace
+                # with an error so the client surfaces it instead of hanging
+                # on recv().
                 fallback = {
                     "type": "error",
                     "id": payload.get("id"),
@@ -70,9 +97,6 @@ class _WorkerState:
                     self.conn.send(fallback)
                 except Exception:
                     pass
-            except Exception:
-                # Pipe closed or similar; nothing we can do.
-                pass
 
     def _ensure_tunnel(self, config: ConnectionConfig) -> Any | None:
         key = _tunnel_key(config)
@@ -115,7 +139,14 @@ class _WorkerState:
             )
             return
 
-        if len(split_statements(query)) > 1:
+        from sqlit.domains.query.editing.comments import is_comment_only_statement
+
+        executable_statements = [
+            statement
+            for statement in split_statements(query)
+            if not is_comment_only_statement(statement)
+        ]
+        if len(executable_statements) > 1:
             self.send(
                 {
                     "type": "error",
@@ -493,6 +524,14 @@ class _WorkerState:
 
 def run_process_worker(conn: Connection) -> None:
     """Process entrypoint for query execution."""
+    log_file = _open_worker_log()
+    if log_file is not None:
+        sys.stdout = log_file
+        sys.stderr = log_file
+        try:
+            faulthandler.enable(file=log_file)
+        except (RuntimeError, ValueError):
+            pass
     state = _WorkerState(conn=conn)
     try:
         while True:

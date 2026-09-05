@@ -100,9 +100,16 @@ class SSMSTUI(
         runtime: RuntimeConfig | None = None,
         startup_connection: ConnectionConfig | None = None,
         exclusive_connection: bool = False,
+        process_worker_client: Any | None = None,
     ):
         super().__init__()
         self.services = services or build_app_services(runtime or RuntimeConfig.from_env())
+        # A pre-spawned worker handed in from cli.py, before Textual's
+        # FD set was contaminated. ProcessWorkerLifecycleMixin already
+        # checks self._process_worker_client first, so seeding it here
+        # short-circuits the lazy spawn path.
+        if process_worker_client is not None:
+            self._process_worker_client = process_worker_client
         from sqlit.core.connection_manager import ConnectionManager
 
         self._connection_manager = ConnectionManager(self.services)
@@ -288,6 +295,39 @@ class SSMSTUI(
             except Exception:
                 pass
 
+        # Surface FK availability on the result column under the cursor so
+        # the footer hints only appear when pressing them would actually do
+        # something. `results_table` is a query_one property that raises
+        # before the widget is mounted, so guard it.
+        active_table_info: dict[str, Any] | None = None
+        cursor_column_name: str | None = None
+        try:
+            rt, columns, _rows, stacked = self._get_active_results_context()
+            active_table_info = self._get_active_results_table_info(rt, stacked) if rt else None
+            if rt and rt.row_count > 0:
+                col_index = rt.cursor_coordinate.column
+                if 0 <= col_index < len(columns):
+                    cursor_column_name = columns[col_index]
+        except Exception:
+            active_table_info = None
+            cursor_column_name = None
+        if active_table_info is None:
+            active_table_info = getattr(self, "_last_query_table", None)
+
+        cursor_column_is_foreign_key = False
+        cursor_column_is_foreign_key_target = False
+        if active_table_info and cursor_column_name:
+            normalize = getattr(self, "_normalize_column_name", lambda s: s.strip().lower())
+            target = normalize(cursor_column_name)
+            for fk in active_table_info.get("foreign_keys") or ():
+                if normalize(fk.column) == target:
+                    cursor_column_is_foreign_key = True
+                    break
+            for fk in active_table_info.get("referencing_foreign_keys") or ():
+                if normalize(fk.referenced_column) == target:
+                    cursor_column_is_foreign_key_target = True
+                    break
+
         return InputContext(
             focus=self._get_focus_pane(),
             vim_mode=self.vim_mode,
@@ -312,6 +352,8 @@ class SSMSTUI(
             has_results=has_results,
             stacked_result_count=stacked_result_count,
             count_buffer=self._count_buffer,
+            cursor_column_is_foreign_key=cursor_column_is_foreign_key,
+            cursor_column_is_foreign_key_target=cursor_column_is_foreign_key_target,
         )
 
     def _debug_screen_label(self, screen: Any | None) -> str:
@@ -656,6 +698,10 @@ class SSMSTUI(
                 self.exit()
             return
 
+        if cmd in {"s", "suspend"}:
+            self.action_suspend_process()
+            return
+
         command_actions = {
             "help": "show_help",
             "h": "show_help",
@@ -757,6 +803,7 @@ class SSMSTUI(
             ("General", ":version, :ver", "Show version and git hash", ""),
             ("General", ":help, :h", "Show keyboard shortcuts", ""),
             ("General", ":q, :quit, :exit", "Quit sqlit", ""),
+            ("General", ":s, :suspend", "Suspend sqlit; resume with fg", "Unix only"),
             ("Connection", ":connect, :c", "Open connection picker", ""),
             ("Connection", ":disconnect, :dc", "Disconnect from current server", ""),
             (

@@ -239,8 +239,6 @@ Autocomplete triggers automatically in INSERT mode. Use `Tab` to accept.
 
 Connections and settings are stored in `$XDG_CONFIG_HOME/sqlit/` (default: `~/.config/sqlit/`). Override the location by setting `SQLIT_CONFIG_DIR`.
 
-If an older install left files in `~/.sqlit/`, they are moved to the new location automatically on first run.
-
 ### Custom keybindings
 
 Edit the `keymap.json` file in your sqlit config dir. See [`config/keymap.template.json`](config/keymap.template.json) for the full default keymap. Keymap.json need to only contain the overriding keymaps.
@@ -296,6 +294,7 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Spanner                             | `google-cloud-spanner`       | `pipx inject sqlit-tui google-cloud-spanner`       | `python -m pip install google-cloud-spanner`       |
 | Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      |
 | Apache Impala                       | `impyla`                     | `pipx inject sqlit-tui impyla`                     | `python -m pip install impyla`                     |
+| Trino                               | `trino`                      | `pipx inject sqlit-tui trino`                      | `python -m pip install trino`                      |
 | SurrealDB                           | `surrealdb`                  | `pipx inject sqlit-tui surrealdb`                  | `python -m pip install surrealdb`                  |
 | osquery                             | `osquery`                    | `pipx inject sqlit-tui osquery`                    | `python -m pip install osquery`                    |
 
@@ -320,7 +319,7 @@ If you try to create an SSH connection without these dependencies, sqlit will de
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Maxteabag/sqlit&type=Date)](https://star-history.com/#Maxteabag/sqlit&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=Maxteabag/sqlit&type=Date)](https://star-history.dera.page/#Maxteabag/sqlit&Date)
 
 ---
 

@@ -27,6 +27,7 @@ def select_all_range(text: str) -> tuple[int, int, int, int]:
 
 def paste_text(text: str, row: int, col: int, clipboard: str) -> PasteResult:
     """Paste clipboard content at cursor position."""
+    clipboard = clipboard.replace("\r\n", "\n").replace("\r", "\n")
     lines = text.split("\n")
     if not lines:
         lines = [""]

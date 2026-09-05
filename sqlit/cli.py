@@ -177,6 +177,32 @@ def _sane_tty() -> None:
         pass
 
 
+def _prewarm_process_worker(runtime: RuntimeConfig) -> Any | None:
+    """Spawn the process worker before the Textual App is constructed.
+
+    `multiprocessing.spawn` collects the parent's open file descriptors at
+    spawn time. Textual's `App.__init__` registers signal-handler pipes
+    and other non-inheritable FDs, which cause spawn to abort with
+    `ValueError: bad value(s) in fds_to_keep` (see issue #189). Spawning
+    here — before the App is constructed — is the latest point at which
+    the FD set is still clean.
+
+    Returns the live client, or None if spawn fails or the worker is
+    disabled. On failure we fall through to the lazy path inside the UI;
+    on macOS that path raises and the in-process executor takes over.
+    """
+    if not runtime.process_worker:
+        return None
+    if runtime.mock.enabled:
+        return None
+    try:
+        from sqlit.domains.process_worker.app.process_worker_client import ProcessWorkerClient
+
+        return ProcessWorkerClient()
+    except Exception:
+        return None
+
+
 def _run_app(app: Any) -> int:
     exit_code: int | None = None
     handled_signals = [signal.SIGINT, signal.SIGTERM]
@@ -239,6 +265,69 @@ def _parse_float_value(value: str | None, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _add_stdin_secret_flags(parser: argparse.ArgumentParser, *, include_ssh: bool) -> None:
+    """Attach --password-stdin (and optionally --ssh-password-stdin) to a parser."""
+    parser.add_argument(
+        "--password-stdin",
+        dest="password_stdin",
+        action="store_true",
+        help="Read the password from stdin (one line, trailing newline stripped)",
+    )
+    if include_ssh:
+        parser.add_argument(
+            "--ssh-password-stdin",
+            dest="ssh_password_stdin",
+            action="store_true",
+            help="Read the SSH password from stdin (one line, trailing newline stripped)",
+        )
+
+
+def _resolve_stdin_secrets(args: argparse.Namespace) -> None:
+    """Populate args.password / args.url / args.ssh_password from stdin if requested.
+
+    Recognised stdin-trigger attrs: ``password_stdin``, ``url_stdin``,
+    ``ssh_password_stdin``. At most one may be set per invocation — stdin
+    is a single stream and we read one line from it. The corresponding
+    cleartext flag must not also be set.
+    """
+    from sqlit.domains.connections.domain.stdin_secret import (
+        StdinSecretError,
+        read_secret_from_stdin,
+    )
+
+    requests: list[tuple[str, str]] = []
+    if getattr(args, "password_stdin", False):
+        requests.append(("password", "password"))
+    if getattr(args, "url_stdin", False):
+        requests.append(("url", "url"))
+    if getattr(args, "ssh_password_stdin", False):
+        requests.append(("ssh_password", "ssh-password"))
+
+    if not requests:
+        return
+
+    if len(requests) > 1:
+        flags = ", ".join(f"--{label}-stdin" for _, label in requests)
+        raise SystemExit(
+            f"Error: only one of {flags} may be used per invocation "
+            f"(stdin can only feed one secret)."
+        )
+
+    attr, label = requests[0]
+    existing = getattr(args, attr, None)
+    if existing:
+        raise SystemExit(
+            f"Error: --{label} and --{label}-stdin are mutually exclusive."
+        )
+
+    try:
+        value = read_secret_from_stdin(label=label)
+    except StdinSecretError as exc:
+        raise SystemExit(f"Error: {exc}")
+
+    setattr(args, attr, value)
 
 
 def _resolve_startup_log_path(argv: list[str]) -> Path | None:
@@ -401,6 +490,7 @@ def main() -> int:
         connection_url, filtered_argv = _extract_connection_url(filtered_argv)
 
     log_startup_step("cli_parser_start")
+    from sqlit import __version__
     parser = argparse.ArgumentParser(
         prog="sqlit",
         description="A terminal UI for SQL databases",
@@ -412,6 +502,12 @@ def main() -> int:
             "<project>/.sqlit/ instead of the global config."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
 
     parser.add_argument(
@@ -430,7 +526,16 @@ def main() -> int:
     parser.add_argument("--port", help="Temporary connection port")
     parser.add_argument("--database", help="Temporary connection database name")
     parser.add_argument("--username", help="Temporary connection username")
-    parser.add_argument("--password", help="Temporary connection password")
+    parser.add_argument(
+        "--password",
+        help="Temporary connection password (or use --password-stdin to read from stdin)",
+    )
+    parser.add_argument(
+        "--password-stdin",
+        dest="password_stdin",
+        action="store_true",
+        help="Read the password from stdin (one line, trailing newline stripped)",
+    )
     parser.add_argument("--file-path", help="Temporary connection file path (SQLite/DuckDB)")
     parser.add_argument(
         "--auth-type",
@@ -568,13 +673,22 @@ def main() -> int:
     add_parser.add_argument(
         "--url",
         metavar="URL",
-        help="Connection URL (e.g., postgresql://user:pass@host:5432/db). Requires --name.",
+        help=(
+            "Connection URL (e.g., postgresql://user:pass@host:5432/db). "
+            "Requires --name. Use --url-stdin to read it from stdin instead."
+        ),
+    )
+    add_parser.add_argument(
+        "--url-stdin",
+        dest="url_stdin",
+        action="store_true",
+        help="Read the connection URL from stdin (one line, trailing newline stripped)",
     )
     add_parser.add_argument(
         "--name",
         "-n",
         dest="url_name",
-        help="Connection name (required when using --url)",
+        help="Connection name (required when using --url / --url-stdin)",
     )
     add_provider_parsers = add_parser.add_subparsers(dest="provider", metavar="PROVIDER")
     for db_type in get_supported_db_types():
@@ -587,6 +701,7 @@ def main() -> int:
         add_schema_arguments(provider_parser, schema, include_name=True, name_required=True)
         provider_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
         provider_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
+        _add_stdin_secret_flags(provider_parser, include_ssh=True)
         provider_parser.add_argument(
             "--alert",
             metavar="MODE",
@@ -601,16 +716,26 @@ def main() -> int:
     edit_parser.add_argument("--port", "-P", help="Port")
     edit_parser.add_argument("--database", "-d", help="Database name")
     edit_parser.add_argument("--username", "-u", help="Username")
-    edit_parser.add_argument("--password", "-p", help="Password")
+    edit_parser.add_argument(
+        "--password",
+        "-p",
+        help="Password (or use --password-stdin to read from stdin)",
+    )
     edit_parser.add_argument(
         "--auth-type",
         "-a",
         choices=[t.value for t in AuthType],
         help="Authentication type (SQL Server only)",
     )
+    edit_parser.add_argument(
+        "--postgres-auth-method",
+        choices=["password", "azure_entra_cli"],
+        help="PostgreSQL authentication method",
+    )
     edit_parser.add_argument("--file-path", help="Database file path (SQLite only)")
     edit_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
     edit_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
+    _add_stdin_secret_flags(edit_parser, include_ssh=True)
     edit_parser.add_argument(
         "--alert",
         metavar="MODE",
@@ -632,6 +757,7 @@ def main() -> int:
         add_schema_arguments(provider_parser, schema, include_name=True, name_required=False)
         provider_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
         provider_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
+        _add_stdin_secret_flags(provider_parser, include_ssh=True)
         provider_parser.add_argument(
             "--alert",
             metavar="MODE",
@@ -705,6 +831,7 @@ def main() -> int:
 
     with startup_span("cli_parse_args"):
         args = parser.parse_args(filtered_argv[1:])  # Skip program name
+    _resolve_stdin_secrets(args)
     log_startup_step("cli_parse_end")
 
     with startup_span("runtime_build"):
@@ -754,10 +881,14 @@ def main() -> int:
             print(f"Error: {exc}")
             return 1
 
+        # Spawn the worker before the Textual App is constructed; see
+        # _prewarm_process_worker for why this matters on macOS.
+        process_worker_client = _prewarm_process_worker(runtime)
         app = SSMSTUI(
             services=services,
             startup_connection=startup_config,
             exclusive_connection=exclusive_connection,
+            process_worker_client=process_worker_client,
         )
         exit_code = _run_app(app)
         if exit_code != 0:
@@ -818,7 +949,12 @@ def main() -> int:
             print(f"Error: {alert_error}")
             return 1
 
-        app = SSMSTUI(services=services, startup_connection=temp_config)
+        process_worker_client = _prewarm_process_worker(runtime)
+        app = SSMSTUI(
+            services=services,
+            startup_connection=temp_config,
+            process_worker_client=process_worker_client,
+        )
         return _run_app(app)
 
     if args.command in {"connections", "connection"}:

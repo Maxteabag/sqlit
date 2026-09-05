@@ -5,11 +5,31 @@ from __future__ import annotations
 from typing import Any
 
 from textual.containers import VerticalScroll
+from textual.message import Message
 from textual.widgets import Static
+
+
+class AutocompleteItem(Static):
+    """Clickable autocomplete row."""
+
+    class Selected(Message):
+        """Posted when a suggestion is clicked."""
+
+        def __init__(self, index: int) -> None:
+            super().__init__()
+            self.index = index
+
+    def __init__(self, text: str, index: int) -> None:
+        super().__init__(f" {text} ", classes="autocomplete-item")
+        self.index = index
+
+    def on_click(self) -> None:
+        self.post_message(self.Selected(self.index))
 
 
 class AutocompleteDropdown(VerticalScroll):
     """Dropdown widget for SQL autocomplete suggestions with scrollbar."""
+
     MIN_WIDTH = 25
     MAX_WIDTH = 80
     MAX_HEIGHT = 12
@@ -99,6 +119,17 @@ class AutocompleteDropdown(VerticalScroll):
             return self.filtered_items[self.selected_index]
         return None
 
+    def on_autocomplete_item_selected(self, event: AutocompleteItem.Selected) -> None:
+        """Select the clicked row and ask the app to apply it."""
+        if not (0 <= event.index < len(self.filtered_items)):
+            return
+        old_index = self.selected_index
+        self.selected_index = event.index
+        self._update_selection(old_index, self.selected_index)
+        action = getattr(self.app, "action_autocomplete_accept", None)
+        if callable(action):
+            action()
+
     def _rebuild(self) -> None:
         """Rebuild the dropdown content (only called when items change)."""
         # Remove all existing children
@@ -110,7 +141,7 @@ class AutocompleteDropdown(VerticalScroll):
 
         # Create item widgets
         for i, item in enumerate(self.filtered_items):
-            label = Static(f" {item} ", classes="autocomplete-item")
+            label = AutocompleteItem(item, i)
             if i == self.selected_index:
                 label.add_class("selected")
             self.mount(label)

@@ -9,17 +9,22 @@ This module provides:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .query_service import NonQueryResult, QueryResult
 
 
+_DOUBLE_BLANK_LINE_RE = re.compile(r"\r?\n[ \t]*\r?\n[ \t]*\r?\n")
+
+
 def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
     """Iterate through SQL characters, tracking string literal context.
 
-    Handles escape sequences (backslash) and SQL-style doubled quotes.
+    Handles escape sequences (backslash), SQL-style doubled quotes,
+    and PostgreSQL dollar-quoted strings ($$ or $tag$).
 
     Yields:
         (index, char, outside_string) tuples where outside_string is True
@@ -27,9 +32,24 @@ def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
     """
     in_single_quote = False
     in_double_quote = False
+    in_dollar_tag: str | None = None
     i = 0
 
     while i < len(sql):
+        # If inside a dollar-quoted string, check for the closing tag
+        if in_dollar_tag is not None:
+            if sql[i:].startswith(in_dollar_tag):
+                # Yield the characters of the closing tag as inside string
+                for offset in range(len(in_dollar_tag)):
+                    yield (i + offset, sql[i + offset], False)
+                i += len(in_dollar_tag)
+                in_dollar_tag = None
+                continue
+            else:
+                yield (i, sql[i], False)
+                i += 1
+                continue
+
         char = sql[i]
 
         # Handle escape sequences in strings
@@ -51,6 +71,18 @@ def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
             i += 2
             continue
 
+        # Check for PostgreSQL dollar-quoted string start
+        if char == "$" and not in_single_quote and not in_double_quote:
+            # Match $[a-zA-Z_][a-zA-Z0-9_]*$ or $$
+            match = re.match(r"^\$([a-zA-Z_][a-zA-Z0-9_]*)?\$", sql[i:])
+            if match:
+                delimiter = match.group(0)
+                in_dollar_tag = delimiter
+                for offset in range(len(delimiter)):
+                    yield (i + offset, sql[i + offset], False)
+                i += len(delimiter)
+                continue
+
         # Toggle quote state and yield
         if char == "'" and not in_double_quote:
             in_single_quote = not in_single_quote
@@ -66,10 +98,7 @@ def _iter_sql_chars(sql: str) -> Iterator[tuple[int, str, bool]]:
 
 def _has_semicolon_outside_strings(sql: str) -> bool:
     """Check if SQL has semicolons outside of string literals."""
-    for _, char, outside in _iter_sql_chars(sql):
-        if char == ";" and outside:
-            return True
-    return False
+    return any(char == ";" and outside for _, char, outside in _iter_sql_chars(sql))
 
 
 def _split_by_semicolons(sql: str) -> list[str]:
@@ -95,10 +124,11 @@ def _split_by_semicolons(sql: str) -> list[str]:
 
 
 def _split_by_blank_lines(sql: str) -> list[str]:
-    """Split SQL by blank lines, respecting string literals.
+    """Split SQL by two consecutive blank lines, respecting string literals.
 
     A blank line is defined as a line containing only whitespace.
-    This is triggered when there are no semicolons in the query.
+    A single blank line remains ordinary SQL formatting; the split occurs only
+    after a second consecutive blank line when there are no semicolons.
     """
     statements = []
     current: list[str] = []
@@ -110,24 +140,21 @@ def _split_by_blank_lines(sql: str) -> list[str]:
             line_content = sql[line_start:idx]
             current_line_empty = not line_content.strip()
 
-            if current_line_empty and prev_line_empty:
-                # Consecutive blank lines, skip
-                pass
-            elif current_line_empty and current:
-                # Blank line after content - split here
+            if current_line_empty and prev_line_empty and current:
+                # The second consecutive blank line is the boundary.
                 stmt = "".join(current).strip()
                 if stmt:
                     statements.append(stmt)
                 current = []
             else:
-                # Regular newline, keep it
+                # Keep regular newlines and the first blank line as formatting.
                 current.append(char)
 
             prev_line_empty = current_line_empty
             line_start = idx + 1
         else:
             current.append(char)
-            if char not in " \t\n":
+            if char not in " \t\r\n":
                 prev_line_empty = False
 
     # Don't forget the last statement
@@ -154,7 +181,7 @@ def _get_statement_ranges(sql: str) -> list[tuple[str, int, int]]:
 
     Splitting strategy (matches split_statements):
     1. If query contains semicolons (outside strings) → split by semicolons
-    2. If no semicolons but has blank lines → split by blank lines
+    2. If no semicolons but has two consecutive blank lines → split there
     3. Otherwise → return as single statement
 
     Returns:
@@ -178,8 +205,8 @@ def _get_statement_ranges(sql: str) -> list[tuple[str, int, int]]:
         _append_statement_range(ranges, sql, stmt_start, len(sql))
         return ranges
 
-    # Strategy 2: If blank lines exist, use blank line splitting with tracking
-    if re.search(r"\n\s*\n", sql):
+    # Strategy 2: Two consecutive blank lines delimit statements.
+    if _DOUBLE_BLANK_LINE_RE.search(sql):
         stmt_start = 0
         line_start = 0
         prev_line_empty = False
@@ -190,16 +217,13 @@ def _get_statement_ranges(sql: str) -> list[tuple[str, int, int]]:
                 current_line_empty = not line_content.strip()
 
                 if current_line_empty and prev_line_empty:
-                    # Consecutive blank lines, skip
-                    pass
-                elif current_line_empty:
-                    # Blank line after content - this is a statement boundary
+                    # The second consecutive blank line is the boundary.
                     _append_statement_range(ranges, sql, stmt_start, idx)
                     stmt_start = idx + 1
 
                 prev_line_empty = current_line_empty
                 line_start = idx + 1
-            elif char not in " \t\n":
+            elif char not in " \t\r\n":
                 prev_line_empty = False
 
         _append_statement_range(ranges, sql, stmt_start, len(sql))
@@ -284,12 +308,12 @@ def split_statements(sql: str) -> list[str]:
 
     Splitting strategy:
     1. If query contains semicolons (outside strings) → split by semicolons
-    2. If no semicolons but has blank lines → split by blank lines
+    2. If no semicolons but has two consecutive blank lines → split there
     3. Otherwise → return as single statement
 
     Handles:
     - Multiple statements separated by semicolons
-    - Multiple statements separated by blank lines (when no semicolons)
+    - Multiple statements separated by two blank lines (when no semicolons)
     - Semicolons/blank lines inside string literals (preserved)
     - Empty statements (filtered out)
     - Trailing semicolons
@@ -307,9 +331,9 @@ def split_statements(sql: str) -> list[str]:
     if _has_semicolon_outside_strings(sql):
         return _split_by_semicolons(sql)
 
-    # Strategy 2: If blank lines exist, use blank line splitting
-    # A blank line is two consecutive newlines (possibly with whitespace between)
-    if re.search(r"\n\s*\n", sql):
+    # Strategy 2: Two blank lines are three newlines, allowing one blank line
+    # to remain ordinary formatting inside a statement.
+    if _DOUBLE_BLANK_LINE_RE.search(sql):
         return _split_by_blank_lines(sql)
 
     # Strategy 3: Single statement
@@ -319,7 +343,7 @@ def split_statements(sql: str) -> list[str]:
 def normalize_for_execution(sql: str) -> str:
     """Normalize SQL for database execution.
 
-    Converts blank-line-separated statements to semicolon-separated,
+    Converts double-blank-line-separated statements to semicolon-separated,
     since databases expect semicolons between statements.
 
     Args:
@@ -335,8 +359,8 @@ def normalize_for_execution(sql: str) -> str:
     if _has_semicolon_outside_strings(sql):
         return sql
 
-    # If has blank lines, split and rejoin with semicolons
-    if re.search(r"\n\s*\n", sql):
+    # If it has two consecutive blank lines, split and rejoin with semicolons.
+    if _DOUBLE_BLANK_LINE_RE.search(sql):
         statements = _split_by_blank_lines(sql)
         if len(statements) > 1:
             return "; ".join(statements)

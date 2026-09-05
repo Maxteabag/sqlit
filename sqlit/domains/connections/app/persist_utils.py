@@ -22,12 +22,16 @@ def build_persist_connections(
     persist_connections = copy.deepcopy(connections)
     for conn in persist_connections:
         endpoint = conn.tcp_endpoint
-        if endpoint and endpoint.password is None:
+        if endpoint and endpoint.password is None and not endpoint.password_command:
             stored = credentials_service.get_password(conn.name)
             if stored is not None:
                 endpoint.password = stored
 
-        if conn.tunnel and conn.tunnel.password is None:
+        if (
+            conn.tunnel
+            and conn.tunnel.password is None
+            and not conn.tunnel.password_command
+        ):
             stored_ssh = credentials_service.get_ssh_password(conn.name)
             if stored_ssh is not None:
                 conn.tunnel.password = stored_ssh

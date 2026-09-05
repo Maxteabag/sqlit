@@ -10,10 +10,13 @@ if TYPE_CHECKING:
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
     TriggerInfo,
+    _first_keyword,
+    _sanitize_row,
 )
 
 
@@ -37,7 +40,49 @@ class MySQLBaseAdapter(CursorBasedAdapter):
     def supports_stored_procedures(self) -> bool:
         return True
 
-    def apply_database_override(self, config: "ConnectionConfig", database: str) -> "ConnectionConfig":
+    @property
+    def supports_foreign_keys(self) -> bool:
+        return True
+
+    def classify_query(self, query: str) -> bool:
+        """Treat MySQL/MariaDB CALL statements as potentially row-returning."""
+        return _first_keyword(query) == "CALL" or super().classify_query(query)
+
+    def execute_query(
+        self, conn: Any, query: str, max_rows: int | None = None
+    ) -> tuple[list[str], list[tuple], bool]:
+        """Return the first row-bearing result from a stored procedure call.
+
+        MySQL-compatible drivers expose procedure output as multiple DB-API
+        result sets, which can include leading and trailing status-only sets.
+        Every set must be consumed before the connection can be reused.
+        """
+        if _first_keyword(query) != "CALL":
+            return super().execute_query(conn, query, max_rows)
+
+        cursor = conn.cursor()
+        cursor.execute(query)
+        result: tuple[list[str], list[tuple], bool] | None = None
+
+        while True:
+            if cursor.description and result is None:
+                columns = [col[0] for col in cursor.description]
+                if max_rows is None:
+                    rows = cursor.fetchall()
+                    truncated = False
+                else:
+                    rows = cursor.fetchmany(max_rows + 1)
+                    truncated = len(rows) > max_rows
+                    rows = rows[:max_rows]
+                result = (columns, [_sanitize_row(row) for row in rows], truncated)
+
+            nextset = getattr(cursor, "nextset", None)
+            if not callable(nextset) or not nextset():
+                break
+
+        return result or ([], [], False)
+
+    def apply_database_override(self, config: ConnectionConfig, database: str) -> ConnectionConfig:
         """Apply a default database for unqualified queries."""
         if not database:
             return config
@@ -142,6 +187,12 @@ class MySQLBaseAdapter(CursorBasedAdapter):
         escaped = name.replace("`", "``")
         return f"`{escaped}`"
 
+    def quote_literal(self, value: Any) -> str:
+        """Render strings independently of the session's backslash-escape mode."""
+        if not isinstance(value, str):
+            return super().quote_literal(value)
+        return f"CONVERT(X'{value.encode('utf-8').hex()}' USING utf8mb4)"
+
     def build_select_query(self, table: str, limit: int, database: str | None = None, schema: str | None = None) -> str:
         """Build SELECT LIMIT query. Schema parameter is ignored (MySQL has no schemas)."""
         if database:
@@ -194,6 +245,103 @@ class MySQLBaseAdapter(CursorBasedAdapter):
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         """Get sequences. MySQL doesn't support sequences, returns empty list."""
         return []
+
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs of `table` via information_schema.key_column_usage.
+
+        MySQL exposes the FK target columns directly in key_column_usage as
+        referenced_table_name / referenced_column_name (only populated for
+        FK constraints).
+        """
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT constraint_name, ordinal_position, "
+                "       column_name, referenced_table_schema, "
+                "       referenced_table_name, referenced_column_name "
+                "FROM information_schema.key_column_usage "
+                "WHERE table_schema = %s AND table_name = %s "
+                "  AND referenced_table_name IS NOT NULL "
+                "ORDER BY constraint_name, ordinal_position",
+                (database, table),
+            )
+        else:
+            cursor.execute(
+                "SELECT constraint_name, ordinal_position, "
+                "       column_name, referenced_table_schema, "
+                "       referenced_table_name, referenced_column_name "
+                "FROM information_schema.key_column_usage "
+                "WHERE table_schema = DATABASE() AND table_name = %s "
+                "  AND referenced_table_name IS NOT NULL "
+                "ORDER BY constraint_name, ordinal_position",
+                (table,),
+            )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_database=database or "",
+                referenced_database=row[3] or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List FKs from other tables that point at `table`."""
+        cursor = conn.cursor()
+        if database:
+            cursor.execute(
+                "SELECT constraint_name, ordinal_position, "
+                "       table_schema, table_name, column_name, "
+                "       referenced_column_name "
+                "FROM information_schema.key_column_usage "
+                "WHERE referenced_table_schema = %s "
+                "  AND referenced_table_name = %s "
+                "ORDER BY table_schema, table_name, "
+                "         constraint_name, ordinal_position",
+                (database, table),
+            )
+        else:
+            cursor.execute(
+                "SELECT constraint_name, ordinal_position, "
+                "       table_schema, table_name, column_name, "
+                "       referenced_column_name "
+                "FROM information_schema.key_column_usage "
+                "WHERE referenced_table_schema = DATABASE() "
+                "  AND referenced_table_name = %s "
+                "ORDER BY table_schema, table_name, "
+                "         constraint_name, ordinal_position",
+                (table,),
+            )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[3],
+                column=row[4],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_database=row[2] or "",
+                referenced_database=database or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
 
     def get_index_definition(
         self, conn: Any, index_name: str, table_name: str, database: str | None = None

@@ -15,9 +15,6 @@ Two narrow bugs are covered:
 
 from __future__ import annotations
 
-import pytest
-
-
 # --------------------------------------------------------------------------
 # Bug 1: Dialect.qualified_name
 # --------------------------------------------------------------------------
@@ -46,8 +43,13 @@ def test_postgresql_qualified_name_uses_schema_only() -> None:
     for cross-reference within the connected database."""
     dialect = _get_dialect("postgresql")
     # No db segment expected when schema is present.
-    assert dialect.qualified_name(None, "public", "users") == '"public"."users"'
+    assert dialect.qualified_name(None, "test", "users") == '"test"."users"'
 
+def test_postgresql_qualified_name_uses_table_only() -> None:
+    """PostgreSQL uses public as default schema. Only table makes sense."""
+    dialect = _get_dialect("postgresql")
+    # No db segment expected when schema is present.
+    assert dialect.qualified_name(None, "public", "users") == '"users"'
 
 def test_sqlserver_qualified_name_is_three_part() -> None:
     """SQL Server explicitly uses [db].[schema].[table]."""
@@ -153,3 +155,65 @@ def test_known_table_ref_still_triggers_loading_on_first_call() -> None:
 
     assert result == ["Loading..."]
     assert "customers" in host.load_calls
+
+
+# --------------------------------------------------------------------------
+# Bug 3: schema-qualified PostgreSQL autocomplete
+# --------------------------------------------------------------------------
+
+
+def test_schema_name_completes_from_schema_qualified_tables() -> None:
+    """A non-default PostgreSQL schema should be offered after FROM.
+
+    The schema cache stores non-default schema tables as schema.table. Typing
+    the schema prefix should offer the schema name, not only bare table names
+    that fail at execution time.
+    """
+    from sqlit.domains.query.completion import get_completions
+
+    sql = "SELECT * FROM tes"
+    result = get_completions(
+        sql,
+        len(sql),
+        tables=["public_users", "test.hello_world"],
+        columns={},
+    )
+
+    assert "test" in result
+    assert "hello_world" not in result
+
+
+def test_schema_dot_completes_tables_inside_schema() -> None:
+    """Typing schema. should offer tables from that schema as insertable names."""
+    from sqlit.domains.query.completion import get_completions
+
+    sql = "SELECT * FROM test."
+    result = get_completions(
+        sql,
+        len(sql),
+        tables=["public_users", "test.hello_world", "test.audit_log", "other.hello_world"],
+        columns={},
+    )
+
+    assert result == ["hello_world", "audit_log"]
+
+
+def test_schema_qualified_table_ref_loads_columns() -> None:
+    """schema.table alias lookup should use the qualified metadata key."""
+    from sqlit.domains.query.ui.mixins.autocomplete_suggestions import AutocompleteSuggestionsMixin
+
+    host = _SchemaHost(
+        tables=["test.hello_world"],
+        metadata={
+            "test.hello_world": ("test", "hello_world", "appdb"),
+            "hello_world": ("test", "hello_world", "appdb"),
+        },
+    )
+    host._build_alias_map = AutocompleteSuggestionsMixin._build_alias_map.__get__(host)
+    get_suggestions = AutocompleteSuggestionsMixin._get_autocomplete_suggestions.__get__(host)
+
+    sql = "SELECT * FROM test.hello_world h WHERE h."
+    result = get_suggestions(sql, len(sql))
+
+    assert result == ["Loading..."]
+    assert host.load_calls == ["test.hello_world"]

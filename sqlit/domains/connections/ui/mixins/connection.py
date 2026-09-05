@@ -223,13 +223,23 @@ class ConnectionMixin:
         If the connection requires a password that is not stored (empty),
         the user will be prompted to enter the password before connecting.
         """
-        self._emit_debug(
-            "connection.request",
-            connection=config.name,
-            db_type=str(config.db_type),
+        def begin_connect() -> None:
+            self._emit_debug(
+                "connection.request",
+                connection=config.name,
+                db_type=str(config.db_type),
+            )
+            flow = self._get_connection_flow()
+            flow.start(config, self._do_connect)
+
+        switching_connection = bool(
+            self.current_config and self.current_config.name != config.name
         )
-        flow = self._get_connection_flow()
-        flow.start(config, self._do_connect)
+        request_transition = getattr(self, "_request_query_document_transition", None)
+        if switching_connection and callable(request_transition):
+            request_transition(begin_connect)
+            return
+        begin_connect()
 
     def _set_connecting_state(self: ConnectionMixinHost, config: ConnectionConfig | None, refresh: bool = True) -> None:
         """Track which connection is currently being attempted."""
@@ -429,6 +439,9 @@ class ConnectionMixin:
         self._direct_connection_config = None
         self._active_database = None
         self._clear_query_target_database()
+        reset_document = getattr(self, "_reset_query_document", None)
+        if callable(reset_document):
+            reset_document(clear_text=False)
         # Notify all mixins of disconnect via lifecycle hook
         self._on_disconnect()
 
@@ -447,10 +460,18 @@ class ConnectionMixin:
 
     def action_disconnect(self: ConnectionMixinHost) -> None:
         """Disconnect from current database."""
-        if self.current_connection is not None:
+        def disconnect() -> None:
+            if self.current_connection is None:
+                return
             self._disconnect_silent()
             self.status_bar.update("Disconnected")
             self.notify("Disconnected")
+
+        request_transition = getattr(self, "_request_query_document_transition", None)
+        if self.current_connection is not None and callable(request_transition):
+            request_transition(disconnect)
+            return
+        disconnect()
 
     def _get_effective_database(self: ConnectionMixinHost) -> str | None:
         """Return the active database for the current connection context."""
@@ -532,6 +553,22 @@ class ConnectionMixin:
                 from sqlit.shared.ui.screens.error import ErrorScreen
 
                 credentials_error: CredentialsPersistError | None = None
+                library_moved = False
+                if orig_name and orig_name != with_config.name:
+                    old_library = self.services.saved_query_store.connection_dir(orig_name)
+                    library_moved = old_library.exists()
+                    moved = self.services.saved_query_store.rename_connection(
+                        orig_name, with_config.name
+                    )
+                    if not moved:
+                        self.notify(
+                            "Connection was not renamed because its query library "
+                            "could not be moved",
+                            severity="error",
+                        )
+                        return
+
+                previous_connections = list(self.connections)
                 # When editing, remove by original name to properly update renamed connections
                 if orig_name:
                     self.connections = [c for c in self.connections if c.name != orig_name]
@@ -541,24 +578,45 @@ class ConnectionMixin:
                 if not self.services.connection_store.is_persistent:
                     self.notify("Connections are not persisted in this session")
                 try:
-                    persist_connections = self.connections
-                    if self.services.connection_store.is_persistent:
-                        try:
-                            persist_connections = self.services.connection_store.load_all()
-                        except Exception:
-                            persist_connections = self.connections
-                        else:
-                            if orig_name:
-                                persist_connections = [
-                                    c for c in persist_connections if c.name != orig_name
-                                ]
-                            persist_connections = [
-                                c for c in persist_connections if c.name != with_config.name
-                            ]
-                            persist_connections.append(with_config)
-                    self.services.connection_store.save_all(persist_connections)
+                    self.services.connection_store.save_one(with_config, previous_name=orig_name)
                 except CredentialsPersistError as exc:
+                    persisted = self.services.connection_store.load_all(
+                        load_credentials=False
+                    )
+                    persisted_names = {item.name for item in persisted}
+                    rename_committed = not orig_name or with_config.name in persisted_names
+                    if not rename_committed:
+                        self.connections = previous_connections
+                        if library_moved and orig_name:
+                            self.services.saved_query_store.rename_connection(
+                                with_config.name, orig_name
+                            )
+                        self.push_screen(ErrorScreen("Keyring Error", str(exc)))
+                        return
                     credentials_error = exc
+                except Exception as exc:
+                    self.connections = previous_connections
+                    if library_moved and orig_name:
+                        self.services.saved_query_store.rename_connection(
+                            with_config.name, orig_name
+                        )
+                    self.notify(f"Could not save connection: {exc}", severity="error")
+                    return
+                if (
+                    orig_name
+                    and orig_name != with_config.name
+                    and self.current_config
+                    and self.current_config.name == orig_name
+                ):
+                    self.current_config.name = with_config.name
+                    document = getattr(self, "_query_document", None)
+                    if document is not None and document.connection_name == orig_name:
+                        document.connection_name = with_config.name
+                        update_title = getattr(
+                            self, "_update_query_document_title", None
+                        )
+                        if callable(update_title):
+                            update_title()
                 self._refresh_connection_tree()
                 self.notify(f"Connection '{with_config.name}' saved")
                 if credentials_error:
@@ -1034,12 +1092,10 @@ class ConnectionMixin:
                 self.current_config and self.current_config.name in selected_names
             )
 
-            def do_delete(confirmed: bool | None) -> None:
+            def delete_confirmed() -> None:
                 from sqlit.domains.connections.app.credentials import CredentialsPersistError
                 from sqlit.shared.ui.screens.error import ErrorScreen
 
-                if not confirmed:
-                    return
                 if is_connected:
                     self._disconnect_silent()
                 self.connections = [c for c in self.connections if c.name not in selected_names]
@@ -1061,6 +1117,17 @@ class ConnectionMixin:
                 if credentials_error:
                     self.push_screen(ErrorScreen("Keyring Error", str(credentials_error)))
 
+            def do_delete(confirmed: bool | None) -> None:
+                if not confirmed:
+                    return
+                request_transition = getattr(
+                    self, "_request_query_document_transition", None
+                )
+                if is_connected and callable(request_transition):
+                    request_transition(delete_confirmed)
+                else:
+                    delete_confirmed()
+
             self.push_screen(
                 ConfirmScreen(f"Delete {len(selected)} connections?"),
                 do_delete,
@@ -1077,12 +1144,21 @@ class ConnectionMixin:
             return
         is_connected = self.current_config and self.current_config.name == config.name
 
-        def do_delete(confirmed: bool | None) -> None:
-            if not confirmed:
-                return
+        def delete_confirmed() -> None:
             if is_connected:
                 self._disconnect_silent()
             self._do_delete_connection(config)
+
+        def do_delete(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            request_transition = getattr(
+                self, "_request_query_document_transition", None
+            )
+            if is_connected and callable(request_transition):
+                request_transition(delete_confirmed)
+            else:
+                delete_confirmed()
 
         self.push_screen(
             ConfirmScreen(f"Delete '{config.name}'?"),

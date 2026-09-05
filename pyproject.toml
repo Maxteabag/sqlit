@@ -27,7 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "textual[syntax]>=6.10.0",
-    "textual-fastdatatable>=0.14.0",
+    "textual-fastdatatable==0.19.0",
     "pyperclip>=1.8.2",
     "keyring>=24.0.0",
     "docker>=7.0.0",
@@ -74,6 +74,8 @@ db2 = ["ibm_db>=3.2.0"]
 hana = ["hdbcli>=2.20.0"]
 teradata = ["teradatasql>=20.0.0"]
 trino = ["trino>=0.329.0"]
+trino-kerberos = ["trino[kerberos]>=0.329.0"]
+trino-gssapi = ["trino[gssapi]>=0.329.0"]
 presto = ["presto-python-client>=0.8.4"]
 bigquery = ["google-cloud-bigquery"]
 spanner = ["google-cloud-spanner>=3.0.0"]
@@ -171,6 +173,7 @@ max-complexity = 25  # complex domain logic in cloud providers and TUI screens
 
 [project.scripts]
 sqlit = "sqlit.cli:main"
+sqlit-tui = "sqlit.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Maxteabag/sqlit"

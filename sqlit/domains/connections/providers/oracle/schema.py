@@ -27,12 +27,31 @@ def _get_oracle_connection_type_options() -> tuple[SelectOption, ...]:
     )
 
 
+def _get_oracle_protocol_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("default", "Default"),
+        SelectOption("tcp", "TCP"),
+        SelectOption("tcps", "TCPS"),
+    )
+
+
+def _get_oracle_client_mode_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("thin", "Thin (default)"),
+        SelectOption("thick", "Thick (Oracle Client)"),
+    )
+
+
 def _oracle_connection_type_is_service_name(values: dict) -> bool:
     return values.get("oracle_connection_type", "service_name") != "sid"
 
 
 def _oracle_connection_type_is_sid(values: dict) -> bool:
     return values.get("oracle_connection_type") == "sid"
+
+
+def _oracle_thick_mode_enabled(values: dict) -> bool:
+    return values.get("oracle_client_mode") == "thick"
 
 
 SCHEMA = ConnectionSchema(
@@ -62,6 +81,21 @@ SCHEMA = ConnectionSchema(
             visible_when=_oracle_connection_type_is_service_name,
         ),
         SchemaField(
+            name="oracle_protocol",
+            label="Protocol",
+            field_type=FieldType.DROPDOWN,
+            options=_get_oracle_protocol_options(),
+            default="default",
+            visible_when=_oracle_connection_type_is_service_name,
+        ),
+        SchemaField(
+            name="oracle_easy_connect_parameters",
+            label="Easy Connect Parameters",
+            placeholder="ssl_server_dn_match=no&retry_count=3",
+            description="Oracle Easy Connect parameters, without the leading question mark.",
+            visible_when=_oracle_connection_type_is_service_name,
+        ),
+        SchemaField(
             name="oracle_sid",
             label="SID",
             placeholder="ORCL",
@@ -76,6 +110,22 @@ SCHEMA = ConnectionSchema(
             field_type=FieldType.DROPDOWN,
             options=_get_oracle_role_options(),
             default="normal",
+        ),
+        SchemaField(
+            name="oracle_client_mode",
+            label="Client Mode",
+            field_type=FieldType.DROPDOWN,
+            options=_get_oracle_client_mode_options(),
+            default="thin",
+            description=("Thick mode requires separately installed Oracle Client libraries and supports Native Network Encryption."),
+        ),
+        SchemaField(
+            name="oracle_client_lib_dir",
+            label="Client Library Directory",
+            field_type=FieldType.DIRECTORY,
+            placeholder="/path/to/instantclient",
+            description=("Optional on Windows and macOS. On Linux, normally leave blank and configure ldconfig or LD_LIBRARY_PATH before starting sqlit."),
+            visible_when=_oracle_thick_mode_enabled,
         ),
     )
     + SSH_FIELDS,

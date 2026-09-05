@@ -123,6 +123,73 @@ def test_worker_send_non_picklable_payload_emits_error() -> None:
         state.conn.close()
 
 
+class _RaisesOnPickle:
+    """Simulates an oracledb LOB locator whose connection already closed.
+
+    Pickling a LOB locator reads its value from the database, so it raises
+    the driver's InterfaceError (DPY-1001) — an Exception subclass that is
+    neither TypeError, AttributeError, nor PickleError.
+    """
+
+    def __reduce__(self) -> Any:
+        raise RuntimeError("DPY-1001: not connected to database")
+
+
+class _RaisesOSErrorOnPickle:
+    """Simulate serialization code raising an exception also used by pipes."""
+
+    def __reduce__(self) -> Any:
+        raise OSError("LOB read failed")
+
+
+def test_worker_send_pickle_raising_oserror_emits_error() -> None:
+    """An OSError during serialization must not be mistaken for a closed pipe."""
+    state, parent = _make_state_with_pipe()
+    try:
+        payload: dict[str, Any] = {
+            "type": "result",
+            "id": 8,
+            "kind": "query",
+            "result": _RaisesOSErrorOnPickle(),
+        }
+        state.send(payload)
+
+        assert parent.poll(timeout=2.0), "client would hang; no error message was sent"
+        message = parent.recv()
+        assert message["type"] == "error"
+        assert message["id"] == 8
+        assert "LOB read failed" in message["message"]
+    finally:
+        parent.close()
+        state.conn.close()
+
+
+def test_worker_send_pickle_raising_driver_error_emits_error() -> None:
+    """Regression test for issue #276: oracledb CLOB/BLOB results raised
+    InterfaceError during pickling, which fell through to a bare
+    `except Exception: pass` — the payload was dropped and the client
+    hung on recv() forever.
+    """
+    state, parent = _make_state_with_pipe()
+    try:
+        payload: dict[str, Any] = {
+            "type": "result",
+            "id": 7,
+            "kind": "query",
+            "result": _RaisesOnPickle(),
+        }
+        state.send(payload)
+
+        assert parent.poll(timeout=2.0), "client would hang; no error message was sent"
+        message = parent.recv()
+        assert message["type"] == "error"
+        assert message["id"] == 7
+        assert "DPY-1001" in message["message"]
+    finally:
+        parent.close()
+        state.conn.close()
+
+
 def test_worker_send_picklable_payload_passes_through() -> None:
     """Confirm the fallback path doesn't interfere with normal sends."""
     state, parent = _make_state_with_pipe()

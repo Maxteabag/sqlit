@@ -12,6 +12,7 @@ from sqlit.domains.results.formatters import (
     format_json,
     format_markdown,
     format_values_list,
+    project_columns,
 )
 
 
@@ -86,3 +87,35 @@ def test_format_registry_keys_and_extensions():
 def test_each_format_runs_on_sample(key):
     out = FORMATS[key].formatter(COLS, ROWS)
     assert isinstance(out, str) and out
+
+
+def test_project_columns_subset():
+    cols, rows = project_columns(COLS, ROWS, [0, 2])
+    assert cols == ["id", "note"]
+    assert rows == [(1, "a|b"), (2, None), (3, "x")]
+
+
+def test_project_columns_reorders_to_given_indices_sorted():
+    # The action layer passes already-sorted indices; project_columns honors order.
+    cols, rows = project_columns(COLS, ROWS, [2, 0])
+    assert cols == ["note", "id"]
+    assert rows[0] == ("a|b", 1)
+
+
+def test_project_columns_ignores_out_of_range():
+    cols, _rows = project_columns(COLS, ROWS, [0, 99])
+    assert cols == ["id"]
+
+
+def test_project_columns_empty_indices_yields_empty_rows():
+    cols, rows = project_columns(COLS, ROWS, [])
+    assert cols == []
+    assert rows == [(), (), ()]
+
+
+def test_project_columns_composes_with_csv():
+    cols, rows = project_columns(COLS, ROWS, [1])
+    out = format_csv(cols, rows)
+    # csv.writer quotes embedded newlines so the multi-line cell stays intact.
+    assert out.startswith("name\r\nAlice\r\nBob\r\n")
+    assert '"C\nD"' in out
