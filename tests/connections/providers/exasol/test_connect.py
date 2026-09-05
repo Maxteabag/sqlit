@@ -141,13 +141,11 @@ def test_tls_disable_turns_encryption_off() -> None:
 
 
 @pytest.mark.parametrize("options", [{}, {"tls_mode": "default"}], ids=["unset", "explicit"])
-def test_tls_default_encrypts_without_verifying_the_certificate(options: dict[str, Any]) -> None:
-    # Not left to the driver: pyexasol would demand CERT_REQUIRED, which no
-    # self-signed server - exasol/docker-db included - can satisfy.
+def test_tls_default_preserves_driver_certificate_verification(options: dict[str, Any]) -> None:
     kwargs = _connect_kwargs(_config(options=options))
 
     assert kwargs["encryption"] is True
-    assert kwargs["websocket_sslopt"] == {"cert_reqs": ssl.CERT_NONE}
+    assert "websocket_sslopt" not in kwargs
 
 
 def test_tls_require_encrypts_without_verifying_the_certificate() -> None:
@@ -180,6 +178,7 @@ def test_verifying_modes_forward_configured_certificate_files(tls_mode: str) -> 
 
     assert kwargs["websocket_sslopt"] == {
         "cert_reqs": ssl.CERT_REQUIRED,
+        "check_hostname": tls_mode == "verify-full",
         "ca_certs": "/certs/ca.pem",
         "certfile": "/certs/client.pem",
         "keyfile": "/certs/client.key",
@@ -194,7 +193,7 @@ def test_verifying_modes_forward_configured_certificate_files(tls_mode: str) -> 
 def test_unconfigured_certificate_files_are_omitted(certificate_options: dict[str, Any]) -> None:
     kwargs = _connect_kwargs(_config(options={"tls_mode": "verify-full", **certificate_options}))
 
-    assert kwargs["websocket_sslopt"] == {"cert_reqs": ssl.CERT_REQUIRED}
+    assert kwargs["websocket_sslopt"] == {"cert_reqs": ssl.CERT_REQUIRED, "check_hostname": True}
 
 
 # --- extra_options ----------------------------------------------------------

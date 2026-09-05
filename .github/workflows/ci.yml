@@ -549,7 +549,8 @@ jobs:
       - name: Start Exasol
         run: |
           docker run -d --name exasol --privileged \
-            -p 8563:8563 \
+            --memory=4g --memory-swap=4g --cpus=2 --stop-timeout=120 \
+            -p 127.0.0.1:8563:8563 \
             exasol/docker-db:latest-8
           for i in {1..60}; do
             if nc -z localhost 8563 > /dev/null 2>&1; then
@@ -559,6 +560,7 @@ jobs:
             echo "Waiting for Exasol... ($i/60)"
             sleep 10
           done
+          nc -z localhost 8563
 
       - name: Run Exasol integration tests
         env:
@@ -567,6 +569,7 @@ jobs:
           EXASOL_USER: sys
           EXASOL_PASSWORD: exasol
           EXASOL_SCHEMA: TEST_SQLIT
+          EXASOL_REQUIRE_LIVE: "1"
         run: uv run pytest tests/test_exasol.py -v --timeout=300
 
   test-ssh:

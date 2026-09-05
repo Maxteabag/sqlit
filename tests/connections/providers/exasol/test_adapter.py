@@ -72,11 +72,14 @@ def test_get_views_reads_schema_and_name_by_key(adapter: ExasolAdapter, mock_con
 
 
 def test_get_columns_combines_primary_key_and_column_information(adapter: ExasolAdapter, mock_conn: MagicMock) -> None:
-    mock_conn.meta.execute_snapshot.return_value.fetchall.return_value = [{"COLUMN_NAME": "ID"}]
-    mock_conn.meta.list_columns.return_value = [
+    pk = MagicMock()
+    pk.fetchall.return_value = [{"COLUMN_NAME": "ID"}]
+    columns = MagicMock()
+    columns.fetchall.return_value = [
         {"COLUMN_NAME": "ID", "COLUMN_TYPE": "DECIMAL(18,0)"},
         {"COLUMN_NAME": "NAME", "COLUMN_TYPE": "VARCHAR(200) UTF8"},
     ]
+    mock_conn.meta.execute_snapshot.side_effect = [pk, columns]
 
     result = adapter.get_columns(mock_conn, "ORDERS", schema="SALES")
 
@@ -92,9 +95,9 @@ def test_primary_key_lookup_is_snapshot_executed_and_parameterised(adapter: Exas
     # conn.meta.* wraps the query in Exasol's snapshot-execution hint, so it
     # cannot be blocked by a metadata lock; conn.execute would not be.
     mock_conn.execute.assert_not_called()
-    mock_conn.meta.execute_snapshot.assert_called_once()
+    assert mock_conn.meta.execute_snapshot.call_count == 2
 
-    sql, params = mock_conn.meta.execute_snapshot.call_args.args
+    sql, params = mock_conn.meta.execute_snapshot.call_args_list[0].args
     assert "SYS.EXA_ALL_CONSTRAINT_COLUMNS" in sql
     assert "CONSTRAINT_TYPE = 'PRIMARY KEY'" in sql
     # Placeholders, not interpolated values.
@@ -104,27 +107,25 @@ def test_primary_key_lookup_is_snapshot_executed_and_parameterised(adapter: Exas
 
 
 def test_table_without_a_primary_key_flags_no_column(adapter: ExasolAdapter, mock_conn: MagicMock) -> None:
-    mock_conn.meta.execute_snapshot.return_value.fetchall.return_value = []
-    mock_conn.meta.list_columns.return_value = [
+    pk = MagicMock()
+    pk.fetchall.return_value = []
+    columns = MagicMock()
+    columns.fetchall.return_value = [
         {"COLUMN_NAME": "A", "COLUMN_TYPE": "BOOLEAN"},
         {"COLUMN_NAME": "B", "COLUMN_TYPE": "DATE"},
     ]
+    mock_conn.meta.execute_snapshot.side_effect = [pk, columns]
 
     result = adapter.get_columns(mock_conn, "LOG", schema="SALES")
 
     assert [column.is_primary_key for column in result] == [False, False]
 
 
-def test_get_columns_without_a_schema_passes_an_empty_pattern(adapter: ExasolAdapter, mock_conn: MagicMock) -> None:
-    # Design D8: default_schema is "", so an unset schema reaches list_columns as
-    # "" and matches nothing. The path is unreachable from the explorer - every
-    # Exasol table arrives from get_tables() as a populated (schema, name) pair -
-    # so it was left spec-faithful rather than given a fallback. This pins that
-    # deliberate choice; it does not endorse it.
+def test_get_columns_without_a_schema_queries_the_empty_schema(adapter: ExasolAdapter, mock_conn: MagicMock) -> None:
     adapter.get_columns(mock_conn, "ORDERS")
 
     assert adapter.default_schema == ""
-    assert mock_conn.meta.list_columns.call_args.args == ("", "ORDERS")
+    assert mock_conn.meta.execute_snapshot.call_args.args[1] == {"schema": "", "table": "ORDERS"}
 
 
 def test_get_procedures_returns_scripting_script_names(adapter: ExasolAdapter, mock_conn: MagicMock) -> None:

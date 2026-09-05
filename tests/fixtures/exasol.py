@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import ssl
 import time
+from contextlib import closing
 from typing import Any
 
 import pytest
@@ -57,12 +58,17 @@ def exasol_server_ready() -> bool:
     """Check if Exasol is ready and return True/False."""
     global _ready_error
 
+    required = os.environ.get("EXASOL_REQUIRE_LIVE") == "1"
     if not exasol_available():
+        if required:
+            pytest.fail("Required Exasol server is not listening")
         return False
 
     try:
         import pyexasol  # noqa: F401
     except ImportError:
+        if required:
+            pytest.fail("Required pyexasol driver is not installed")
         pytest.skip("pyexasol is not installed")
 
     deadline = time.time() + EXASOL_READY_TIMEOUT
@@ -73,6 +79,8 @@ def exasol_server_ready() -> bool:
         except Exception as e:
             _ready_error = str(e)
             if time.time() >= deadline:
+                if required:
+                    pytest.fail(f"Required Exasol server did not become ready: {_ready_error}")
                 return False
             time.sleep(_READY_INTERVAL)
 
@@ -89,9 +97,7 @@ def exasol_db(exasol_server_ready: bool) -> str:
     except ImportError:
         pytest.skip("pyexasol is not installed")
 
-    try:
-        conn = _connect()
-
+    with closing(_connect()) as conn:
         conn.execute(f"DROP SCHEMA IF EXISTS {EXASOL_SCHEMA} CASCADE")
         conn.execute(f"CREATE SCHEMA {EXASOL_SCHEMA}")
         conn.execute(f"OPEN SCHEMA {EXASOL_SCHEMA}")
@@ -138,11 +144,6 @@ def exasol_db(exasol_server_ready: bool) -> str:
             (2, 'Gadget', 19.99, 50),
             (3, 'Gizmo', 29.99, 25)
         """)
-
-        conn.close()
-
-    except Exception as e:
-        pytest.skip(f"Failed to setup Exasol schema: {e}")
 
     yield EXASOL_SCHEMA
 

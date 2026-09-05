@@ -245,6 +245,15 @@ Edit the `keymap.json` file in your sqlit config dir. See [`config/keymap.templa
 
 ## FAQ
 
+### Exasol authentication and TLS
+
+For Exasol SaaS, select username/password authentication and use the database username from
+connection details with your personal access token as the password. OpenID access/refresh token
+modes are for those credential types, not SaaS PATs. The selected secret uses the OS credential
+store. Default TLS follows pyexasol's certificate verification; use `--tls-mode require` only
+when deliberately connecting to a self-signed development server. `verify-ca` validates the CA,
+while `verify-full` also checks the hostname.
+
 ### How are sensitive credentials stored?
 
 Connection details are stored in `connections.json` inside the config directory, but passwords are stored in your OS keyring when available (macOS Keychain, Windows Credential Locker, Linux Secret Service).

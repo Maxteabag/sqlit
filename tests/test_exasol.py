@@ -166,3 +166,60 @@ class TestExasolIntegration(BaseDatabaseTestsWithLimit):
         # Verify it's gone
         result = cli_runner("connection", "list")
         assert connection_name not in result.stdout
+
+
+@pytest.mark.parametrize(('table', 'other'), [('A_B', 'AXB'), ('A%B', 'AXXB'), ("A'B", 'AXB')])
+def test_column_lookup_matches_literal_table_and_schema_names(exasol_db, table, other):
+    from sqlit.domains.connections.providers.exasol.adapter import ExasolAdapter
+
+    from .fixtures.exasol import _connect
+
+    adapter = ExasolAdapter()
+    quote = adapter.quote_identifier
+    conn = _connect()
+    other_schema = exasol_db.replace('_', 'X')
+    conn.execute(f'CREATE SCHEMA {quote(other_schema)}')
+    try:
+        conn.execute(f'CREATE TABLE {quote(exasol_db)}.{quote(table)} (EXPECTED_COL INTEGER PRIMARY KEY)')
+        conn.execute(f'CREATE TABLE {quote(exasol_db)}.{quote(other)} (WRONG_TABLE_COL INTEGER)')
+        conn.execute(f'CREATE TABLE {quote(other_schema)}.{quote(table)} (WRONG_SCHEMA_COL INTEGER)')
+        columns = adapter.get_columns(conn, table, schema=exasol_db)
+        assert [column.name for column in columns] == ['EXPECTED_COL']
+        assert columns[0].is_primary_key
+    finally:
+        conn.execute(f'DROP SCHEMA {quote(other_schema)} CASCADE')
+        conn.close()
+
+
+def test_tls_verification_modes_against_real_server(exasol_db, tmp_path):
+    import re
+    import subprocess
+
+    from sqlit.domains.connections.domain.config import ConnectionConfig, TcpEndpoint
+    from sqlit.domains.connections.providers.exasol.adapter import ExasolAdapter
+
+    from .fixtures.exasol import EXASOL_HOST, EXASOL_PASSWORD, EXASOL_PORT, EXASOL_USER
+
+    peer = subprocess.run(
+        ['openssl', 's_client', '-connect', f'{EXASOL_HOST}:{EXASOL_PORT}', '-showcerts'],
+        input='', text=True, capture_output=True, timeout=15,
+    )
+    chain = re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----', peer.stdout, re.DOTALL)
+    assert chain, 'Server did not provide its test certificate chain'
+    ca_file = tmp_path / 'docker-server.pem'
+    ca_file.write_text('\n'.join(chain))
+    adapter = ExasolAdapter()
+    cfg = ConnectionConfig(name='tls-proof', db_type='exasol',
+        endpoint=TcpEndpoint(host=EXASOL_HOST, port=str(EXASOL_PORT), username=EXASOL_USER, password=EXASOL_PASSWORD))
+    # The Docker private CA issues the certificate for exacluster.local, not localhost.
+    with pytest.raises(Exception, match=r'(?i)certificate'):
+        adapter.connect(cfg)
+    cfg.options.update(tls_mode='verify-full', tls_ca=str(ca_file))
+    with pytest.raises(Exception, match=r'(?i)certificate|hostname'):
+        adapter.connect(cfg)
+    cfg.options['tls_mode'] = 'verify-ca'
+    conn = adapter.connect(cfg)
+    try:
+        adapter.execute_test_query(conn)
+    finally:
+        conn.close()

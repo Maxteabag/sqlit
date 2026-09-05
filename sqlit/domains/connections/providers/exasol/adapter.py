@@ -15,10 +15,12 @@ from sqlit.domains.connections.providers.adapters.base import (
 )
 from sqlit.domains.connections.providers.registry import get_default_port
 from sqlit.domains.connections.providers.tls import (
+    TLS_MODE_DEFAULT,
     TLS_MODE_DISABLE,
     get_tls_files,
     get_tls_mode,
     tls_mode_verifies_cert,
+    tls_mode_verifies_hostname,
 )
 
 if TYPE_CHECKING:
@@ -84,21 +86,16 @@ class ExasolAdapter(DatabaseAdapter):
         return ""
 
     def _tls_args(self, config: ConnectionConfig) -> dict[str, Any]:
-        """Map the shared tls_mode option onto pyexasol encryption kwargs.
-
-        Since pyexasol 1.0.0 an omitted websocket_sslopt means CERT_REQUIRED, but
-        exasol/docker-db and most on-premise installations present a self-signed
-        certificate, so deferring to that driver default fails every out-of-the-box
-        connect. The default mode therefore encrypts without verifying, matching how
-        the other providers here treat it; verification starts at verify-ca.
-        """
+        """Preserve driver defaults and distinguish chain/hostname verification."""
         tls_mode = get_tls_mode(config)
+        if tls_mode == TLS_MODE_DEFAULT:
+            return {"encryption": True}
         if tls_mode == TLS_MODE_DISABLE:
             return {"encryption": False}
         if not tls_mode_verifies_cert(tls_mode):
             return {"encryption": True, "websocket_sslopt": {"cert_reqs": ssl.CERT_NONE}}
 
-        sslopt: dict[str, Any] = {"cert_reqs": ssl.CERT_REQUIRED}
+        sslopt: dict[str, Any] = {"cert_reqs": ssl.CERT_REQUIRED, "check_hostname": tls_mode_verifies_hostname(tls_mode)}
         tls_ca, tls_cert, tls_key, _ = get_tls_files(config)
         if tls_ca:
             sslopt["ca_certs"] = tls_ca
@@ -172,13 +169,19 @@ class ExasolAdapter(DatabaseAdapter):
         ).fetchall()
         pk_columns = {row["COLUMN_NAME"] for row in pk_rows}
 
+        columns = conn.meta.execute_snapshot(
+            "SELECT COLUMN_NAME, COLUMN_TYPE FROM SYS.EXA_ALL_COLUMNS "
+            "WHERE COLUMN_SCHEMA = {schema!s} AND COLUMN_TABLE = {table!s} "
+            "ORDER BY COLUMN_ORDINAL_POSITION",
+            {"schema": schema, "table": table},
+        ).fetchall()
         return [
             ColumnInfo(
                 name=row["COLUMN_NAME"],
                 data_type=row["COLUMN_TYPE"],
                 is_primary_key=row["COLUMN_NAME"] in pk_columns,
             )
-            for row in conn.meta.list_columns(schema, table)
+            for row in columns
         ]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
