@@ -9,6 +9,7 @@ sqlit's connection model, mirroring how Trino is handled.
 
 from __future__ import annotations
 
+from contextlib import closing
 from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.adapters.base import (
@@ -92,6 +93,13 @@ class DatabricksAdapter(CursorBasedAdapter):
             return config
         return config.with_endpoint(database=database)
 
+    def normalize_config(self, config: ConnectionConfig) -> ConnectionConfig:
+        # URL query parameters arrive as extra_options, before schema validation.
+        for name in ("http_path", "schema", "client_id", "auth_type"):
+            if name in config.extra_options:
+                config.options.setdefault(name, config.extra_options.pop(name))
+        return config
+
     def connect(self, config: ConnectionConfig) -> Any:
         sql_module = self._import_driver_module(
             "databricks.sql",
@@ -131,11 +139,15 @@ class DatabricksAdapter(CursorBasedAdapter):
             connect_args["auth_type"] = "databricks-oauth"
         elif auth_type == "oauth-m2m":
             client_id = extras.get("client_id")
-            client_secret = extras.get("client_secret")
+            client_secret = config.get_option("client_secret")
             if not client_id or not client_secret:
                 raise ValueError(
                     "Databricks OAuth (Service Principal) requires client_id and client_secret."
                 )
+            self._import_driver_module(
+                "databricks.sdk.core", driver_name="Databricks OAuth M2M",
+                extra_name=self.install_extra, package_name="databricks-sdk",
+            )
             connect_args["credentials_provider"] = _build_m2m_credentials_provider(
                 endpoint.host, client_id, client_secret
             )
@@ -152,62 +164,76 @@ class DatabricksAdapter(CursorBasedAdapter):
 
     def get_databases(self, conn: Any) -> list[str]:
         """List Unity Catalog catalogs."""
-        cursor = conn.cursor()
-        # SHOW CATALOGS is universally supported and avoids needing
-        # SELECT privilege on system.information_schema.
-        cursor.execute("SHOW CATALOGS")
-        return [row[0] for row in cursor.fetchall()]
+        with closing(conn.cursor()) as cursor:
+            # SHOW CATALOGS is universally supported and avoids needing
+            # SELECT privilege on system.information_schema.
+            cursor.execute("SHOW CATALOGS")
+            return [row[0] for row in cursor.fetchall()]
 
     def get_tables(self, conn: Any, database: str | None = None) -> list[TableInfo]:
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                "SELECT table_schema, table_name FROM "
-                f"{self.quote_identifier(database)}.information_schema.tables "
-                f"WHERE table_type NOT IN ({_VIEW_TABLE_TYPES_SQL}) "
-                "ORDER BY table_schema, table_name"
-            )
-            return [(row[0], row[1]) for row in cursor.fetchall()]
+        with closing(conn.cursor()) as cursor:
+            if database == "hive_metastore":
+                cursor.tables(catalog_name=database, table_types=["TABLE"])
+                return [(row.TABLE_SCHEM, row.TABLE_NAME) for row in cursor.fetchall()
+                        if database == row.TABLE_CAT]
+            if database:
+                cursor.execute(
+                    "SELECT table_schema, table_name FROM "
+                    f"{self.quote_identifier(database)}.information_schema.tables "
+                    f"WHERE table_type NOT IN ({_VIEW_TABLE_TYPES_SQL}) "
+                    "ORDER BY table_schema, table_name"
+                )
+                return [(row[0], row[1]) for row in cursor.fetchall()]
 
-        cursor.execute("SHOW TABLES")
-        return [(row[0], row[1]) for row in cursor.fetchall()]
+            cursor.execute("SHOW TABLES")
+            return [(row[0], row[1]) for row in cursor.fetchall()]
 
     def get_views(self, conn: Any, database: str | None = None) -> list[TableInfo]:
-        cursor = conn.cursor()
-        if database:
-            cursor.execute(
-                "SELECT table_schema, table_name FROM "
-                f"{self.quote_identifier(database)}.information_schema.tables "
-                f"WHERE table_type IN ({_VIEW_TABLE_TYPES_SQL}) "
-                "ORDER BY table_schema, table_name"
-            )
-            return [(row[0], row[1]) for row in cursor.fetchall()]
+        with closing(conn.cursor()) as cursor:
+            if database == "hive_metastore":
+                cursor.tables(catalog_name=database, table_types=["VIEW"])
+                return [(row.TABLE_SCHEM, row.TABLE_NAME) for row in cursor.fetchall()
+                        if database == row.TABLE_CAT]
+            if database:
+                cursor.execute(
+                    "SELECT table_schema, table_name FROM "
+                    f"{self.quote_identifier(database)}.information_schema.tables "
+                    f"WHERE table_type IN ({_VIEW_TABLE_TYPES_SQL}) "
+                    "ORDER BY table_schema, table_name"
+                )
+                return [(row[0], row[1]) for row in cursor.fetchall()]
 
-        cursor.execute("SHOW VIEWS")
-        # SHOW VIEWS columns: database, viewName, isTemporary
-        return [(row[0], row[1]) for row in cursor.fetchall()]
+            cursor.execute("SHOW VIEWS")
+            # SHOW VIEWS columns: database, viewName, isTemporary
+            return [(row[0], row[1]) for row in cursor.fetchall()]
 
     def get_columns(
         self, conn: Any, table: str, database: str | None = None, schema: str | None = None
     ) -> list[ColumnInfo]:
-        cursor = conn.cursor()
-        schema_name = schema or self.default_schema
-        if database:
-            cursor.execute(
-                "SELECT column_name, data_type FROM "
-                f"{self.quote_identifier(database)}.information_schema.columns "
-                "WHERE table_schema = ? AND table_name = ? "
-                "ORDER BY ordinal_position",
-                (schema_name, table),
-            )
-        else:
-            cursor.execute(
-                "SELECT column_name, data_type FROM information_schema.columns "
-                "WHERE table_schema = ? AND table_name = ? "
-                "ORDER BY ordinal_position",
-                (schema_name, table),
-            )
-        return [ColumnInfo(name=row[0], data_type=row[1]) for row in cursor.fetchall()]
+        with closing(conn.cursor()) as cursor:
+            schema_name = schema or self.default_schema
+            if database == "hive_metastore":
+                cursor.columns(catalog_name=database, schema_name=schema_name, table_name=table)
+                # Connector metadata parameters are patterns, not literal names.
+                return [ColumnInfo(name=row.COLUMN_NAME, data_type=row.TYPE_NAME)
+                        for row in cursor.fetchall()
+                        if database == row.TABLE_CAT and schema_name == row.TABLE_SCHEM and table == row.TABLE_NAME]
+            if database:
+                cursor.execute(
+                    "SELECT column_name, data_type FROM "
+                    f"{self.quote_identifier(database)}.information_schema.columns "
+                    "WHERE table_schema = ? AND table_name = ? "
+                    "ORDER BY ordinal_position",
+                    (schema_name, table),
+                )
+            else:
+                cursor.execute(
+                    "SELECT column_name, data_type FROM information_schema.columns "
+                    "WHERE table_schema = ? AND table_name = ? "
+                    "ORDER BY ordinal_position",
+                    (schema_name, table),
+                )
+            return [ColumnInfo(name=row[0], data_type=row[1]) for row in cursor.fetchall()]
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         return []
