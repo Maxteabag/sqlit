@@ -25,7 +25,11 @@ def normalize_arrow_value(value: Any) -> Any:
     if isinstance(value, UUID):
         return str(value)
     if isinstance(value, (bytes, bytearray, memoryview)):
-        return f"0x{bytes(value).hex()}"
+        raw = bytes(value)
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return f"0x{raw.hex()}"
     return value
 
 

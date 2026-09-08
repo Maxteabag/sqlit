@@ -22,6 +22,8 @@ _INVALID_UTF8_UUID = UUID("a0000000-0000-0000-0000-000000000000")
 
 _INVALID_UTF8_BINARY = b"\x00\x00\x00\x00\x00\x00\x81\xff"
 _BINARY_TEXT = "0x00000000000081ff"
+_UTF8_JSON_BINARY = b'{"a": 1, "b": [1, 2, 3]}'
+_UTF8_JSON_TEXT = '{"a": 1, "b": [1, 2, 3]}'
 
 
 @pytest.mark.parametrize(
@@ -42,6 +44,35 @@ def test_binary_column_is_stringified_before_arrow_measurement(value: object) ->
     assert table.backend is not None
     assert table.backend.column_content_widths == [len(_BINARY_TEXT)]
     assert table.get_cell_at(Coordinate(0, 0)) == _BINARY_TEXT
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        _UTF8_JSON_BINARY,
+        bytearray(_UTF8_JSON_BINARY),
+        memoryview(_UTF8_JSON_BINARY),
+    ],
+    ids=["bytes", "bytearray", "memoryview"],
+)
+def test_utf8_binary_column_is_decoded_as_text(value: object) -> None:
+    table = SqlitDataTable(
+        data={"binary": [value]},
+        column_labels=["binary"],
+    )
+
+    assert table.backend is not None
+    assert table.backend.column_content_widths == [len(_UTF8_JSON_TEXT)]
+    assert table.get_cell_at(Coordinate(0, 0)) == _UTF8_JSON_TEXT
+
+
+def test_incrementally_added_utf8_binary_is_decoded_as_text() -> None:
+    table = SqlitDataTable(data={"binary": ["initial"]}, column_labels=["binary"])
+
+    table.add_rows([(_UTF8_JSON_BINARY,)])
+
+    assert table.backend is not None
+    assert table.get_cell_at(Coordinate(1, 0)) == _UTF8_JSON_TEXT
 
 
 def test_incrementally_added_binary_is_stringified() -> None:
@@ -139,3 +170,34 @@ async def test_decimal_incremental_backend_stringifies_binary_column() -> None:
             _BINARY_TEXT
         )
         assert app.results_table.get_cell_at(Coordinate(0, 2)) == _BINARY_TEXT
+
+
+@pytest.mark.asyncio
+async def test_view_cell_tooltip_does_not_parse_markup() -> None:
+    from rich.text import Text
+
+    payload = b'{"path": "[/api/v1]", "tags": ["a", "b"]}'
+    connection = create_test_connection("test-db", "sqlite")
+    services = build_test_services(
+        connection_store=MockConnectionStore([connection]),
+        settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+    )
+    app = SSMSTUI(services=services)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await app._display_query_results(
+            columns=["payload"],
+            rows=[(payload,)],
+            row_count=1,
+            truncated=False,
+            elapsed_ms=0,
+        )
+        await pilot.pause(0.05)
+        app.results_table.cursor_coordinate = Coordinate(0, 0)
+        app.action_view_cell()
+        await pilot.pause(0.05)
+
+        tooltip = app.results_table.tooltip
+        assert isinstance(tooltip, Text)
+        assert tooltip.plain == payload.decode("utf-8")
