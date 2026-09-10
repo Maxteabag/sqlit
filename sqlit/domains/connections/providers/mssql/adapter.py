@@ -510,14 +510,26 @@ class SQLServerAdapter(DatabaseAdapter):
         )
         return [ColumnInfo(name=row[0], data_type=row[1], is_primary_key=row[0] in pk_columns) for row in cursor.fetchall()]
 
+    supports_schema_grouping = True
+
+    def get_schemas(self, conn: Any, database: str | None = None) -> list[str]:
+        cursor = self._get_cursor_for_database(conn, database)
+        cursor.execute(
+            "SELECT name FROM sys.schemas WHERE schema_id < 16384 "
+            "AND name NOT IN ('guest', 'sys', 'INFORMATION_SCHEMA') ORDER BY name"
+        )
+        return [row[0] for row in cursor.fetchall()]
+
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures from SQL Server."""
         cursor = self._get_cursor_for_database(conn, database)
         cursor.execute(
-            "SELECT ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES "
+            "SELECT ROUTINE_NAME, ROUTINE_SCHEMA FROM INFORMATION_SCHEMA.ROUTINES "
             "WHERE ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME"
         )
-        return [row[0] for row in cursor.fetchall()]
+        from sqlit.domains.connections.providers.adapters.base import RoutineInfo
+
+        return [RoutineInfo(row[0], schema=row[1]) for row in cursor.fetchall()]
 
     def get_completion_routines(
         self, conn: Any, database: str | None = None
@@ -560,30 +572,30 @@ class SQLServerAdapter(DatabaseAdapter):
         """Get indexes from SQL Server."""
         cursor = self._get_cursor_for_database(conn, database)
         cursor.execute(
-            "SELECT i.name, t.name, i.is_unique "
+            "SELECT i.name, t.name, i.is_unique, SCHEMA_NAME(t.schema_id) "
             "FROM sys.indexes i "
             "JOIN sys.tables t ON i.object_id = t.object_id "
             "WHERE i.name IS NOT NULL AND i.type > 0 AND i.is_primary_key = 0 "
             "ORDER BY t.name, i.name"
         )
-        return [IndexInfo(name=row[0], table_name=row[1], is_unique=row[2]) for row in cursor.fetchall()]
+        return [IndexInfo(name=row[0], table_name=row[1], is_unique=row[2], schema=row[3]) for row in cursor.fetchall()]
 
     def get_triggers(self, conn: Any, database: str | None = None) -> list[TriggerInfo]:
         """Get triggers from SQL Server."""
         cursor = self._get_cursor_for_database(conn, database)
         cursor.execute(
-            "SELECT tr.name, OBJECT_NAME(tr.parent_id) "
+            "SELECT tr.name, OBJECT_NAME(tr.parent_id), OBJECT_SCHEMA_NAME(tr.parent_id) "
             "FROM sys.triggers tr "
             "WHERE tr.is_ms_shipped = 0 AND tr.parent_id > 0 "
             "ORDER BY OBJECT_NAME(tr.parent_id), tr.name"
         )
-        return [TriggerInfo(name=row[0], table_name=row[1] or "") for row in cursor.fetchall()]
+        return [TriggerInfo(name=row[0], table_name=row[1] or "", schema=row[2]) for row in cursor.fetchall()]
 
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         """Get sequences from SQL Server (2012+)."""
         cursor = self._get_cursor_for_database(conn, database)
-        cursor.execute("SELECT name FROM sys.sequences ORDER BY name")
-        return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+        cursor.execute("SELECT name, SCHEMA_NAME(schema_id) FROM sys.sequences ORDER BY name")
+        return [SequenceInfo(name=row[0], schema=row[1]) for row in cursor.fetchall()]
 
     def get_foreign_keys(
         self,
@@ -665,7 +677,7 @@ class SQLServerAdapter(DatabaseAdapter):
         ]
 
     def get_index_definition(
-        self, conn: Any, index_name: str, table_name: str, database: str | None = None
+        self, conn: Any, index_name: str, table_name: str, database: str | None = None, schema: str | None = None
     ) -> dict[str, Any]:
         """Get detailed information about a SQL Server index."""
         cursor = self._get_cursor_for_database(conn, database)
@@ -676,8 +688,9 @@ class SQLServerAdapter(DatabaseAdapter):
             "JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id "
             "JOIN sys.tables t ON i.object_id = t.object_id "
             "WHERE i.name = ? AND t.name = ? "
-            "ORDER BY ic.key_ordinal",
-            (index_name, table_name),
+            + ("AND SCHEMA_NAME(t.schema_id) = ? " if schema is not None else "")
+            + "ORDER BY ic.key_ordinal",
+            (index_name, table_name) + ((schema,) if schema is not None else ()),
         )
         rows = cursor.fetchall()
         is_unique = rows[0][0] if rows else False
@@ -697,7 +710,7 @@ class SQLServerAdapter(DatabaseAdapter):
         }
 
     def get_trigger_definition(
-        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
+        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None, schema: str | None = None
     ) -> dict[str, Any]:
         """Get detailed information about a SQL Server trigger."""
         cursor = self._get_cursor_for_database(conn, database)
@@ -707,8 +720,9 @@ class SQLServerAdapter(DatabaseAdapter):
             "       ELSE 'AFTER' END as timing "
             "FROM sys.triggers tr "
             "JOIN sys.tables t ON tr.parent_id = t.object_id "
-            "WHERE tr.name = ? AND t.name = ?",
-            (trigger_name, table_name),
+            "WHERE tr.name = ? AND t.name = ?"
+            + (" AND SCHEMA_NAME(t.schema_id) = ?" if schema is not None else ""),
+            (trigger_name, table_name) + ((schema,) if schema is not None else ()),
         )
         row = cursor.fetchone()
         if row:
@@ -742,15 +756,16 @@ class SQLServerAdapter(DatabaseAdapter):
         }
 
     def get_sequence_definition(
-        self, conn: Any, sequence_name: str, database: str | None = None
+        self, conn: Any, sequence_name: str, database: str | None = None, schema: str | None = None
     ) -> dict[str, Any]:
         """Get detailed information about a SQL Server sequence."""
         cursor = self._get_cursor_for_database(conn, database)
         cursor.execute(
             "SELECT CAST(start_value AS BIGINT), CAST(increment AS BIGINT), "
             "CAST(minimum_value AS BIGINT), CAST(maximum_value AS BIGINT), is_cycling "
-            "FROM sys.sequences WHERE name = ?",
-            (sequence_name,),
+            "FROM sys.sequences WHERE name = ?"
+            + (" AND SCHEMA_NAME(schema_id) = ?" if schema is not None else ""),
+            (sequence_name,) + ((schema,) if schema is not None else ()),
         )
         row = cursor.fetchone()
         if row:

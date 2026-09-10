@@ -204,19 +204,31 @@ class SnowflakeAdapter(CursorBasedAdapter):
         schema = schema or "PUBLIC"
         return f'SELECT * FROM "{schema}"."{table}" LIMIT {limit}'
 
+    supports_schema_grouping = True
+
+    def get_schemas(self, conn: Any, database: str | None = None) -> list[str]:
+        cursor = conn.cursor()
+        prefix = f"{self.quote_identifier(database)}." if database else ""
+        cursor.execute(
+            f"SELECT schema_name FROM {prefix}information_schema.schemata "
+            "WHERE schema_name != 'INFORMATION_SCHEMA' ORDER BY schema_name"
+        )
+        return [row[0] for row in cursor.fetchall()]
+
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures."""
         cursor = conn.cursor()
         db_prefix = f"{self.quote_identifier(database)}." if database else ""
         sql = (
-            "SELECT routine_name FROM "
+            "SELECT routine_name, routine_schema FROM "
             f"{db_prefix}information_schema.routines "
             "WHERE routine_type = 'PROCEDURE' AND routine_schema != 'INFORMATION_SCHEMA' "
             "ORDER BY routine_name"
         )
         cursor.execute(sql)
-        # deduplicate
-        return sorted(list({row[0] for row in cursor.fetchall()}))
+        from sqlit.domains.connections.providers.adapters.base import RoutineInfo
+
+        return [RoutineInfo(name, schema=schema) for name, schema in sorted(set(cursor.fetchall()))]
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes."""
@@ -235,9 +247,9 @@ class SnowflakeAdapter(CursorBasedAdapter):
         """Get sequences."""
         cursor = conn.cursor()
         db_prefix = f"{self.quote_identifier(database)}." if database else ""
-        sql = f"SELECT sequence_name FROM {db_prefix}information_schema.sequences WHERE sequence_schema != 'INFORMATION_SCHEMA'"
+        sql = f"SELECT sequence_name, sequence_schema FROM {db_prefix}information_schema.sequences WHERE sequence_schema != 'INFORMATION_SCHEMA'"
         cursor.execute(sql)
-        return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+        return [SequenceInfo(name=row[0], schema=row[1]) for row in cursor.fetchall()]
 
     def get_foreign_keys(
         self,
