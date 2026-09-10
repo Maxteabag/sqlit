@@ -1,0 +1,19 @@
+{
+  "desktop": [
+    1440,
+    1000
+  ],
+  "mobile": [
+    390,
+    844
+  ],
+  "figures": 11,
+  "localLinks": 46,
+  "filteredCsvRows": 16,
+  "traceUpload": "passed",
+  "horizontalOverflow": false,
+  "pageErrors": [],
+  "externalRequests": [],
+  "browserVersion": "146.0.7680.164",
+  "nodeVersion": "v25.2.1"
+}

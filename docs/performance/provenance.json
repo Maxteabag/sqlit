@@ -1,0 +1,10 @@
+{
+  "baseline_source": "9db49c230c7cab6abe497d14b9f51e39ad30cb42",
+  "measured_candidate_source": "0640c96464dcb50434f97b14d097418b51b110ba",
+  "measured_lab_snapshot": "03e68b73999e07118897e4344fcf31b3855a25d5",
+  "measurement_file_hashes_verified_against_git": true,
+  "csv_sha256": "10ffebc5c5b78d7394c77f0f76eb8d4d403194c105f50b1b62c9bf8083eb305b",
+  "baseline_cli_lint_findings": 5,
+  "candidate_cli_lint_findings": 4,
+  "introduced_cli_lint_findings": 0
+}
