@@ -1,0 +1,22 @@
+{
+  "tests": 66,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "provider_tests": {
+    "postgresql": 8,
+    "mssql": 8,
+    "snowflake": 6,
+    "supabase": 7,
+    "sqlite": 6
+  },
+  "registry_contract_tests": 31,
+  "head": "eed60901a93482902997888503cccc96133515cb",
+  "evidence": {
+    "postgresql": "live PostgreSQL 16 container",
+    "mssql": "live SQL Server 2022 container",
+    "snowflake": "fakesnow emulation; not live Snowflake",
+    "supabase": "real adapter with local PostgreSQL transport; not live Supabase",
+    "sqlite": "local SQLite file"
+  }
+}
