@@ -103,16 +103,27 @@ class SqlitDataTable(FastDataTable):
         column_index: int,
         max_width: int | None = None,
     ) -> Any:
-        """Format cells with plain text for NULL/bool/date values.
+        """Format visible cells without sending oversized strings to Rich.
 
-        ``textual-fastdatatable`` 0.19 passes the available cell width to this
-        hook. Keep accepting it even though sqlit's formatter currently relies
-        on Rich to crop the returned renderable.
+        Crop only the display representation; the backend retains the complete
+        value for copying, filtering, exporting and the value viewer.
         """
         if row_index == -1:
             return self.ordered_columns[column_index].label
 
         datum = self.get_cell_at(Coordinate(row=row_index, column=column_index))
+        if (
+            max_width is not None
+            and max_width > 0
+            and not self.render_markup
+            and isinstance(datum, str)
+            and len(datum) > max_width
+            and "\n" not in datum
+            and "\r" not in datum
+        ):
+            text = Text(datum, no_wrap=True)
+            text.truncate(max_width, overflow="ellipsis")
+            return text
         column = self.ordered_columns[column_index]
         return self._format_cell(datum, column)
 
