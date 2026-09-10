@@ -15,6 +15,11 @@ MIN_TIMER_DELAY_S = 0.001
 
 FK_NAVIGATION_DEFAULT_LIMIT = 100
 
+# Each original row becomes a column in the transposed view, and SqlitDataTable
+# (Arrow-backed) isn't built for hundreds of columns, so cap how many rows get
+# transposed at once.
+MAX_TRANSPOSE_ROWS = 200
+
 
 def build_fk_navigation_query(
     *,
@@ -60,6 +65,25 @@ def _strip_table_markup(table: Any, value: Any) -> Any:
         return value
 
 
+def _transpose_result_data(
+    columns: list[str], rows: list[tuple[Any, ...]]
+) -> tuple[list[str], list[tuple[Any, ...]]]:
+    """Swap axes: column names become the "Column" column, each row a "Row N" column.
+
+    Each transposed "Row N" column mixes values from every original column, which
+    may have different types (e.g. an int id next to a str name) - the Arrow-backed
+    table requires one type per column, so values are formatted to strings up front
+    rather than left raw (which Arrow would otherwise silently coerce inconsistently).
+    """
+
+    def fmt(value: Any) -> str:
+        return "NULL" if value is None else str(value)
+
+    header = ["Column"] + [f"Row {i + 1}" for i in range(len(rows))]
+    transposed = [(col_name, *(fmt(row[col_idx]) for row in rows)) for col_idx, col_name in enumerate(columns)]
+    return header, transposed
+
+
 class ResultsMixin:
     """Mixin providing results handling functionality."""
 
@@ -67,6 +91,7 @@ class ResultsMixin:
     _last_result_rows: list[tuple[Any, ...]] = []
     _export_column_indices: list[int] | None = None
     _last_result_row_count: int = 0
+    _results_transposed: bool = False
     _tooltip_cell_coord: tuple[int, int] | None = None
     _tooltip_showing: bool = False
     _tooltip_timer: Any | None = None
@@ -339,6 +364,41 @@ class ResultsMixin:
             current = getattr(current, "parent", None)
         return None
 
+    def _replace_results_section_table_typed(
+        self: ResultsMixinHost,
+        section: Any,
+        old_table: SqlitDataTable,
+        columns: list[str],
+        rows: list[tuple[Any, ...]],
+    ) -> None:
+        """Replace a stacked result section's table, without results-filter markup escaping.
+
+        Not `_build_results_section_table` (results_filter.py), which stringifies every
+        cell to highlight filter matches. Used both to build the transposed view (where
+        `columns`/`rows` already come pre-formatted as strings from `_transpose_result_data`)
+        and to restore the original table on untranspose (where `rows` are the untouched,
+        per-cell-typed source data, so numeric/date formatting still applies there).
+        """
+        table_height = min(2 + len(rows), 16)
+        was_focused = old_table.has_focus
+        # `old_table.remove()` below doesn't free its widget id synchronously, so a
+        # fresh id (mirroring `_build_results_table`'s counter) avoids a DuplicateIds
+        # error when mounting `new_table` while `old_table` is still registered.
+        self._results_table_counter += 1
+        new_table = SqlitDataTable(
+            id=f"result-table-{section.index}-{self._results_table_counter}",
+            zebra_stripes=True,
+            data=rows,
+            column_labels=columns,
+            render_markup=False,
+            null_rep="NULL",
+        )
+        new_table.styles.height = table_height
+        section.mount(new_table, after=old_table)
+        old_table.remove()
+        if was_focused:
+            new_table.focus()
+
     def _flash_table_yank(self: ResultsMixinHost, table: SqlitDataTable, scope: str) -> None:
         """Briefly flash the yanked cell(s) to confirm a copy action."""
         from sqlit.shared.ui.widgets import flash_widget
@@ -410,7 +470,7 @@ class ResultsMixin:
         """View the full value of the selected cell inline."""
         from sqlit.shared.ui.widgets import InlineValueView
 
-        table, _columns, _rows, _stacked = self._get_active_results_context()
+        table, _columns, _rows, stacked = self._get_active_results_context()
         if not table or table.row_count <= 0:
             self.notify("No results", severity="warning")
             return
@@ -422,9 +482,17 @@ class ResultsMixin:
 
         self._hide_cell_tooltip(table)
 
-        # Get column name if available
+        # Get column name if available. While transposed, cursor_col runs over the
+        # displayed Column/Row-N headers, not `_last_result_columns` (the original,
+        # untransposed source) - read the label straight off the live table instead.
         column_name = ""
-        if self._last_result_columns and cursor_col < len(self._last_result_columns):
+        if self._is_active_results_transposed(table, stacked):
+            try:
+                if 0 <= cursor_col < len(table.ordered_columns):
+                    column_name = table.ordered_columns[cursor_col].label.plain
+            except Exception:
+                column_name = ""
+        elif self._last_result_columns and cursor_col < len(self._last_result_columns):
             column_name = self._last_result_columns[cursor_col]
 
         # Show inline value view
@@ -523,6 +591,51 @@ class ResultsMixin:
                     flash_widget(tree, "flash-all")
         except Exception:
             pass
+
+    def _is_active_results_transposed(self: ResultsMixinHost, table: Any, stacked: bool) -> bool:
+        """Whether the given active results table is currently showing the transposed view."""
+        if stacked:
+            section = self._find_results_section(table) if table else None
+            return bool(getattr(section, "result_transposed", False))
+        return bool(getattr(self, "_results_transposed", False))
+
+    def action_toggle_transpose(self: ResultsMixinHost) -> None:
+        """Toggle the transposed (columns-as-rows) view of the active results table."""
+        table, columns, rows, stacked = self._get_active_results_context()
+        if not table or not columns or not rows:
+            self.notify("No results", severity="warning")
+            return
+
+        section = self._find_results_section(table) if stacked else None
+        currently_transposed = self._is_active_results_transposed(table, stacked)
+
+        if currently_transposed:
+            if stacked and section is not None:
+                self._replace_results_section_table_typed(section, table, columns, rows)
+                section.result_transposed = False
+            else:
+                self._replace_results_table(columns, rows)
+                self._results_transposed = False
+            self._update_footer_bindings()
+            return
+
+        display_rows = rows
+        truncated = len(rows) > MAX_TRANSPOSE_ROWS
+        if truncated:
+            display_rows = rows[:MAX_TRANSPOSE_ROWS]
+
+        t_columns, t_rows = _transpose_result_data(columns, display_rows)
+
+        if stacked and section is not None:
+            self._replace_results_section_table_typed(section, table, t_columns, t_rows)
+            section.result_transposed = True
+        else:
+            self._replace_results_table(t_columns, t_rows)
+            self._results_transposed = True
+
+        if truncated:
+            self.notify(f"Transposed first {MAX_TRANSPOSE_ROWS} of {len(rows)} rows", severity="warning")
+        self._update_footer_bindings()
 
     def action_toggle_value_view_mode(self: ResultsMixinHost) -> None:
         """Toggle between tree and syntax view in the inline value view."""
@@ -911,9 +1024,15 @@ class ResultsMixin:
         from sqlit.domains.results.formatters import FORMATS
 
         self._clear_leader_pending()
-        table, columns, rows, _stacked = self._get_active_results_context()
+        table, columns, rows, stacked = self._get_active_results_context()
         if not table or table.row_count <= 0:
             self.notify("No results", severity="warning")
+            return
+        # "cell" labels the value with `columns[col_idx]` and "row" pairs live row
+        # values with `columns` - both index/zip against the original untransposed
+        # source, which is the wrong shape once cursor_col/row run over Column/Row-N.
+        if scope != "all" and self._is_active_results_transposed(table, stacked):
+            self.notify("Not available in transposed view", severity="warning")
             return
 
         fmt = FORMATS[fmt_key]
@@ -982,6 +1101,12 @@ class ResultsMixin:
         table, columns, rows, _stacked = self._get_active_results_context()
         if not table or table.row_count <= 0 or not rows:
             self.notify("No results", severity="warning")
+            return
+        # The cursor's column index runs over the transposed Column/Row-N axis,
+        # not `columns` (the original untransposed source), so this would read
+        # values from the wrong original column.
+        if self._is_active_results_transposed(table, _stacked):
+            self.notify("Not available in transposed view", severity="warning")
             return
         try:
             _row_idx, col_idx = table.cursor_coordinate
