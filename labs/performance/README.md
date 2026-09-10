@@ -1,5 +1,7 @@
 # sqlit performance laboratory
 
+[Read the rendered performance paper](https://maxteabag.github.io/sqlit/performance/pr-331/).
+
 The lab runs the real Textual app in an isolated 120 × 40 pseudo-terminal,
 executes the sqlit database adapters against disposable databases, and preserves
 raw observations. It never opens saved user connections. The default application
@@ -124,3 +126,33 @@ checks 48 complete long/Unicode values and captures a headless 160 × 40 display
 fixture. It is visual regression evidence, not a timed database query. Render an
 SVG through `verify_report.cjs` using the same browser/module arguments; its SVG
 mode uses a fresh headless browser and writes `artifact.png`.
+
+## Publish a browser-readable report
+
+Publishing requires the user's authorization. A GitHub `blob` or raw-source URL
+does not deliver a rendered interactive page. The current public paper is hosted
+under `performance/pr-331/` on this repository's `gh-pages` branch.
+
+```bash
+# Inspect the target and existing Pages configuration first.
+python labs/performance/publish_pages.py --repo OWNER/REPO \
+  --source docs/performance --path performance/REPORT_NAME
+
+# Publish the already-reviewed report and adjacent public assets.
+python labs/performance/publish_pages.py --repo OWNER/REPO \
+  --source docs/performance --path performance/REPORT_NAME --publish
+
+# Verify the actual anonymous HTTPS page, controls and relative downloads.
+node labs/performance/verify_report.cjs https://OWNER.github.io/REPO/performance/REPORT_NAME/ \
+  /absolute/live-qa /absolute/node_modules/playwright /absolute/chromium
+```
+
+The publisher uses a temporary checkout, preserves other Pages paths, and refuses
+to replace an existing publishing source or change a Jekyll site's semantics. It
+copies the report as both `report.html` and `index.html`, preserves its assets,
+fixes the repository-source README link, and writes a source/hash receipt.
+Pages can already be correctly configured when a creation call returns an error;
+reconcile the actual configuration rather than repeating an external effect.
+A build being queued is not delivery:
+require the deployed HTML to return 200 with `text/html`, check its content hash,
+and run the headless verifier before posting the reading link.
