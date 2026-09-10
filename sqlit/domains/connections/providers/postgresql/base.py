@@ -155,13 +155,13 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         cursor = conn.cursor()
         cursor.execute(
             "SELECT indexname, tablename, "
-            "  CASE WHEN indexdef LIKE '%UNIQUE%' THEN true ELSE false END as is_unique "
+            "  CASE WHEN indexdef LIKE '%UNIQUE%' THEN true ELSE false END as is_unique, schemaname "
             "FROM pg_indexes "
             "WHERE schemaname NOT IN ('pg_catalog', 'information_schema') "
             "ORDER BY tablename, indexname"
         )
         return [
-            IndexInfo(name=row[0], table_name=row[1], is_unique=row[2])
+            IndexInfo(name=row[0], table_name=row[1], is_unique=row[2], schema=row[3])
             for row in cursor.fetchall()
         ]
 
@@ -169,7 +169,7 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         """Get triggers from PostgreSQL."""
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT trigger_name, event_object_table "
+            "SELECT trigger_name, event_object_table, trigger_schema "
             "FROM information_schema.triggers "
             "WHERE trigger_schema NOT IN ('pg_catalog', 'information_schema') "
             "ORDER BY event_object_table, trigger_name"
@@ -178,25 +178,25 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         seen = set()
         results = []
         for row in cursor.fetchall():
-            key = (row[0], row[1])
+            key = (row[0], row[1], row[2])
             if key not in seen:
                 seen.add(key)
-                results.append(TriggerInfo(name=row[0], table_name=row[1]))
+                results.append(TriggerInfo(name=row[0], table_name=row[1], schema=row[2]))
         return results
 
     def get_sequences(self, conn: Any, database: str | None = None) -> list[SequenceInfo]:
         """Get sequences from PostgreSQL."""
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT sequence_name "
+            "SELECT sequence_name, sequence_schema "
             "FROM information_schema.sequences "
             "WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema') "
             "ORDER BY sequence_name"
         )
-        return [SequenceInfo(name=row[0]) for row in cursor.fetchall()]
+        return [SequenceInfo(name=row[0], schema=row[1]) for row in cursor.fetchall()]
 
     def get_index_definition(
-        self, conn: Any, index_name: str, table_name: str, database: str | None = None
+        self, conn: Any, index_name: str, table_name: str, database: str | None = None, schema: str | None = None
     ) -> dict[str, Any]:
         """Get detailed information about a PostgreSQL index."""
         cursor = conn.cursor()
@@ -204,8 +204,9 @@ class PostgresBaseAdapter(CursorBasedAdapter):
             "SELECT indexdef, "
             "  CASE WHEN indexdef LIKE '%%UNIQUE%%' THEN true ELSE false END as is_unique "
             "FROM pg_indexes "
-            "WHERE indexname = %s AND tablename = %s",
-            (index_name, table_name),
+            "WHERE indexname = %s AND tablename = %s"
+            + (" AND schemaname = %s" if schema is not None else ""),
+            (index_name, table_name) + ((schema,) if schema is not None else ()),
         )
         row = cursor.fetchone()
         if row:
@@ -225,7 +226,7 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         }
 
     def get_trigger_definition(
-        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None
+        self, conn: Any, trigger_name: str, table_name: str, database: str | None = None, schema: str | None = None
     ) -> dict[str, Any]:
         """Get detailed information about a PostgreSQL trigger."""
         cursor = conn.cursor()
@@ -233,8 +234,9 @@ class PostgresBaseAdapter(CursorBasedAdapter):
             "SELECT action_timing, event_manipulation, action_statement "
             "FROM information_schema.triggers "
             "WHERE trigger_name = %s AND event_object_table = %s "
-            "LIMIT 1",
-            (trigger_name, table_name),
+            + ("AND trigger_schema = %s " if schema is not None else "")
+            + "LIMIT 1",
+            (trigger_name, table_name) + ((schema,) if schema is not None else ()),
         )
         row = cursor.fetchone()
         if row:
@@ -244,8 +246,9 @@ class PostgresBaseAdapter(CursorBasedAdapter):
                     "SELECT pg_get_triggerdef(t.oid) "
                     "FROM pg_trigger t "
                     "JOIN pg_class c ON t.tgrelid = c.oid "
-                    "WHERE t.tgname = %s AND c.relname = %s",
-                    (trigger_name, table_name),
+                    "WHERE t.tgname = %s AND c.relname = %s"
+                    + (" AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = %s)" if schema is not None else ""),
+                    (trigger_name, table_name) + ((schema,) if schema is not None else ()),
                 )
                 def_row = cursor.fetchone()
                 definition = def_row[0] if def_row else row[2]
@@ -367,7 +370,7 @@ class PostgresBaseAdapter(CursorBasedAdapter):
         ]
 
     def get_sequence_definition(
-        self, conn: Any, sequence_name: str, database: str | None = None
+        self, conn: Any, sequence_name: str, database: str | None = None, schema: str | None = None
     ) -> dict[str, Any]:
         """Get detailed information about a PostgreSQL sequence."""
         cursor = conn.cursor()
@@ -375,8 +378,9 @@ class PostgresBaseAdapter(CursorBasedAdapter):
             "SELECT start_value, increment, minimum_value, maximum_value, cycle_option "
             "FROM information_schema.sequences "
             "WHERE sequence_name = %s "
-            "AND sequence_schema NOT IN ('pg_catalog', 'information_schema')",
-            (sequence_name,),
+            "AND sequence_schema NOT IN ('pg_catalog', 'information_schema')"
+            + (" AND sequence_schema = %s" if schema is not None else ""),
+            (sequence_name,) + ((schema,) if schema is not None else ()),
         )
         row = cursor.fetchone()
         if row:

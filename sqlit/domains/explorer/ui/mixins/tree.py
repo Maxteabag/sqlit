@@ -95,7 +95,12 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
         if self._get_node_kind(node) == "database":
             self._collapse_other_database_nodes(node)
-            self._ensure_database_connection_async(data.name)
+            def populate_database() -> None:
+                if not list(node.children):
+                    tree_builder.add_database_object_nodes(self, node, data.name)
+
+            self._ensure_database_connection_async(data.name, populate_database)
+            return
 
         if self._get_node_kind(node) == "connection":
             config = getattr(data, "config", None)

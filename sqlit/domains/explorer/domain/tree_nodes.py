@@ -67,6 +67,7 @@ class FolderNode:
 
     folder_type: str  # "databases", "tables", "views", "indexes", "triggers", "sequences", "procedures"
     database: str | None = None
+    schema: str | None = None
 
     def get_label_text(self) -> str:
         return self.folder_type
@@ -84,7 +85,7 @@ class SchemaNode:
 
     database: str | None
     schema: str
-    folder_type: str
+    folder_type: str = ""
 
     def get_label_text(self) -> str:
         return self.schema
@@ -139,6 +140,8 @@ class ProcedureNode:
     database: str | None
     name: str
 
+    schema: str | None = None
+
     def get_label_text(self) -> str:
         return self.name
 
@@ -156,6 +159,8 @@ class IndexNode:
     database: str | None
     name: str
     table_name: str
+
+    schema: str | None = None
 
     def get_label_text(self) -> str:
         return self.name
@@ -175,6 +180,8 @@ class TriggerNode:
     name: str
     table_name: str
 
+    schema: str | None = None
+
     def get_label_text(self) -> str:
         return self.name
 
@@ -191,6 +198,8 @@ class SequenceNode:
 
     database: str | None
     name: str
+
+    schema: str | None = None
 
     def get_label_text(self) -> str:
         return self.name

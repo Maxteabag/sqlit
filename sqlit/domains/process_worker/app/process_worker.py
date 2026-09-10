@@ -377,6 +377,7 @@ class _WorkerState:
             )
             return
         database = message.get("database")
+        schema = message.get("schema")
         config_payload = message.get("config", {})
         config = ConnectionConfig.from_dict(config_payload)
         config = normalize_connection_config(config)
@@ -431,7 +432,13 @@ class _WorkerState:
                     pass
                 inspector = provider.schema_inspector
                 items: list[Any] = []
-                if folder_type == "tables":
+                if folder_type == "schemas" or schema is not None:
+                    from sqlit.domains.connections.providers.schema_explorer import load_schema_folder_items
+
+                    if not caps.supports_schema_grouping:
+                        raise ValueError("This provider does not support schema grouping")
+                    items = load_schema_folder_items(inspector, conn, db_arg, folder_type, schema)
+                elif folder_type == "tables":
                     raw_data = inspector.get_tables(conn, db_arg)
                     items = [("table", schema, name) for schema, name in raw_data]
                 elif folder_type == "views":

@@ -15,7 +15,7 @@ def show_index_info(host: TreeMixinHost, data: IndexNode) -> None:
         return
 
     try:
-        info = schema_service.get_index_definition(data.database, data.name, data.table_name)
+        info = schema_service.get_index_definition(data.database, data.name, data.table_name, **({"schema": data.schema} if data.schema is not None else {}))
         if info is None:
             host.notify("Indexes not supported for this database.", severity="warning")
             return
@@ -31,7 +31,7 @@ def show_trigger_info(host: TreeMixinHost, data: TriggerNode) -> None:
         return
 
     try:
-        info = schema_service.get_trigger_definition(data.database, data.name, data.table_name)
+        info = schema_service.get_trigger_definition(data.database, data.name, data.table_name, **({"schema": data.schema} if data.schema is not None else {}))
         if info is None:
             host.notify("Triggers not supported for this database.", severity="warning")
             return
@@ -47,7 +47,7 @@ def show_sequence_info(host: TreeMixinHost, data: SequenceNode) -> None:
         return
 
     try:
-        info = schema_service.get_sequence_definition(data.database, data.name)
+        info = schema_service.get_sequence_definition(data.database, data.name, **({"schema": data.schema} if data.schema is not None else {}))
         if info is None:
             host.notify("Sequences not supported for this database.", severity="warning")
             return

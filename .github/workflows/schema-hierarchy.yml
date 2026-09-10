@@ -1,0 +1,32 @@
+name: Schema hierarchy integration
+
+on:
+  pull_request:
+    paths:
+      - 'sqlit/**'
+      - 'tests/integration/schema_hierarchy/**'
+      - 'tools/run_schema_provider_integration.py'
+      - '.github/workflows/schema-hierarchy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  providers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install integration dependencies
+        run: uv sync --group test --extra postgres --extra mssql --extra snowflake
+      - name: Run all supported providers and registry fallback contracts
+        run: uv run --no-sync python tools/run_schema_provider_integration.py --output /tmp/schema-hierarchy-evidence
+      - name: Keep test reports and actual app captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-hierarchy-evidence
+          path: /tmp/schema-hierarchy-evidence
+          if-no-files-found: error
