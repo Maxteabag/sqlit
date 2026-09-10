@@ -257,7 +257,7 @@ def main():
     (output / "data.json").write_text(json.dumps(data, separators=(",", ":")) + "\n")
     scalar_keys = sorted({k for record in records for k, v in record.items() if not isinstance(v, (list, dict))})
     with (output / "measurements.csv").open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=scalar_keys, extrasaction="ignore")
+        writer = csv.DictWriter(f, fieldnames=scalar_keys, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         for record in records:
             writer.writerow({k: v for k, v in record.items() if k in scalar_keys})
