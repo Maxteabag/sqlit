@@ -45,6 +45,7 @@ DARK_THEMES = {
     "matte-black": "Matte Black",
     "ristretto": "Ristretto",
     "osaka-jade": "Osaka Jade",
+    "vesper": "Vesper",
 }
 
 # Combined theme list for selection and previews.
