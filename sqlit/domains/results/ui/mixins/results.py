@@ -582,6 +582,7 @@ class ResultsMixin:
             self._tooltip_timer.stop()
             self._tooltip_timer = None
 
+        value = _strip_table_markup(table, value)
         tooltip_value = "NULL" if value is None else str(value)
         if len(tooltip_value) > 2000:
             tooltip_value = f"{tooltip_value[:2000]}..."
