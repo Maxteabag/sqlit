@@ -16,11 +16,18 @@ from sqlit.domains.connections.cli.helpers import add_schema_arguments, build_co
 from sqlit.domains.connections.domain.config import AuthType, ConnectionConfig, DatabaseType
 from sqlit.domains.connections.providers.catalog import get_provider_schema, get_supported_db_types
 from sqlit.shared.app.runtime import MockConfig, RuntimeConfig
+from sqlit.shared.app.services import build_app_services
 from sqlit.shared.app.startup_profiler import configure as configure_startup_profiler
 from sqlit.shared.app.startup_profiler import enable_import_timing
 from sqlit.shared.app.startup_profiler import log_step as log_startup_step
 from sqlit.shared.app.startup_profiler import span as startup_span
-from sqlit.shared.app.services import build_app_services
+
+_GLOBAL_VALUE_FLAGS = {
+    "--mock", "--db-type", "--name", "--settings", "--theme", "--connection", "-c",
+    "--mock-missing-drivers", "--mock-install", "--mock-pipx", "--mock-query-delay",
+    "--demo-rows", "--max-rows", "--profile-startup-file", "--profile-startup-imports-file",
+    "--profile-startup-imports-min-ms",
+}
 
 
 def _get_schema_value_flags() -> set[str]:
@@ -72,6 +79,10 @@ def _extract_project_dir(argv: list[str]) -> tuple[Path | None, list[str]]:
         # Flags pass straight through (let argparse handle them).
         if arg.startswith("-"):
             result_argv.append(arg)
+            if "=" not in arg and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+                if arg in _GLOBAL_VALUE_FLAGS or arg in _get_schema_value_flags():
+                    i += 1
+                    result_argv.append(argv[i])
             i += 1
             continue
         # First subcommand: copy the rest verbatim.
@@ -122,21 +133,7 @@ def _extract_connection_url(argv: list[str]) -> tuple[str | None, list[str]]:
             # Check if this flag takes a value (simple heuristic: next arg doesn't start with -)
             if i + 1 < len(argv) and not argv[i + 1].startswith("-") and "=" not in arg:
                 # Flags that take values
-                value_flags = {
-                    "--mock",
-                    "--db-type",
-                    "--name",
-                    "--settings",
-                    "--theme",
-                    "--mock-missing-drivers",
-                    "--mock-install",
-                    "--mock-pipx",
-                    "--mock-query-delay",
-                    "--demo-rows",
-                    "--max-rows",
-                }
-                value_flags |= _get_schema_value_flags()
-                if arg in value_flags:
+                if arg in _GLOBAL_VALUE_FLAGS or arg in _get_schema_value_flags():
                     i += 1
                     result_argv.append(argv[i])
             i += 1
@@ -177,7 +174,7 @@ def _sane_tty() -> None:
         pass
 
 
-def _prewarm_process_worker(runtime: RuntimeConfig) -> Any | None:
+def _prewarm_process_worker(runtime: RuntimeConfig, *, settings_store: Any | None = None) -> Any | None:
     """Spawn the process worker before the Textual App is constructed.
 
     `multiprocessing.spawn` collects the parent's open file descriptors at
@@ -191,6 +188,10 @@ def _prewarm_process_worker(runtime: RuntimeConfig) -> Any | None:
     disabled. On failure we fall through to the lazy path inside the UI;
     on macOS that path raises and the in-process executor takes over.
     """
+    # Mount applies this same setting, but spawning happens before mount. Honor
+    # the stored preference here so a disabled worker is never started first.
+    if settings_store is not None:
+        runtime.process_worker = bool(settings_store.get("process_worker", runtime.process_worker))
     if not runtime.process_worker:
         return None
     if runtime.mock.enabled:
@@ -883,7 +884,7 @@ def main() -> int:
 
         # Spawn the worker before the Textual App is constructed; see
         # _prewarm_process_worker for why this matters on macOS.
-        process_worker_client = _prewarm_process_worker(runtime)
+        process_worker_client = _prewarm_process_worker(runtime, settings_store=services.settings_store)
         app = SSMSTUI(
             services=services,
             startup_connection=startup_config,
@@ -949,7 +950,7 @@ def main() -> int:
             print(f"Error: {alert_error}")
             return 1
 
-        process_worker_client = _prewarm_process_worker(runtime)
+        process_worker_client = _prewarm_process_worker(runtime, settings_store=services.settings_store)
         app = SSMSTUI(
             services=services,
             startup_connection=temp_config,
