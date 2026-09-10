@@ -582,12 +582,14 @@ class ResultsMixin:
             self._tooltip_timer.stop()
             self._tooltip_timer = None
 
+        value = _strip_table_markup(table, value)
         tooltip_value = "NULL" if value is None else str(value)
         if len(tooltip_value) > 2000:
             tooltip_value = f"{tooltip_value[:2000]}..."
 
         try:
-            table.tooltip = tooltip_value
+            # Wrap in Text so Rich does not parse cell content as markup.
+            table.tooltip = Text(tooltip_value)
             table._manual_tooltip_active = True
         except Exception:
             pass
