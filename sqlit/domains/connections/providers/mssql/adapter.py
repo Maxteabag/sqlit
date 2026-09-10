@@ -705,7 +705,9 @@ class SQLServerAdapter(DatabaseAdapter):
             "type": index_type,
             "definition": (
                 f"CREATE {'UNIQUE ' if is_unique else ''}{index_type} INDEX "
-                f"[{index_name}] ON [{table_name}] ({', '.join(f'[{c}]' for c in columns)})"
+                f"{self.quote_identifier(index_name)} ON "
+                f"{self.quote_identifier(schema) + '.' if schema is not None else ''}"
+                f"{self.quote_identifier(table_name)} ({', '.join(self.quote_identifier(c) for c in columns)})"
             ),
         }
 

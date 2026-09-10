@@ -55,6 +55,9 @@ def test_advertised_providers_retain_routine_schema(adapter_cls):
     cursor = conn.cursor.return_value
     adapter._get_cursor_for_database = lambda conn, db: cursor
     cursor.fetchall.return_value = [("close_month", "billing"), ("close_month", "analytics")]
+    if adapter_cls is SnowflakeAdapter:
+        cursor.description = [("name",), ("schema_name",), ("is_builtin",)]
+        cursor.fetchall.return_value = [("close_month", "billing", "N"), ("close_month", "analytics", "N")]
     result = adapter.get_procedures(conn, "workbench")
     assert sorted((item.schema, str(item)) for item in result) == [("analytics", "close_month"), ("billing", "close_month")]
     assert adapter.supports_schema_grouping

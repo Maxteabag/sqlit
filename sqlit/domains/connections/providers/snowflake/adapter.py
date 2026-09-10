@@ -207,28 +207,62 @@ class SnowflakeAdapter(CursorBasedAdapter):
     supports_schema_grouping = True
 
     def get_schemas(self, conn: Any, database: str | None = None) -> list[str]:
+        """List visible schemas without requiring a running warehouse.
+
+        SHOW has a row limit, so consume every page before returning.
+        https://docs.snowflake.com/en/sql-reference/sql/show-schemas
+        """
         cursor = conn.cursor()
-        prefix = f"{self.quote_identifier(database)}." if database else ""
-        cursor.execute(
-            f"SELECT schema_name FROM {prefix}information_schema.schemata "
-            "WHERE schema_name != 'INFORMATION_SCHEMA' ORDER BY schema_name"
-        )
-        return [row[0] for row in cursor.fetchall()]
+        scope = f" {self.quote_identifier(database)}" if database else ""
+        page_size = 1000
+        names: list[str] = []
+        after: str | None = None
+        try:
+            while True:
+                query = f"SHOW SCHEMAS IN DATABASE{scope} LIMIT {page_size}"
+                if after is not None:
+                    query += f" FROM {self.quote_literal(after)}"
+                cursor.execute(query)
+                name_index = next(i for i, column in enumerate(cursor.description) if column[0].lower() == "name")
+                rows = cursor.fetchall()
+                names.extend(row[name_index] for row in rows if row[name_index].upper() != "INFORMATION_SCHEMA")
+                if len(rows) < page_size:
+                    return names
+                next_after = rows[-1][name_index]
+                if next_after == after:
+                    raise RuntimeError("Schema catalog pagination did not advance")
+                after = next_after
+        finally:
+            cursor.close()
 
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
-        """Get stored procedures."""
-        cursor = conn.cursor()
-        db_prefix = f"{self.quote_identifier(database)}." if database else ""
-        sql = (
-            "SELECT routine_name, routine_schema FROM "
-            f"{db_prefix}information_schema.routines "
-            "WHERE routine_type = 'PROCEDURE' AND routine_schema != 'INFORMATION_SCHEMA' "
-            "ORDER BY routine_name"
-        )
-        cursor.execute(sql)
+        """List procedures with their owning schema, excluding built-ins."""
         from sqlit.domains.connections.providers.adapters.base import RoutineInfo
 
-        return [RoutineInfo(name, schema=schema) for name, schema in sorted(set(cursor.fetchall()))]
+        cursor = conn.cursor()
+        scope = f" {self.quote_identifier(database)}" if database else ""
+        try:
+            cursor.execute(f"SHOW PROCEDURES IN DATABASE{scope}")
+            columns = {column[0].lower(): i for i, column in enumerate(cursor.description)}
+            rows = cursor.fetchall()
+            if len(rows) >= 10000:
+                # SHOW PROCEDURES has a hard result cap and no pagination.
+                # The documented view is PROCEDURES, not ANSI ROUTINES.
+                prefix = f"{self.quote_identifier(database)}." if database else ""
+                cursor.execute(
+                    f"SELECT procedure_name, procedure_schema FROM {prefix}information_schema.procedures "
+                    "WHERE procedure_schema != 'INFORMATION_SCHEMA' ORDER BY procedure_schema, procedure_name"
+                )
+                pairs = set(cursor.fetchall())
+            else:
+                pairs = {
+                    (row[columns["name"]], row[columns["schema_name"]])
+                    for row in rows
+                    if row[columns["is_builtin"]] != "Y" and row[columns["schema_name"]]
+                }
+            return [RoutineInfo(name, schema=schema) for name, schema in sorted(pairs)]
+        finally:
+            cursor.close()
 
     def get_indexes(self, conn: Any, database: str | None = None) -> list[IndexInfo]:
         """Get indexes."""
