@@ -406,11 +406,7 @@ class QueryHistoryScreen(ModalScreen):
                 event.stop()
             return
 
-        # Filter-text editing (backspace + printable chars) is bound to the
-        # list pane: the list pane is "type to filter" mode. In the preview
-        # pane these keys are ignored so reading a query can't accidentally
-        # mutate the filter; only j/k (scroll), Tab, and action bindings
-        # (enter/d/*/escape) remain active there.
+        # when in preview pane, disable filter modification
         if self._active_pane != "list":
             return
 
@@ -436,17 +432,15 @@ class QueryHistoryScreen(ModalScreen):
             event.stop()
 
     def action_open_filter(self) -> None:
+        # in case of no history, no filter needed
         if not self._merged_entries:
             return
-        # `/` is the filter-entry key, and filter text is only editable in
-        # the list pane. If the user is in the preview pane, jump to the
-        # list pane first so the opened filter is immediately typeable
-        # instead of silently swallowing keystrokes.
+
+        # when in search mode, default pane is set to list
         if self._active_pane != "list":
             self._set_active_pane("list")
-        # Only (re)initialise the filter when it wasn't already open, so
-        # pressing `/` to hop back to the list pane preserves any text the
-        # user has already typed.
+
+        # when some text is alredy in filter, `/` won't reset it
         if self._filter_active:
             return
         self._filter_active = True
