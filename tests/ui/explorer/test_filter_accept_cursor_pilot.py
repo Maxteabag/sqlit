@@ -78,3 +78,71 @@ async def test_filter_accept_lands_cursor_on_matched_connection():
             f"match. Expected 'test-server', got node with connection "
             f"name={name!r} (cursor.label={getattr(cursor, 'label', None)!r})."
         )
+
+
+@pytest.mark.asyncio
+async def test_filter_accept_activates_arrow_highlighted_match():
+    """Arrowing to a later match and pressing Enter selects that match, not the first one."""
+    connections = [
+        create_test_connection("warehouse-a", "sqlite"),
+        create_test_connection("warehouse-b", "sqlite"),
+        create_test_connection("warehouse-c", "sqlite"),
+        create_test_connection("other", "sqlite"),
+    ]
+    services = build_test_services(
+        connection_store=MockConnectionStore(connections),
+        settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+    )
+    app = SSMSTUI(services=services)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.action_focus_explorer()
+        await pilot.pause()
+
+        await pilot.press("slash")
+        await pilot.pause()
+        for ch in "warehouse":
+            await pilot.press(ch)
+            await pilot.pause()
+        assert len(app._tree_filter_matches) == 3
+
+        await pilot.press("down", "down")
+        await pilot.pause()
+        assert _connection_name_of(app.object_tree.cursor_node) == "warehouse-c"
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert _connection_name_of(app.object_tree.cursor_node) == "warehouse-c"
+
+
+@pytest.mark.asyncio
+async def test_filter_accept_centers_selected_node():
+    connections = [create_test_connection(f"conn-{i:02d}", "sqlite") for i in range(80)]
+    services = build_test_services(
+        connection_store=MockConnectionStore(connections),
+        settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+    )
+    app = SSMSTUI(services=services)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.action_focus_explorer()
+        await pilot.pause()
+
+        await pilot.press("slash")
+        await pilot.pause()
+        for ch in "conn-60":
+            await pilot.press(ch)
+            await pilot.pause()
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        tree = app.object_tree
+        cursor = tree.cursor_node
+        assert _connection_name_of(cursor) == "conn-60"
+        height = tree.scrollable_content_region.height
+        assert tree.max_scroll_y > 0
+        assert abs((cursor.line - tree.scroll_offset.y) - height // 2) <= 1
