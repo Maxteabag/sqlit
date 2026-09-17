@@ -177,6 +177,32 @@ def _sane_tty() -> None:
         pass
 
 
+def _prewarm_process_worker(runtime: RuntimeConfig) -> Any | None:
+    """Spawn the process worker before the Textual App is constructed.
+
+    `multiprocessing.spawn` collects the parent's open file descriptors at
+    spawn time. Textual's `App.__init__` registers signal-handler pipes
+    and other non-inheritable FDs, which cause spawn to abort with
+    `ValueError: bad value(s) in fds_to_keep` (see issue #189). Spawning
+    here — before the App is constructed — is the latest point at which
+    the FD set is still clean.
+
+    Returns the live client, or None if spawn fails or the worker is
+    disabled. On failure we fall through to the lazy path inside the UI;
+    on macOS that path raises and the in-process executor takes over.
+    """
+    if not runtime.process_worker:
+        return None
+    if runtime.mock.enabled:
+        return None
+    try:
+        from sqlit.domains.process_worker.app.process_worker_client import ProcessWorkerClient
+
+        return ProcessWorkerClient()
+    except Exception:
+        return None
+
+
 def _run_app(app: Any) -> int:
     exit_code: int | None = None
     handled_signals = [signal.SIGINT, signal.SIGTERM]
@@ -464,6 +490,7 @@ def main() -> int:
         connection_url, filtered_argv = _extract_connection_url(filtered_argv)
 
     log_startup_step("cli_parser_start")
+    from sqlit import __version__
     parser = argparse.ArgumentParser(
         prog="sqlit",
         description="A terminal UI for SQL databases",
@@ -475,6 +502,12 @@ def main() -> int:
             "<project>/.sqlit/ instead of the global config."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
 
     parser.add_argument(
@@ -694,6 +727,11 @@ def main() -> int:
         choices=[t.value for t in AuthType],
         help="Authentication type (SQL Server only)",
     )
+    edit_parser.add_argument(
+        "--postgres-auth-method",
+        choices=["password", "azure_entra_cli"],
+        help="PostgreSQL authentication method",
+    )
     edit_parser.add_argument("--file-path", help="Database file path (SQLite only)")
     edit_parser.add_argument("--password-command", dest="password_command", help="Shell command to retrieve the database password")
     edit_parser.add_argument("--ssh-password-command", dest="ssh_password_command", help="Shell command to retrieve the SSH password")
@@ -843,10 +881,14 @@ def main() -> int:
             print(f"Error: {exc}")
             return 1
 
+        # Spawn the worker before the Textual App is constructed; see
+        # _prewarm_process_worker for why this matters on macOS.
+        process_worker_client = _prewarm_process_worker(runtime)
         app = SSMSTUI(
             services=services,
             startup_connection=startup_config,
             exclusive_connection=exclusive_connection,
+            process_worker_client=process_worker_client,
         )
         exit_code = _run_app(app)
         if exit_code != 0:
@@ -907,7 +949,12 @@ def main() -> int:
             print(f"Error: {alert_error}")
             return 1
 
-        app = SSMSTUI(services=services, startup_connection=temp_config)
+        process_worker_client = _prewarm_process_worker(runtime)
+        app = SSMSTUI(
+            services=services,
+            startup_connection=temp_config,
+            process_worker_client=process_worker_client,
+        )
         return _run_app(app)
 
     if args.command in {"connections", "connection"}:

@@ -9,6 +9,7 @@ from tests.fixtures.cockroachdb import *
 from tests.fixtures.db2 import *
 from tests.fixtures.d1 import *
 from tests.fixtures.duckdb import *
+from tests.fixtures.exasol import *
 from tests.fixtures.firebird import *
 from tests.fixtures.flight import *
 from tests.fixtures.impala import *

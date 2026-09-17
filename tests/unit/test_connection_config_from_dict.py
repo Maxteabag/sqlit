@@ -205,3 +205,17 @@ def test_to_dict_include_passwords_false_keeps_password_command() -> None:
     d = config.to_dict(include_passwords=False)
     assert d["endpoint"]["password"] is None
     assert d["endpoint"]["password_command"] == "echo pw"
+
+
+def test_transport_endpoint_rewrite_preserves_original_host_without_serializing_it() -> None:
+    config = ConnectionConfig.from_dict({
+        "name": "t",
+        "db_type": "trino",
+        "endpoint": {"kind": "tcp", "host": "trino.example.com", "port": "8443", "username": "u"},
+    })
+
+    tunneled = config.with_endpoint(host="127.0.0.1", port="12345")
+
+    assert tunneled.tcp_endpoint is not None
+    assert tunneled.tcp_endpoint.original_host == "trino.example.com"
+    assert "original_host" not in tunneled.to_dict()["endpoint"]

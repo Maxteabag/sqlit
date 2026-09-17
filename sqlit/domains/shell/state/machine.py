@@ -10,8 +10,10 @@ adding or overriding specific behaviors.
 
 from __future__ import annotations
 
+from sqlit.core.binding_contexts import get_binding_contexts
 from sqlit.core.input_context import InputContext
-from sqlit.core.leader_commands import get_leader_commands
+from sqlit.core.keymap import get_keymap
+from sqlit.core.leader_commands import LEADER_GUARDS, get_leader_commands
 from sqlit.core.state_base import (
     ActionResult,
     DisplayBinding,
@@ -34,8 +36,8 @@ from sqlit.domains.query.state import (
     QueryFocusedState,
     QueryInsertModeState,
     QueryNormalModeState,
-    QueryVisualModeState,
     QueryVisualLineModeState,
+    QueryVisualModeState,
 )
 from sqlit.domains.results.state import (
     ResultsFilterActiveState,
@@ -49,7 +51,6 @@ from sqlit.domains.shell.state.leader_pending import LeaderPendingState
 from sqlit.domains.shell.state.main_screen import MainScreenState
 from sqlit.domains.shell.state.modal_active import ModalActiveState
 from sqlit.domains.shell.state.root import RootState
-
 
 STATE_TO_HELP_SECTION: dict[str, str] = {
     "QueryInsertModeState": "query_insert",
@@ -149,6 +150,17 @@ class UIStateMachine:
         """Check if action is allowed in current state."""
         state = self.get_active_state(app)
         result = state.check_action(app, action_name)
+        if result == ActionResult.UNHANDLED and not app.modal_open and not app.leader_pending:
+            contexts = get_binding_contexts(app)
+            for binding in get_keymap().get_action_keys():
+                if (
+                    binding.leader_command
+                    and binding.action == action_name
+                    and binding.context in contexts
+                ):
+                    # Explicit state prohibitions still take precedence.
+                    guard = LEADER_GUARDS.get(binding.guard) if binding.guard else None
+                    return guard(app) if guard else True
         return result == ActionResult.ALLOWED
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
@@ -238,6 +250,7 @@ class UIStateMachine:
         s.binding(f"{g_key}{lk('execute_query_atomic', 'g', 't')}", "Execute as transaction")
         s.binding(k("show_history", "<backspace>"), "Query history")
         s.binding(k("new_query", "N"), "New query (clear)")
+        s.binding(f"{leader_key}{lk('format_query', 'leader', 'p')}", "Format query")
         s.binding(k("undo", "u"), "Undo")
         s.binding(k("redo", "^r"), "Redo")
         sections.append(s)

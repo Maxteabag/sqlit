@@ -105,6 +105,14 @@ class ConnectionStoreProtocol(Protocol):
         """Save connections."""
         ...
 
+    def save_one(
+        self,
+        connection: ConnectionConfig,
+        previous_name: str | None = None,
+    ) -> None:
+        """Persist a single connection without rewriting other credentials."""
+        ...
+
     def set_credentials_service(self, service: CredentialsService) -> None:
         """Attach a credentials service for loading stored secrets."""
         ...

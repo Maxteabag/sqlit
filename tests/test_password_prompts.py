@@ -133,7 +133,6 @@ class TestNeedsDbPassword:
         )
         assert not needs_db_password(config)
 
-
     def test_password_command_set_does_not_need_prompt(self) -> None:
         config = ConnectionConfig(
             name="test",
@@ -223,7 +222,6 @@ class TestNeedsSshPassword:
             ssh_password="stored_password",
         )
         assert not needs_ssh_password(config)
-
 
     def test_ssh_password_command_set_does_not_need_prompt(self) -> None:
         config = ConnectionConfig(
@@ -480,6 +478,25 @@ class TestPasswordCommandPrompt:
         mock_run.assert_not_called()
         mock_getpass.assert_not_called()
         assert result.password == "explicit"
+
+    @patch("sqlit.domains.connections.cli.prompts.getpass.getpass")
+    @patch("sqlit.domains.connections.cli.prompts.run_password_command")
+    def test_trino_ticket_auth_skips_stale_password_command(self, mock_run: MagicMock, mock_getpass: MagicMock) -> None:
+        config = ConnectionConfig(
+            name="trino",
+            db_type="trino",
+            server="trino.example.com",
+            username="user",
+            password=None,
+            password_command="echo should-not-run",
+            options={"trino_auth_method": "kerberos"},
+        )
+
+        result = prompt_for_password(config)
+
+        mock_run.assert_not_called()
+        mock_getpass.assert_not_called()
+        assert result.password is None
 
 
 class TestPasswordPromptIntegration:

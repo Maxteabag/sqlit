@@ -325,6 +325,50 @@ class TestDetectDatabaseContainers:
             assert containers[0].database == "testdb"
             assert containers[0].connectable is True
 
+    @pytest.mark.parametrize(
+        ("host_ip", "expected_host"),
+        [
+            ("127.0.0.1", "127.0.0.1"),
+            ("0.0.0.0", "127.0.0.1"),
+            ("::1", "::1"),
+            ("::", "::1"),
+            ("192.0.2.10", "192.0.2.10"),
+        ],
+    )
+    def test_detected_mssql_container_uses_published_address_family(
+        self, host_ip: str, expected_host: str
+    ):
+        """Test MSSQL Docker connections remain reachable through their binding."""
+        mock_container = MagicMock()
+        mock_container.name = "test-mssql"
+        mock_container.short_id = "abc123"
+        mock_container.image.tags = ["mcr.microsoft.com/mssql/server:2022-latest"]
+        mock_container.attrs = {
+            "Config": {"Env": ["MSSQL_SA_PASSWORD=test-password"]},
+            "HostConfig": {"NetworkMode": "bridge"},
+            "NetworkSettings": {
+                "Ports": {
+                    "1433/tcp": [{"HostIp": host_ip, "HostPort": "1433"}],
+                }
+            },
+        }
+
+        mock_client = MagicMock()
+        mock_client.containers.list.side_effect = [[mock_container], []]
+
+        with (
+            patch(
+                "sqlit.domains.connections.discovery.docker_detector.get_docker_status",
+                return_value=DockerStatus.AVAILABLE,
+            ),
+            patch("docker.from_env", return_value=mock_client),
+        ):
+            _, containers = detect_database_containers()
+
+        assert len(containers) == 1
+        assert containers[0].host == expected_host
+        assert container_to_connection_config(containers[0]).server == expected_host
+
     def test_detect_container_tagless_image(self):
         """Test detection when image tags are missing."""
         mock_container = MagicMock()

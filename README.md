@@ -25,7 +25,7 @@
 ---
 
 ### Connect
-Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
+Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Databricks, Supabase, CloudFlare D1, Turso, Athena, BigQuery, Spanner, RedShift, IBM Db2, SAP HANA, Teradata, Exasol, Trino, Presto, Apache Flight SQL, Apache Impala, SurrealDB and osquery.
 
 ![Database Providers](docs/demos/demo-providers.gif)
 
@@ -239,11 +239,28 @@ Autocomplete triggers automatically in INSERT mode. Use `Tab` to accept.
 
 Connections and settings are stored in `$XDG_CONFIG_HOME/sqlit/` (default: `~/.config/sqlit/`). Override the location by setting `SQLIT_CONFIG_DIR`.
 
-If an older install left files in `~/.sqlit/`, they are moved to the new location automatically on first run.
-
 ### Custom keybindings
 
 Edit the `keymap.json` file in your sqlit config dir. See [`config/keymap.template.json`](config/keymap.template.json) for the full default keymap. Keymap.json need to only contain the overriding keymaps.
+
+Commands from the main leader menu can also be bound directly in an app scope:
+
+```json
+{
+  "keymap": {
+    "action_keys": {
+      "query_normal": { "edit_query_in_editor": "ctrl+g" }
+    }
+  }
+}
+```
+
+This keeps the leader shortcut and adds `ctrl+g` in the query editor's normal
+mode. Other examples include `format_query`, `telescope`, and `change_theme`.
+Direct bindings retain command guards and state restrictions. Conflicting keys
+are rejected; unbind or remap the existing action to free its key. Use a list for
+aliases, or `null` to remove a direct binding without changing the leader menu.
+Vim submenu motions and dialog scopes are not supported for this promotion.
 
 ## FAQ
 
@@ -289,12 +306,15 @@ Most of the time you can just run `sqlit` and connect. If a Python driver is mis
 | Turso                               | `libsql`                     | `pipx inject sqlit-tui libsql`                     | `python -m pip install libsql`                     |
 | Cloudflare D1                       | `requests`                   | `pipx inject sqlit-tui requests`                   | `python -m pip install requests`                   |
 | Snowflake                           | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` |
+| Databricks                          | `databricks-sql-connector`   | `pipx inject sqlit-tui databricks-sql-connector databricks-sdk`   | `python -m pip install databricks-sql-connector databricks-sdk`   |
 | Firebird                            | `firebirdsql`                | `pipx inject sqlit-tui firebirdsql`                | `python -m pip install firebirdsql`                |
 | Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   |
 | BigQuery                            | `google-cloud-bigquery`      | `pipx inject sqlit-tui google-cloud-bigquery`      | `python -m pip install google-cloud-bigquery`      |
 | Spanner                             | `google-cloud-spanner`       | `pipx inject sqlit-tui google-cloud-spanner`       | `python -m pip install google-cloud-spanner`       |
+| Exasol                              | `pyexasol`                   | `pipx inject sqlit-tui pyexasol`                   | `python -m pip install pyexasol`                   |
 | Apache Arrow Flight SQL             | `adbc-driver-flightsql`      | `pipx inject sqlit-tui adbc-driver-flightsql`      | `python -m pip install adbc-driver-flightsql`      |
 | Apache Impala                       | `impyla`                     | `pipx inject sqlit-tui impyla`                     | `python -m pip install impyla`                     |
+| Trino                               | `trino`                      | `pipx inject sqlit-tui trino`                      | `python -m pip install trino`                      |
 | SurrealDB                           | `surrealdb`                  | `pipx inject sqlit-tui surrealdb`                  | `python -m pip install surrealdb`                  |
 | osquery                             | `osquery`                    | `pipx inject sqlit-tui osquery`                    | `python -m pip install osquery`                    |
 
@@ -319,7 +339,7 @@ If you try to create an SSH connection without these dependencies, sqlit will de
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Maxteabag/sqlit&type=Date)](https://star-history.com/#Maxteabag/sqlit&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=Maxteabag/sqlit&type=Date)](https://star-history.dera.page/#Maxteabag/sqlit&Date)
 
 ---
 

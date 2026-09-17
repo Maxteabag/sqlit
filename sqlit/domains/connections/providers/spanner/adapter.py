@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -83,6 +84,10 @@ class SpannerAdapter(CursorBasedAdapter):
     @property
     def supports_sequences(self) -> bool:
         return False
+
+    @property
+    def supports_foreign_keys(self) -> bool:
+        return True
 
     @property
     def default_schema(self) -> str:
@@ -331,6 +336,92 @@ class SpannerAdapter(CursorBasedAdapter):
         """Spanner doesn't support traditional sequences."""
         return []
 
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List outgoing FKs via INFORMATION_SCHEMA.
+
+        Spanner default schema is empty (the unnamed schema). The query
+        uses pyformat-style `%s` binding for the PG dialect and a single-
+        identifier replacement for GoogleSQL; spanner-dbapi supports
+        pyformat in both dialects.
+        """
+        cursor = conn.cursor()
+        schema = schema or ""
+        cursor.execute(
+            "SELECT kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION, "
+            "       kcu.COLUMN_NAME, ccu.TABLE_SCHEMA, "
+            "       ccu.TABLE_NAME, ccu.COLUMN_NAME "
+            "FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc "
+            "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
+            "  ON kcu.CONSTRAINT_CATALOG = rc.CONSTRAINT_CATALOG "
+            "  AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA "
+            "  AND kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME "
+            "JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu "
+            "  ON ccu.CONSTRAINT_CATALOG = rc.CONSTRAINT_CATALOG "
+            "  AND ccu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA "
+            "  AND ccu.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME "
+            "  AND ccu.ORDINAL_POSITION = kcu.POSITION_IN_UNIQUE_CONSTRAINT "
+            "WHERE kcu.TABLE_SCHEMA = %s AND kcu.TABLE_NAME = %s "
+            "ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=schema,
+                referenced_schema=row[3] or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        cursor = conn.cursor()
+        schema = schema or ""
+        cursor.execute(
+            "SELECT kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION, "
+            "       kcu.TABLE_SCHEMA, kcu.TABLE_NAME, "
+            "       kcu.COLUMN_NAME, ccu.COLUMN_NAME "
+            "FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc "
+            "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
+            "  ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME "
+            "JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu "
+            "  ON ccu.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME "
+            "  AND ccu.ORDINAL_POSITION = kcu.POSITION_IN_UNIQUE_CONSTRAINT "
+            "WHERE ccu.TABLE_SCHEMA = %s AND ccu.TABLE_NAME = %s "
+            "ORDER BY kcu.TABLE_SCHEMA, kcu.TABLE_NAME, "
+            "         kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION",
+            (schema, table),
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[3],
+                column=row[4],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[2] or "",
+                referenced_schema=schema,
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
     def _quote_identifier_for_dialect(self, dialect: str, name: str) -> str:
         """Quote an identifier based on dialect.
 
@@ -376,3 +467,22 @@ class SpannerAdapter(CursorBasedAdapter):
         """Build SELECT query with LIMIT using connection-aware quoting."""
         quoted = self._quote_identifier_for_conn(conn, table)
         return f"SELECT * FROM {quoted} LIMIT {limit}"
+
+    def build_filtered_select_query_for_conn(
+        self,
+        conn: Any,
+        table: str,
+        column: str,
+        value: Any,
+        limit: int,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> str:
+        """Build a navigation query using the connected database's dialect."""
+        dialect = self._get_dialect(conn)
+        quoted_table = self._quote_identifier_for_dialect(dialect, table)
+        quoted_column = self._quote_identifier_for_dialect(dialect, column)
+        literal = self.quote_literal(value)
+        if dialect == DIALECT_GOOGLESQL and isinstance(value, str):
+            literal = "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+        return f"SELECT * FROM {quoted_table} WHERE {quoted_column} = {literal} LIMIT {limit}"

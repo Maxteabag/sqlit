@@ -32,6 +32,7 @@ SPEC = ProviderSpec(
             "database": (),
         },
         default_user="sa",
+        preferred_host="127.0.0.1",
     ),
 )
 

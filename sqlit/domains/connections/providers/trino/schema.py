@@ -6,7 +6,6 @@ from sqlit.domains.connections.providers.schema_helpers import (
     FieldType,
     SchemaField,
     SelectOption,
-    _password_field,
     _port_field,
     _server_field,
     _username_field,
@@ -18,6 +17,32 @@ def _get_http_scheme_options() -> tuple[SelectOption, ...]:
         SelectOption("http", "HTTP"),
         SelectOption("https", "HTTPS"),
     )
+
+
+def _get_authentication_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("none", "None"),
+        SelectOption("basic", "Basic"),
+        SelectOption("kerberos", "Kerberos"),
+        SelectOption("gssapi", "GSSAPI"),
+    )
+
+
+def _get_kerberos_mutual_authentication_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("driver", "Driver default"),
+        SelectOption("required", "Required"),
+        SelectOption("optional", "Optional"),
+        SelectOption("disabled", "Disabled"),
+    )
+
+
+def _trino_auth_is_basic(config: dict[str, str]) -> bool:
+    return config.get("trino_auth_method", "basic") == "basic"
+
+
+def _trino_auth_is_kerberos(config: dict[str, str]) -> bool:
+    return config.get("trino_auth_method", "basic") in {"kerberos", "gssapi"}
 
 
 SCHEMA = ConnectionSchema(
@@ -39,7 +64,53 @@ SCHEMA = ConnectionSchema(
             required=False,
         ),
         _username_field(),
-        _password_field(),
+        SchemaField(
+            name="trino_auth_method",
+            label="Authentication",
+            field_type=FieldType.SELECT,
+            options=_get_authentication_options(),
+            default="basic",
+        ),
+        SchemaField(
+            name="password",
+            label="Password",
+            field_type=FieldType.PASSWORD,
+            placeholder="(empty = ask every connect)",
+            group="credentials",
+            visible_when=_trino_auth_is_basic,
+        ),
+        SchemaField(
+            name="trino_kerberos_service_name",
+            label="Kerberos Service Name",
+            placeholder="HTTP",
+            description="Service principal name; blank uses HTTP for Kerberos",
+            visible_when=_trino_auth_is_kerberos,
+        ),
+        SchemaField(
+            name="trino_kerberos_hostname_override",
+            label="Kerberos Hostname Override",
+            placeholder="trino.example.com",
+            description="Hostname used to construct the Kerberos service principal",
+            visible_when=_trino_auth_is_kerberos,
+        ),
+        SchemaField(
+            name="trino_kerberos_delegate",
+            label="Delegate Kerberos Credentials",
+            field_type=FieldType.SELECT,
+            options=(SelectOption("false", "No"), SelectOption("true", "Yes")),
+            default="false",
+            visible_when=_trino_auth_is_kerberos,
+            advanced=True,
+        ),
+        SchemaField(
+            name="trino_kerberos_mutual_authentication",
+            label="Mutual Authentication",
+            field_type=FieldType.SELECT,
+            options=_get_kerberos_mutual_authentication_options(),
+            default="driver",
+            visible_when=_trino_auth_is_kerberos,
+            advanced=True,
+        ),
         SchemaField(
             name="http_scheme",
             label="HTTP Scheme",

@@ -59,9 +59,6 @@ class UILeaderMixin:
         where leader state transitions happen (except timeout → menu).
         """
         self._cancel_leader_pending()
-        if action == "quit":
-            self.exit()
-            return
         action_method = getattr(self, f"action_{action}", None)
         if action_method:
             action_method()
@@ -108,6 +105,18 @@ class UILeaderMixin:
 
     def action_leader_edit_query_in_editor(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("edit_query_in_editor")
+
+    def action_leader_query_library(self: UINavigationMixinHost) -> None:
+        self._execute_leader_command("query_library")
+
+    def action_leader_save_query(self: UINavigationMixinHost) -> None:
+        self._execute_leader_command("save_query")
+
+    def action_leader_save_query_as(self: UINavigationMixinHost) -> None:
+        self._execute_leader_command("save_query_as")
+
+    def action_leader_format_query(self: UINavigationMixinHost) -> None:
+        self._execute_leader_command("format_query")
 
     def action_leader_toggle_process_worker(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("toggle_process_worker")

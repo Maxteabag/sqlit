@@ -12,6 +12,28 @@ from sqlit.shared.ui.spinner import Spinner
 SCHEMA_PROCESS_BATCH_SIZE = 200
 
 
+def _dedupe_routines(routines: list[Any]) -> list[Any]:
+    """Deduplicate routines without collapsing equal names in other schemas."""
+    unique: dict[tuple[str, str, str, str], Any] = {}
+    for routine in routines:
+        key = (
+            str(getattr(routine, "database", "")).lower(),
+            str(getattr(routine, "schema", "")).lower(),
+            str(routine).lower(),
+            str(getattr(routine, "routine_type", "PROCEDURE")).upper(),
+        )
+        unique.setdefault(key, routine)
+    return list(unique.values())
+
+
+def _completion_routine_loader(inspector: Any) -> tuple[str, Any]:
+    """Return a cache key and loader that cannot collide with explorer data."""
+    rich_loader = getattr(inspector, "get_completion_routines", None)
+    if callable(rich_loader):
+        return "completion_routines", rich_loader
+    return "procedures", inspector.get_procedures
+
+
 class AutocompleteSchemaMixin:
     """Mixin providing schema loading and caching for autocomplete."""
 
@@ -403,12 +425,12 @@ class AutocompleteSchemaMixin:
             try:
                 entries: list[tuple[str, list[tuple[str, tuple[str, str, str | None]]]]] = []
                 for schema_name, table_name in tables:
+                    display_name = dialect.format_table_name(schema_name, table_name)
                     if single_db:
-                        full_name = table_name
+                        full_name = display_name
                     else:
                         full_name = dialect.qualified_name(database, schema_name, table_name)
 
-                    display_name = dialect.format_table_name(schema_name, table_name)
                     metadata = [
                         (display_name.lower(), (schema_name, table_name, database)),
                         (table_name.lower(), (schema_name, table_name, database)),
@@ -486,12 +508,12 @@ class AutocompleteSchemaMixin:
             try:
                 entries: list[tuple[str, list[tuple[str, tuple[str, str, str | None]]]]] = []
                 for schema_name, view_name in views:
+                    display_name = dialect.format_table_name(schema_name, view_name)
                     if single_db:
-                        full_name = view_name
+                        full_name = display_name
                     else:
                         full_name = dialect.qualified_name(database, schema_name, view_name)
 
-                    display_name = dialect.format_table_name(schema_name, view_name)
                     metadata = [
                         (display_name.lower(), (schema_name, view_name, database)),
                         (view_name.lower(), (schema_name, view_name, database)),
@@ -522,12 +544,13 @@ class AutocompleteSchemaMixin:
             self._schema_job_complete()
             return
         procedure_inspector = cast(ProcedureInspector, inspector)
+        cache_field, loader = _completion_routine_loader(procedure_inspector)
 
         cache_key = database or "__default__"
 
         # Check shared cache first (may have been populated by tree expansion)
-        if cache_key in self._db_object_cache and "procedures" in self._db_object_cache[cache_key]:
-            self._process_procedures_result(self._db_object_cache[cache_key]["procedures"], cache_key)
+        if cache_key in self._db_object_cache and cache_field in self._db_object_cache[cache_key]:
+            self._process_procedures_result(self._db_object_cache[cache_key][cache_field], cache_key)
             return
 
         # Offload DB call to thread
@@ -536,18 +559,30 @@ class AutocompleteSchemaMixin:
                 db_arg = database
                 if hasattr(self, "_get_metadata_db_arg"):
                     db_arg = self._get_metadata_db_arg(database)
-                procedures = self._run_db_call(procedure_inspector.get_procedures, connection, db_arg)
-                self.call_from_thread(self._on_procedures_loaded, procedures, database, cache_key)
+                procedures = self._run_db_call(loader, connection, db_arg)
+                self.call_from_thread(
+                    self._on_procedures_loaded,
+                    procedures,
+                    database,
+                    cache_key,
+                    cache_field,
+                )
             except Exception as e:
                 self.call_from_thread(self._on_procedures_error, e, database)
 
         self.run_worker(work, thread=True, name=f"load-procedures-{cache_key}")
 
-    def _on_procedures_loaded(self: AutocompleteMixinHost, procedures: list, database: str | None, cache_key: str) -> None:
+    def _on_procedures_loaded(
+        self: AutocompleteMixinHost,
+        procedures: list,
+        database: str | None,
+        cache_key: str,
+        cache_field: str = "procedures",
+    ) -> None:
         """Handle procedures loaded from thread."""
         if cache_key not in self._db_object_cache:
             self._db_object_cache[cache_key] = {}
-        self._db_object_cache[cache_key]["procedures"] = procedures
+        self._db_object_cache[cache_key][cache_field] = procedures
         self._process_procedures_result(procedures, cache_key)
 
     def _on_procedures_error(self: AutocompleteMixinHost, error: Exception, database: str | None) -> None:
@@ -681,7 +716,7 @@ class AutocompleteSchemaMixin:
                 try:
                     tables_dedup = list(dict.fromkeys(tables))
                     views_dedup = list(dict.fromkeys(views))
-                    procedures_dedup = list(dict.fromkeys(procedures))
+                    procedures_dedup = _dedupe_routines(procedures)
                 except Exception as e:
                     self.call_from_thread(self._on_schema_dedup_error, e)
                     return
@@ -799,16 +834,16 @@ class AutocompleteSchemaMixin:
                         db_arg = self._get_metadata_db_arg(database)
                     tables = await run_db_call(inspector.get_tables, connection, db_arg)
                     for schema_name, table_name in tables:
+                        display_name = dialect.format_table_name(schema_name, table_name)
                         # Use simple name if we have a default database, full qualifier otherwise
                         if len(databases) == 1:
-                            # Single database - use simple table name
-                            schema_cache["tables"].append(table_name)
+                            # Single database - omit only the provider's default schema
+                            schema_cache["tables"].append(display_name)
                         else:
                             # Multiple databases - use qualified identifier
                             full_name = dialect.qualified_name(database, schema_name, table_name)
                             schema_cache["tables"].append(full_name)
                         # Keep metadata for column loading (multiple keys for flexible lookup)
-                        display_name = dialect.format_table_name(schema_name, table_name)
                         table_metadata[display_name.lower()] = (schema_name, table_name, database)
                         table_metadata[table_name.lower()] = (schema_name, table_name, database)
                         if database:
@@ -820,16 +855,16 @@ class AutocompleteSchemaMixin:
                     # Get views
                     views = await run_db_call(inspector.get_views, connection, db_arg)
                     for schema_name, view_name in views:
+                        display_name = dialect.format_table_name(schema_name, view_name)
                         # Use simple name if we have a default database, full qualifier otherwise
                         if len(databases) == 1:
-                            # Single database - use simple view name
-                            schema_cache["views"].append(view_name)
+                            # Single database - omit only the provider's default schema
+                            schema_cache["views"].append(display_name)
                         else:
                             # Multiple databases - use qualified identifier
                             full_name = dialect.qualified_name(database, schema_name, view_name)
                             schema_cache["views"].append(full_name)
                         # Keep metadata for column loading (multiple keys for flexible lookup)
-                        display_name = dialect.format_table_name(schema_name, view_name)
                         table_metadata[display_name.lower()] = (schema_name, view_name, database)
                         table_metadata[view_name.lower()] = (schema_name, view_name, database)
                         if database:
@@ -840,7 +875,8 @@ class AutocompleteSchemaMixin:
 
                     # Get procedures
                     if caps.supports_stored_procedures and isinstance(inspector, ProcedureInspector):
-                        procedures = await run_db_call(inspector.get_procedures, connection, db_arg)
+                        _cache_field, loader = _completion_routine_loader(inspector)
+                        procedures = await run_db_call(loader, connection, db_arg)
                         schema_cache["procedures"].extend(procedures)
 
                 except Exception:
@@ -849,7 +885,7 @@ class AutocompleteSchemaMixin:
             # Deduplicate
             schema_cache["tables"] = list(dict.fromkeys(schema_cache["tables"]))
             schema_cache["views"] = list(dict.fromkeys(schema_cache["views"]))
-            schema_cache["procedures"] = list(dict.fromkeys(schema_cache["procedures"]))
+            schema_cache["procedures"] = _dedupe_routines(schema_cache["procedures"])
 
             # Update cache - columns will be lazy-loaded when needed
             self._update_schema_cache(schema_cache, table_metadata)

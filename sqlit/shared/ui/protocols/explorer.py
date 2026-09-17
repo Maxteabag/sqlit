@@ -42,6 +42,9 @@ class ExplorerActionsProtocol(Protocol):
     def _activate_tree_node(self, node: Any) -> None:
         ...
 
+    def _open_saved_query_node(self, data: Any) -> None:
+        ...
+
     def action_tree_filter(self) -> None:
         ...
 

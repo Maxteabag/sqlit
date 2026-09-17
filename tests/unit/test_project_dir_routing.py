@@ -10,6 +10,7 @@ import pytest
 from sqlit.cli import _extract_project_dir, _looks_like_project_path
 from sqlit.domains.connections.store.connections import ConnectionStore
 from sqlit.domains.query.store.history import HistoryStore
+from sqlit.domains.query.store.saved_queries import SavedQueryStore
 from sqlit.domains.query.store.starred import StarredStore
 from sqlit.shared.app.runtime import RuntimeConfig
 
@@ -113,6 +114,14 @@ class TestStoreOverrides:
         assert (tmp_path / "starred.json").exists()
         data = json.loads((tmp_path / "starred.json").read_text())
         assert data == {"c": ["SELECT 1"]}
+
+    def test_saved_query_store_uses_lazy_base_dir(self, tmp_path: Path) -> None:
+        store = SavedQueryStore(base_dir=tmp_path / "saved-queries")
+        assert not store.base_dir.exists()
+
+        store.save("c", "reports/one", "SELECT 1")
+
+        assert (tmp_path / "saved-queries").is_dir()
 
     def test_connection_store_uses_file_path(self, tmp_path: Path) -> None:
         s = ConnectionStore(file_path=tmp_path / "conns.json")

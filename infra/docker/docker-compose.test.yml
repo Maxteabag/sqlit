@@ -143,6 +143,21 @@ services:
     profiles:
       - enterprise
 
+  # Exasol ships a single-container database image, but it manages its own
+  # storage volumes and kernel parameters, so it needs privileged mode and a
+  # long stop grace period - an abrupt kill leaves the data volume dirty.
+  # No healthcheck: the image ships no lightweight probe, and an open port is
+  # not readiness. tests/fixtures/exasol.py gates on a real connect instead.
+  exasol:
+    image: exasol/docker-db:latest-8
+    container_name: sqlit-test-exasol
+    privileged: true
+    stop_grace_period: 120s
+    ports:
+      - "${EXASOL_PORT:-8563}:8563"
+    profiles:
+      - enterprise
+
   trino:
     image: trinodb/trino:latest
     container_name: sqlit-test-trino

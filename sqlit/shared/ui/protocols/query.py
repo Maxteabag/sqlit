@@ -35,6 +35,7 @@ class QueryStateProtocol(Protocol):
     _transaction_executor_config: Any | None
     _results_render_worker: Worker[Any] | None
     _results_render_token: int
+    _query_document: Any | None
 
 
 class QueryActionsProtocol(Protocol):
@@ -85,6 +86,54 @@ class QueryActionsProtocol(Protocol):
         ...
 
     def _handle_history_result(self, result: Any) -> None:
+        ...
+
+    def _apply_history_query(self, query: str) -> None:
+        ...
+
+    def _get_query_document(self) -> Any:
+        ...
+
+    def _document_is_dirty(self) -> bool:
+        ...
+
+    def _query_document_label(self) -> str:
+        ...
+
+    def _update_query_document_title(self) -> None:
+        ...
+
+    def _set_query_document(self, **kwargs: Any) -> None:
+        ...
+
+    def _load_saved_query_entry(self, entry: Any) -> None:
+        ...
+
+    def _load_unsaved_query_text(self, query: str) -> None:
+        ...
+
+    def _reset_query_document(self, *, clear_text: bool) -> None:
+        ...
+
+    def _require_saved_query_connection(self) -> str | None:
+        ...
+
+    def _request_query_document_transition(self, continuation: Any) -> bool:
+        ...
+
+    def _save_existing_query_document(self, *args: Any, **kwargs: Any) -> None:
+        ...
+
+    def _prompt_saved_query_name(self, *args: Any, **kwargs: Any) -> None:
+        ...
+
+    def _save_new_query_name(self, *args: Any, **kwargs: Any) -> None:
+        ...
+
+    def _finish_query_save(self, *args: Any, **kwargs: Any) -> None:
+        ...
+
+    def _resolve_external_query_change(self, *args: Any, **kwargs: Any) -> None:
         ...
 
     def _delete_history_entry(self, timestamp: str) -> None:

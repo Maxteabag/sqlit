@@ -166,13 +166,20 @@ class UINavigationMixin(UIStatusMixin, UILeaderMixin):
 
     def action_quit(self: UINavigationMixinHost) -> None:
         """Quit the application."""
-        close_worker = getattr(self, "_close_process_worker_client", None)
-        if callable(close_worker):
-            try:
-                close_worker()
-            except Exception:
-                pass
-        self.exit()
+        def quit_now() -> None:
+            close_worker = getattr(self, "_close_process_worker_client", None)
+            if callable(close_worker):
+                try:
+                    close_worker()
+                except Exception:
+                    pass
+            self.exit()
+
+        request_transition = getattr(self, "_request_query_document_transition", None)
+        if callable(request_transition):
+            request_transition(quit_now)
+            return
+        quit_now()
 
     def action_show_help(self: UINavigationMixinHost) -> None:
         """Show help with all keybindings."""

@@ -46,3 +46,23 @@ class TestPopulateCredentialsPasswordCommand:
         mock_run.assert_not_called()
         assert config.tcp_endpoint is not None
         assert config.tcp_endpoint.password == "keyring_pw"
+
+    @patch("sqlit.domains.connections.app.connection_flow.run_password_command")
+    def test_ticket_auth_skips_keyring_and_password_command(self, mock_run: MagicMock) -> None:
+        flow = self._make_flow(keyring_password="stale-keyring-password")
+        config = ConnectionConfig(
+            name="trino",
+            db_type="trino",
+            server="trino.example.com",
+            username="user",
+            password=None,
+            password_command="echo should-not-run",
+            options={"trino_auth_method": "gssapi"},
+        )
+
+        flow.populate_credentials_if_missing(config)
+
+        flow.services.credentials_service.get_password.assert_not_called()
+        mock_run.assert_not_called()
+        assert config.tcp_endpoint is not None
+        assert config.tcp_endpoint.password is None

@@ -27,11 +27,11 @@ from sqlit.domains.connections.discovery.docker_detector import (
 if TYPE_CHECKING:
     pass
 
-_TCP_ONLY_HOSTS = {"mysql", "mariadb"}
+_IPV4_LOOPBACK_HOSTS = {"mysql", "mariadb", "mssql"}
 
 
 def _expected_host(db_type: str) -> str:
-    return "127.0.0.1" if db_type in _TCP_ONLY_HOSTS else "localhost"
+    return "127.0.0.1" if db_type in _IPV4_LOOPBACK_HOSTS else "localhost"
 
 
 def is_docker_available() -> bool:

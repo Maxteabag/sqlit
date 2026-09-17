@@ -126,6 +126,7 @@ class AppServices:
     connection_store: ConnectionStoreProtocol
     settings_store: SettingsStoreProtocol
     history_store: HistoryStoreProtocol
+    saved_query_store: Any
     starred_store: Any
     credentials_service: Any
     provider_factory: ProviderFactoryProtocol
@@ -222,6 +223,7 @@ def build_app_services(
     connection_store: ConnectionStoreProtocol | None = None,
     settings_store: SettingsStoreProtocol | None = None,
     history_store: HistoryStoreProtocol | None = None,
+    saved_query_store: Any | None = None,
     starred_store: Any | None = None,
     credentials_service: Any | None = None,
     provider_factory: ProviderFactoryProtocol | None = None,
@@ -242,6 +244,7 @@ def build_app_services(
     from sqlit.domains.connections.providers.catalog import get_provider
     from sqlit.domains.connections.store.connections import ConnectionStore
     from sqlit.domains.query.store.history import HistoryStore
+    from sqlit.domains.query.store.saved_queries import SavedQueryStore
     from sqlit.domains.query.store.starred import StarredStore
     from sqlit.domains.shell.store.settings import SettingsStore
     from sqlit.shared.app.startup_profiler import configure as configure_startup_profiler
@@ -273,6 +276,7 @@ def build_app_services(
         project_config.mkdir(parents=True, exist_ok=True)
     project_connections_path = project_config / "connections.json" if project_config else None
     project_queries_dir = project_config / "queries" if project_config else None
+    project_saved_queries_dir = project_config / "saved-queries" if project_config else None
     project_starred_path = project_config / "starred_queries.json" if project_config else None
 
     with startup_span("build_connection_store"):
@@ -282,6 +286,10 @@ def build_app_services(
         )
     with startup_span("build_history_store"):
         history_store = history_store or HistoryStore(base_dir=project_queries_dir)
+    with startup_span("build_saved_query_store"):
+        saved_query_store = saved_query_store or SavedQueryStore(
+            base_dir=project_saved_queries_dir
+        )
     with startup_span("build_starred_store"):
         starred_store = starred_store or StarredStore(file_path=project_starred_path)
 
@@ -337,6 +345,7 @@ def build_app_services(
         connection_store=connection_store,
         settings_store=settings_store,
         history_store=history_store,
+        saved_query_store=saved_query_store,
         starred_store=starred_store,
         credentials_service=credentials_service,
         provider_factory=provider_factory,

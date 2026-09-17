@@ -33,6 +33,18 @@ class MockConnectionStore:
         self.last_saved = connections.copy()
         self.connections = connections.copy()
 
+    def save_one(
+        self,
+        connection: ConnectionConfig,
+        previous_name: str | None = None,
+    ) -> None:
+        self.save_called = True
+        if previous_name and previous_name != connection.name:
+            self.connections = [c for c in self.connections if c.name != previous_name]
+        self.connections = [c for c in self.connections if c.name != connection.name]
+        self.connections.append(connection)
+        self.last_saved = self.connections.copy()
+
     def set_credentials_service(self, service: Any) -> None:
         self._credentials_service = service
 
@@ -117,6 +129,7 @@ def build_test_services(
     connection_store: MockConnectionStore | None = None,
     settings_store: MockSettingsStore | None = None,
     history_store: MockHistoryStore | None = None,
+    saved_query_store: Any | None = None,
     docker_detector: Any | None = None,
     system_probe: Any | None = None,
     driver_resolver: Any | None = None,
@@ -130,6 +143,7 @@ def build_test_services(
         connection_store=connection_store,
         settings_store=settings_store,
         history_store=history_store,
+        saved_query_store=saved_query_store,
         docker_detector=docker_detector,
         system_probe=system_probe,
         driver_resolver=driver_resolver,

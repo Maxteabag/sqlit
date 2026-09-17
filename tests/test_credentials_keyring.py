@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from sqlit.domains.connections.app.credentials import (
-    CredentialsStoreError,
     KEYRING_SERVICE_NAME,
+    CredentialsStoreError,
     KeyringCredentialsService,
 )
 
@@ -123,6 +125,16 @@ class TestKeyringCredentialsService:
 
         result = service.get_password("test_conn")
         assert result is None
+
+    def test_keyring_error_during_migration_is_surfaced(self) -> None:
+        service, mock_keyring = self._create_service_with_mock_keyring()
+        mock_keyring.get_password.side_effect = Exception("Keyring error")
+
+        with pytest.raises(CredentialsStoreError) as exc_info:
+            service.get_password_for_migration("test_conn")
+
+        assert exc_info.value.action == "read"
+        assert exc_info.value.connection_name == "test_conn"
 
     def test_keyring_error_on_set_raises(self) -> None:
         """Test that keyring errors on set raise a storage error."""

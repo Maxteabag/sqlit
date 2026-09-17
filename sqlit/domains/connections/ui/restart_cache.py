@@ -16,6 +16,18 @@ def get_restart_cache_path() -> Path:
 def write_restart_cache(payload: dict[str, Any]) -> None:
     """Persist restart cache payload to disk (best effort)."""
     try:
+        values = payload.get("values")
+        if isinstance(values, dict) and values.get("db_type") in {"databricks", "exasol"}:
+            from sqlit.domains.connections.domain.config import ConnectionConfig
+            from sqlit.domains.connections.domain.credential_aliases import secret_option_names
+
+            config = ConnectionConfig.from_dict(values)
+            public = config.to_dict(include_passwords=False)
+            hidden = secret_option_names(config) | {"password", "ssh_password"}
+            safe_values = {key: value for key, value in values.items() if key not in hidden}
+            safe_values["extra_options"] = public["extra_options"]
+            safe_values["connection_url"] = public["connection_url"]
+            payload = {**payload, "values": safe_values}
         get_restart_cache_path().write_text(json.dumps(payload), encoding="utf-8")
     except Exception:
         # Best-effort; don't block installation due to caching failure.

@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import pytest
+from textual.widgets import Select
 
 from sqlit.domains.connections.domain.config import FileEndpoint
+from sqlit.domains.connections.providers.postgresql.auth import (
+    AZURE_ENTRA_PASSWORD_COMMAND,
+    POSTGRES_AUTH_AZURE_ENTRA_CLI,
+)
 from tests.helpers import ConnectionConfig
 
 from .conftest import ConnectionScreenTestApp
@@ -173,6 +178,38 @@ class TestConnectionScreen:
             tls_ca_container = screen.query_one("#container-tls_ca")
             assert "hidden" not in tls_mode_container.classes
             assert "hidden" in tls_ca_container.classes
+
+    @pytest.mark.asyncio
+    async def test_postgres_entra_hides_password_and_saves_dynamic_auth(self):
+        app = ConnectionScreenTestApp(prefill_values={"db_type": "postgresql"})
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            screen = app.screen
+            password_container = screen.query_one("#container-password")
+            assert "hidden" not in password_container.classes
+
+            auth = screen.query_one("#field-postgres_auth_method", Select)
+            auth.value = POSTGRES_AUTH_AZURE_ENTRA_CLI
+            await pilot.pause()
+
+            assert "hidden" in password_container.classes
+            screen.query_one("#conn-name").value = "azure-postgres"
+            screen.query_one("#field-server").value = (
+                "example.postgres.database.azure.com"
+            )
+            screen.query_one("#field-database").value = "appdb"
+            screen.query_one("#field-username").value = "developer@example.com"
+            config = screen._get_config()
+
+            assert config is not None
+            assert config.get_option("postgres_auth_method") == (
+                POSTGRES_AUTH_AZURE_ENTRA_CLI
+            )
+            assert config.tcp_endpoint is not None
+            assert config.tcp_endpoint.password is None
+            assert config.tcp_endpoint.password_command == (
+                AZURE_ENTRA_PASSWORD_COMMAND
+            )
 
 
 class TestTabNavigation:

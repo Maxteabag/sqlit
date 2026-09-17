@@ -25,6 +25,16 @@ class InMemoryConnectionStore:
     def save_all(self, connections: list[ConnectionConfig]) -> None:
         self._connections = copy.deepcopy(connections)
 
+    def save_one(
+        self,
+        connection: ConnectionConfig,
+        previous_name: str | None = None,
+    ) -> None:
+        if previous_name and previous_name != connection.name:
+            self._connections = [c for c in self._connections if c.name != previous_name]
+        self._connections = [c for c in self._connections if c.name != connection.name]
+        self._connections.append(copy.deepcopy(connection))
+
     def set_credentials_service(self, service: CredentialsService) -> None:
         """No-op for in-memory store."""
         return None

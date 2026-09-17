@@ -8,7 +8,13 @@ from contextlib import nullcontext
 from rich.markup import escape as escape_markup
 
 from sqlit.domains.connections.providers.metadata import get_connection_display_info
-from sqlit.domains.explorer.domain.tree_nodes import ConnectionFolderNode, ConnectionNode, FolderNode
+from sqlit.domains.explorer.domain.tree_nodes import (
+    ConnectionFolderNode,
+    ConnectionNode,
+    FolderNode,
+    SavedQueryFileNode,
+    SavedQueryFolderNode,
+)
 from sqlit.domains.explorer.ui.tree.expansion_state import (
     find_node_by_path,
     get_node_path,
@@ -649,6 +655,7 @@ def populate_connected_tree(host: TreeMixinHost) -> None:
     active_node.remove_children()
 
     try:
+        add_saved_query_nodes(host, active_node)
         if provider.capabilities.supports_multiple_databases:
             endpoint = host.current_config.tcp_endpoint
             specific_db = endpoint.database if endpoint else ""
@@ -672,6 +679,46 @@ def populate_connected_tree(host: TreeMixinHost) -> None:
 
     except Exception as error:
         host.notify(f"Error loading objects: {error}", severity="error")
+
+
+def add_saved_query_nodes(host: TreeMixinHost, parent_node: Any) -> None:
+    """Add the active connection's user-managed SQL files to the explorer."""
+    if host.current_config is None:
+        return
+    store = getattr(getattr(host, "services", None), "saved_query_store", None)
+    if store is None:
+        return
+    entries = store.list_for_connection(host.current_config.name)
+    if not entries:
+        return
+
+    root = parent_node.add("Saved Queries")
+    root.data = SavedQueryFolderNode(connection_name=host.current_config.name)
+    root.allow_expand = True
+    folders: dict[str, Any] = {"": root}
+
+    for entry in entries:
+        parts = entry.relative_path.split("/")
+        parent = root
+        accumulated: list[str] = []
+        for folder_name in parts[:-1]:
+            accumulated.append(folder_name)
+            relative_folder = "/".join(accumulated)
+            folder = folders.get(relative_folder)
+            if folder is None:
+                folder = parent.add(f"📁 {escape_markup(folder_name)}")
+                folder.data = SavedQueryFolderNode(
+                    connection_name=host.current_config.name,
+                    relative_path=relative_folder,
+                )
+                folder.allow_expand = True
+                folders[relative_folder] = folder
+            parent = folder
+        file_node = parent.add_leaf(f"📄 {escape_markup(parts[-1])}")
+        file_node.data = SavedQueryFileNode(
+            connection_name=host.current_config.name,
+            entry=entry,
+        )
 
 
 def add_database_object_nodes(host: TreeMixinHost, parent_node: Any, database: str | None) -> None:

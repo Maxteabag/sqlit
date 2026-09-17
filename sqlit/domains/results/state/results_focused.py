@@ -20,6 +20,8 @@ class ResultsFocusedState(State):
         self.allows("view_cell_full", has_results, key="V", label="View full", help="View full cell value")
         self.allows("edit_cell", has_results, key="u", label="Update cell", help="Update cell (generate UPDATE)")
         self.allows("delete_row", has_results, key="d", label="Delete row", help="Delete row (generate DELETE)")
+        self.allows("navigate_fk", has_results, key="o", label="FK jump", help="Open row referenced by foreign key")
+        self.allows("navigate_referrers", has_results, key="O", label="Refs", help="Show tables referencing this row")
         self.allows("results_yank_leader_key", has_results, key="y", label="Copy", help="Copy menu (cell/row/all)")
         self.allows("clear_results", has_results, key="x", label="Clear", help="Clear results")
         self.allows("results_filter", has_results, key="slash", label="Filter", help="Filter rows")
@@ -95,6 +97,22 @@ class ResultsFocusedState(State):
                     action="delete_row",
                 )
             )
+            if app.cursor_column_is_foreign_key:
+                left.append(
+                    DisplayBinding(
+                        key=resolve_display_key("navigate_fk") or "o",
+                        label="FK",
+                        action="navigate_fk",
+                    )
+                )
+            if app.cursor_column_is_foreign_key_target:
+                left.append(
+                    DisplayBinding(
+                        key=resolve_display_key("navigate_referrers") or "O",
+                        label="Refs",
+                        action="navigate_referrers",
+                    )
+                )
             left.append(
                 DisplayBinding(
                     key=resolve_display_key("results_yank_leader_key") or "y",
@@ -137,6 +155,8 @@ class ResultsFocusedState(State):
                 "view_cell",
                 "view_cell_full",
                 "delete_row",
+                "navigate_fk",
+                "navigate_referrers",
                 "results_yank_leader_key",
                 "clear_results",
                 "results_filter",

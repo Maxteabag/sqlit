@@ -43,7 +43,7 @@ class CredentialsStoreError(CredentialsError):
 
     def user_message(self) -> str:
         kind_label = "database" if self.kind == "db" else "SSH"
-        action_label = "save" if self.action == "store" else "delete"
+        action_label = {"store": "save", "delete": "delete", "read": "read"}.get(self.action, self.action)
         return (
             f"Keyring error while trying to {action_label} {kind_label} password for "
             f"'{self.connection_name}': {self.reason}"
@@ -137,6 +137,10 @@ class CredentialsService(ABC):
         """
         ...
 
+    def get_password_for_migration(self, connection_name: str) -> str | None:
+        """Read a password for a destructive move, surfacing backend failures."""
+        return self.get_password(connection_name)
+
     @abstractmethod
     def set_password(self, connection_name: str, password: str) -> None:
         """Store the database password for a connection.
@@ -167,6 +171,10 @@ class CredentialsService(ABC):
             The SSH password string, or None if not found.
         """
         ...
+
+    def get_ssh_password_for_migration(self, connection_name: str) -> str | None:
+        """Read an SSH password for a destructive move, surfacing backend failures."""
+        return self.get_ssh_password(connection_name)
 
     @abstractmethod
     def set_ssh_password(self, connection_name: str, password: str) -> None:
@@ -253,15 +261,30 @@ class KeyringCredentialsService(CredentialsService):
         """
         return f"{connection_name}:{key_type}"
 
-    def _get_with_retry(self, key: str, retries: int = 2, delay_seconds: float = 0.2) -> str | None:
+    def _get_with_retry(
+        self,
+        key: str,
+        retries: int = 2,
+        delay_seconds: float = 0.2,
+        *,
+        migration_context: tuple[str, str] | None = None,
+    ) -> str | None:
         # A short retry helps with transient keyring/DBus/Keychain hiccups.
         for attempt in range(retries + 1):
             try:
                 keyring = self._get_keyring()
                 value = keyring.get_password(KEYRING_SERVICE_NAME, key)
                 return value if isinstance(value, str) else None
-            except Exception:
+            except Exception as exc:
                 if attempt >= retries:
+                    if migration_context is not None:
+                        connection_name, kind = migration_context
+                        self._raise_keyring_error(
+                            connection_name=connection_name,
+                            kind=kind,
+                            action="read",
+                            reason=exc,
+                        )
                     return None
                 time.sleep(delay_seconds)
         return None
@@ -277,6 +300,10 @@ class KeyringCredentialsService(CredentialsService):
     def get_password(self, connection_name: str) -> str | None:
         key = self._make_key(connection_name, "db")
         return self._get_with_retry(key)
+
+    def get_password_for_migration(self, connection_name: str) -> str | None:
+        key = self._make_key(connection_name, "db")
+        return self._get_with_retry(key, migration_context=(connection_name, "db"))
 
     def set_password(self, connection_name: str, password: str) -> None:
         if password is None:
@@ -305,6 +332,10 @@ class KeyringCredentialsService(CredentialsService):
     def get_ssh_password(self, connection_name: str) -> str | None:
         key = self._make_key(connection_name, "ssh")
         return self._get_with_retry(key)
+
+    def get_ssh_password_for_migration(self, connection_name: str) -> str | None:
+        key = self._make_key(connection_name, "ssh")
+        return self._get_with_retry(key, migration_context=(connection_name, "ssh"))
 
     def set_ssh_password(self, connection_name: str, password: str) -> None:
         if password is None:

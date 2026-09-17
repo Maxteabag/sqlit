@@ -11,7 +11,7 @@ from sqlit.domains.connections.domain.password_command import (
     PasswordCommandError,
     run_password_command,
 )
-from sqlit.domains.connections.domain.passwords import needs_db_password, needs_ssh_password
+from sqlit.domains.connections.domain.passwords import needs_db_password, needs_ssh_password, uses_db_password
 from sqlit.shared.app import AppServices
 
 
@@ -49,7 +49,7 @@ class ConnectionFlow:
         if endpoint and endpoint.password is not None and (not config.tunnel or config.tunnel.password is not None):
             return
         service = self.services.credentials_service
-        if endpoint and endpoint.password is None:
+        if endpoint and endpoint.password is None and uses_db_password(config):
             password = service.get_password(config.name)
             if password is not None:
                 endpoint.password = password

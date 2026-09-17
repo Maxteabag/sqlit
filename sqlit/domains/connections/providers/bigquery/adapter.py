@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Any, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any
 
 from sqlit.domains.connections.providers.adapters.base import (
     ColumnInfo,
     CursorBasedAdapter,
+    ForeignKeyInfo,
     IndexInfo,
     SequenceInfo,
     TableInfo,
@@ -17,6 +19,7 @@ from sqlit.domains.connections.providers.adapters.base import (
 if TYPE_CHECKING:
     from google.cloud import bigquery
     from google.cloud.bigquery.dbapi import Connection as BigQueryConnection
+
     from sqlit.domains.connections.domain.config import ConnectionConfig
 
 
@@ -55,6 +58,11 @@ class BigQueryAdapter(CursorBasedAdapter):
     @property
     def supports_indexes(self) -> bool:
         return False
+
+    @property
+    def supports_foreign_keys(self) -> bool:
+        # Informational FKs, GA since 2023. Not enforced but queryable.
+        return True
 
     @property
     def supports_cross_database_queries(self) -> bool:
@@ -180,11 +188,11 @@ class BigQueryAdapter(CursorBasedAdapter):
                 client.default_query_job_config = job_config
 
         conn = dbapi.connect(client=client)
-        setattr(conn, "_sqlit_bq_client", client)
+        conn._sqlit_bq_client = client
         if default_dataset:
-            setattr(conn, "_sqlit_bq_default_dataset", default_dataset)
+            conn._sqlit_bq_default_dataset = default_dataset
         if job_config:
-            setattr(conn, "_sqlit_bq_job_config", job_config)
+            conn._sqlit_bq_job_config = job_config
 
         return conn
 
@@ -361,9 +369,118 @@ class BigQueryAdapter(CursorBasedAdapter):
         """BigQuery doesn't support sequences."""
         return []
 
+    def get_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        """List FKs via dataset-qualified INFORMATION_SCHEMA views (BigQuery).
+
+        Joins KEY_COLUMN_USAGE (child columns) to CONSTRAINT_COLUMN_USAGE
+        (parent columns) by POSITION_IN_UNIQUE_CONSTRAINT, scoped to
+        constraint_type = 'FOREIGN KEY'. The dataset (schema) provides the
+        catalog qualification; BigQuery requires every INFORMATION_SCHEMA
+        access to be dataset-qualified.
+        """
+        dataset = schema or database
+        if not dataset:
+            return []
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT kcu.constraint_name, kcu.ordinal_position, "
+            f"       kcu.column_name, ukcu.table_schema, "
+            f"       ukcu.table_name, ukcu.column_name "
+            f"FROM `{dataset}`.INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
+            f"JOIN `{dataset}`.INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
+            f"  ON tc.constraint_catalog = kcu.constraint_catalog "
+            f"  AND tc.constraint_schema = kcu.constraint_schema "
+            f"  AND tc.constraint_name = kcu.constraint_name "
+            f"JOIN `{dataset}`.INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc "
+            f"  ON tc.constraint_catalog = rc.constraint_catalog "
+            f"  AND tc.constraint_schema = rc.constraint_schema "
+            f"  AND tc.constraint_name = rc.constraint_name "
+            f"JOIN `{dataset}`.INFORMATION_SCHEMA.KEY_COLUMN_USAGE ukcu "
+            f"  ON ukcu.constraint_catalog = rc.unique_constraint_catalog "
+            f"  AND ukcu.constraint_schema = rc.unique_constraint_schema "
+            f"  AND ukcu.constraint_name = rc.unique_constraint_name "
+            f"  AND ukcu.ordinal_position = kcu.position_in_unique_constraint "
+            f"WHERE tc.constraint_type = 'FOREIGN KEY' "
+            f"  AND tc.table_name = %(table_name)s "
+            f"ORDER BY kcu.constraint_name, kcu.ordinal_position",
+            {"table_name": table},
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=table,
+                column=row[2],
+                referenced_table=row[4],
+                referenced_column=row[5],
+                owner_schema=dataset,
+                referenced_schema=row[3] or "",
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_referencing_foreign_keys(
+        self,
+        conn: Any,
+        table: str,
+        database: str | None = None,
+        schema: str | None = None,
+    ) -> list[ForeignKeyInfo]:
+        dataset = schema or database
+        if not dataset:
+            return []
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT kcu.constraint_name, kcu.ordinal_position, "
+            f"       kcu.table_schema, kcu.table_name, "
+            f"       kcu.column_name, ukcu.column_name "
+            f"FROM `{dataset}`.INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
+            f"JOIN `{dataset}`.INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
+            f"  ON tc.constraint_catalog = kcu.constraint_catalog "
+            f"  AND tc.constraint_schema = kcu.constraint_schema "
+            f"  AND tc.constraint_name = kcu.constraint_name "
+            f"JOIN `{dataset}`.INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc "
+            f"  ON tc.constraint_catalog = rc.constraint_catalog "
+            f"  AND tc.constraint_schema = rc.constraint_schema "
+            f"  AND tc.constraint_name = rc.constraint_name "
+            f"JOIN `{dataset}`.INFORMATION_SCHEMA.KEY_COLUMN_USAGE ukcu "
+            f"  ON ukcu.constraint_catalog = rc.unique_constraint_catalog "
+            f"  AND ukcu.constraint_schema = rc.unique_constraint_schema "
+            f"  AND ukcu.constraint_name = rc.unique_constraint_name "
+            f"  AND ukcu.ordinal_position = kcu.position_in_unique_constraint "
+            f"WHERE tc.constraint_type = 'FOREIGN KEY' "
+            f"  AND ukcu.table_name = %(table_name)s",
+            {"table_name": table},
+        )
+        return [
+            ForeignKeyInfo(
+                owner_table=row[3],
+                column=row[4],
+                referenced_table=table,
+                referenced_column=row[5],
+                owner_schema=row[2] or "",
+                referenced_schema=dataset,
+                constraint_name=row[0],
+                ordinal=int(row[1]),
+            )
+            for row in cursor.fetchall()
+        ]
+
     def quote_identifier(self, name: str) -> str:
         """Quote an identifier for BigQuery."""
         return f"`{name}`"
+
+    def quote_literal(self, value: Any) -> str:
+        """Render BigQuery strings without allowing backslash escapes to alter quoting."""
+        if not isinstance(value, str):
+            return super().quote_literal(value)
+        return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
     def build_select_query(
         self, table: str, limit: int, database: str | None = None, schema: str | None = None

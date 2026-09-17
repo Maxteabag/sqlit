@@ -412,7 +412,7 @@ class KeymapManager:
         base_leader = defaults.get_leader_commands()
 
         user_action_overrides, action_unbinds = self._parse_action_overrides(
-            keymap_data.get("action_keys", {}), base_action
+            keymap_data.get("action_keys", {}), base_action, base_leader
         )
         user_leader_overrides, leader_unbinds = self._parse_leader_overrides(
             keymap_data.get("leader_commands", {}), base_leader
@@ -470,7 +470,7 @@ class KeymapManager:
 
     @staticmethod
     def _parse_action_overrides(
-        data: Any, base: list[ActionKeyDef]
+        data: Any, base: list[ActionKeyDef], leader: list[LeaderCommandDef]
     ) -> tuple[list[ActionKeyDef], set[tuple[str, str | None]]]:
         if not isinstance(data, dict):
             raise ValueError('"action_keys" must be a JSON object keyed by state name.')
@@ -488,6 +488,11 @@ class KeymapManager:
         for ak in base:
             actions_in_state[ak.context].add(ak.action)
 
+        # Only the main leader menu contains standalone app actions. Vim
+        # submenus reuse motion names such as "word" and need their prefix.
+        leader_by_action = {cmd.action: cmd for cmd in leader if cmd.menu == "leader"}
+        app_contexts = _context_ancestors()
+
         out: list[ActionKeyDef] = []
         unbinds: set[tuple[str, str | None]] = set()
         for state, mapping in data.items():
@@ -501,6 +506,10 @@ class KeymapManager:
                     raise ValueError(f'action_keys."{state}": action names must be non-empty strings.')
 
                 template = defaults_by_pair.get((action, state))
+                if template is None and state in app_contexts:
+                    command = leader_by_action.get(action)
+                    if command is not None:
+                        template = ActionKeyDef("", action, state, guard=command.guard)
                 if template is None:
                     suggestions = sorted(actions_in_state.get(state, set()))
                     hint = (
@@ -533,6 +542,7 @@ class KeymapManager:
                                 primary=first,
                                 show=template.show,
                                 priority=template.priority,
+                                leader_command=action in leader_by_action,
                             )
                         )
                     first = False

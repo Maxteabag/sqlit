@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from ipaddress import ip_address
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 if TYPE_CHECKING:
@@ -121,15 +122,15 @@ def _get_db_type_from_image(image_name: str) -> str | None:
     return None
 
 
-def _get_host_port(container: Any, container_port: int) -> int | None:
-    """Extract the host-mapped port from container port bindings.
+def _get_host_binding(container: Any, container_port: int) -> tuple[str, int] | None:
+    """Extract the host address and port from container port bindings.
 
     Args:
         container: Docker container object
         container_port: The container's internal port
 
     Returns:
-        Host port number or None if not mapped.
+        Host address and port, or None if not mapped.
     """
     ports = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
 
@@ -138,27 +139,48 @@ def _get_host_port(container: Any, container_port: int) -> int | None:
     bindings = ports.get(port_key)
 
     if bindings and len(bindings) > 0:
-        host_port = bindings[0].get("HostPort")
+        binding = bindings[0]
+        host_port = binding.get("HostPort")
         if host_port:
-            return int(host_port)
+            return str(binding.get("HostIp") or ""), int(host_port)
 
     return None
 
 
-def _get_single_mapped_host_port(container: Any) -> int | None:
-    """Return a host port when only one TCP port mapping exists."""
+def _get_host_port(container: Any, container_port: int) -> int | None:
+    """Extract the host-mapped port from container port bindings."""
+    binding = _get_host_binding(container, container_port)
+    return binding[1] if binding else None
+
+
+def _get_single_mapped_host_binding(container: Any) -> tuple[str, int] | None:
+    """Return a host binding when only one TCP host port is mapped."""
     ports = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
-    mapped_ports: set[int] = set()
+    mapped_ports: dict[int, str] = {}
     for port_key, bindings in ports.items():
         if not port_key.endswith("/tcp") or not bindings:
             continue
         for binding in bindings:
             host_port = binding.get("HostPort")
             if host_port:
-                mapped_ports.add(int(host_port))
+                mapped_ports.setdefault(int(host_port), str(binding.get("HostIp") or ""))
     if len(mapped_ports) == 1:
-        return mapped_ports.pop()
+        host_port, host_ip = next(iter(mapped_ports.items()))
+        return host_ip, host_port
     return None
+
+
+def _resolve_published_host(preferred_host: str, bound_host: str | None) -> str:
+    """Keep forced-TCP hosts on the address family published by Docker."""
+    if preferred_host != "127.0.0.1" or not bound_host:
+        return preferred_host
+    try:
+        address = ip_address(bound_host)
+    except ValueError:
+        return bound_host
+    if address.is_unspecified:
+        return "::1" if address.version == 6 else preferred_host
+    return bound_host
 
 
 def _get_exposed_tcp_ports(container: Any) -> list[int]:
@@ -256,11 +278,16 @@ def _detect_containers_with_status(
 
         # Get host-mapped port (only available for running containers)
         host_port = None
+        bound_host = None
         if container_status == ContainerStatus.RUNNING:
             if default_port:
-                host_port = _get_host_port(container, default_port)
+                binding = _get_host_binding(container, default_port)
+                if binding:
+                    bound_host, host_port = binding
             if host_port is None:
-                host_port = _get_single_mapped_host_port(container)
+                binding = _get_single_mapped_host_binding(container)
+                if binding:
+                    bound_host, host_port = binding
 
             network_mode = container.attrs.get("HostConfig", {}).get("NetworkMode")
             if host_port is None and network_mode == "host" and default_port:
@@ -279,9 +306,9 @@ def _detect_containers_with_status(
         if container_name.startswith("/"):
             container_name = container_name[1:]
 
-        # Use 127.0.0.1 for MySQL/MariaDB to force TCP connection
-        # (localhost causes them to try Unix socket which doesn't exist on host)
-        host = detector.preferred_host
+        # Providers can choose an explicit loopback to force a network protocol.
+        # Preserve Docker's concrete binding so its address family stays reachable.
+        host = _resolve_published_host(detector.preferred_host, bound_host)
 
         # For databases that don't require auth, use empty string instead of None
         # This prevents the UI from prompting for a password

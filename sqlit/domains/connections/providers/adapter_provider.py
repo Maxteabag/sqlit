@@ -92,6 +92,7 @@ def build_adapter_provider(spec: ProviderSpec, schema: ConnectionSchema, adapter
         supports_sequences=bool(getattr(adapter, "supports_sequences", False)),
         default_schema=str(getattr(adapter, "default_schema", "")),
         system_databases=frozenset(getattr(adapter, "system_databases", frozenset())),
+        supports_foreign_keys=bool(getattr(adapter, "supports_foreign_keys", False)),
     )
 
     def display_info(config: ConnectionConfig) -> str:

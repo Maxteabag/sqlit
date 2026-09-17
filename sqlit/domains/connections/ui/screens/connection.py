@@ -27,6 +27,7 @@ from sqlit.domains.connections.domain.config import (
     DatabaseType,
     get_database_type_labels,
 )
+from sqlit.domains.connections.domain.passwords import needs_db_password
 from sqlit.domains.connections.providers.catalog import get_provider_schema
 from sqlit.domains.connections.providers.driver import ensure_provider_driver_available
 from sqlit.domains.connections.providers.exceptions import MissingDriverError
@@ -157,8 +158,8 @@ class ConnectionScreen(ModalScreen):
 
     def _on_browse_file(self, field_name: str) -> None:
         """Open file picker for a file field."""
-        from sqlit.shared.ui.screens.file_picker import FilePickerMode, FilePickerScreen
         from sqlit.domains.connections.ui.fields import FieldType
+        from sqlit.shared.ui.screens.file_picker import FilePickerMode, FilePickerScreen
 
         # Get current value from the field
         current_value = ""
@@ -711,8 +712,7 @@ class ConnectionScreen(ModalScreen):
             )
             return
 
-        endpoint = config.tcp_endpoint
-        if not is_file_based(config.db_type) and endpoint and endpoint.password is None:
+        if needs_db_password(config):
 
             def on_db_password(password: str | None) -> None:
                 if password is None:
