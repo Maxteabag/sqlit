@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -457,6 +458,13 @@ class MultiStatementExecutor:
         if not statements:
             return MultiStatementResult(results=[], completed=True, error_index=None)
 
+        # Run the script on one connection when the executor supports it, so
+        # session state carries from one statement to the next.
+        batch = getattr(self._executor, "batch", None)
+        with batch() if callable(batch) else nullcontext():
+            return self._execute_statements(statements, max_rows)
+
+    def _execute_statements(self, statements: list[str], max_rows: int | None) -> MultiStatementResult:
         results: list[StatementResult] = []
 
         for i, statement in enumerate(statements):
