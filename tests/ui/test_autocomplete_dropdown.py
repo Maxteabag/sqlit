@@ -15,6 +15,25 @@ class _DropdownTestApp(App):
         yield AutocompleteDropdown()
 
 
+class TestAutocompleteDropdownFiltering:
+    """Tests for preserving items selected by the completion engine."""
+
+    @pytest.mark.asyncio
+    async def test_filters_qualified_names_by_any_identifier_part(self) -> None:
+        """Qualified names match both their schema and table components."""
+        app = _DropdownTestApp()
+        async with app.run_test() as pilot:
+            dropdown = app.query_one(AutocompleteDropdown)
+
+            dropdown.set_items(["Visualsation.Latency"], "latency")
+            await pilot.pause()
+            assert dropdown.filtered_items == ["Visualsation.Latency"]
+
+            dropdown.set_items(["Visualsation.Latency", "Visualsation.Other"], "Visualsation")
+            await pilot.pause()
+            assert dropdown.filtered_items == ["Visualsation.Latency", "Visualsation.Other"]
+
+
 class TestAutocompleteDropdownWidth:
     """Tests for dynamic width sizing based on filtered items."""
 

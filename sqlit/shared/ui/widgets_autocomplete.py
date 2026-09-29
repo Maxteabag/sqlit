@@ -74,12 +74,19 @@ class AutocompleteDropdown(VerticalScroll):
         self.filter_text: str = ""
 
     def set_items(self, items: list[str], filter_text: str = "") -> None:
-        """Set the autocomplete items and filter."""
+        """Set the autocomplete items and filter by any identifier component."""
         self.items = items
         self.filter_text = filter_text.lower()
 
         if self.filter_text:
-            self.filtered_items = [item for item in items if item.lower().startswith(self.filter_text)]
+            self.filtered_items = [
+                item
+                for item in items
+                if any(
+                    part.lower().startswith(self.filter_text)
+                    for part in item.split(".")
+                )
+            ][:50]
         else:
             self.filtered_items = items[:50]  # Show more items with scrolling
 
