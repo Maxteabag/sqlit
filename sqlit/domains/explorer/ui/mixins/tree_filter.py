@@ -11,7 +11,7 @@ from sqlit.shared.core.utils import fuzzy_match, highlight_matches
 from sqlit.shared.ui.protocols import TreeFilterMixinHost
 
 if TYPE_CHECKING:
-    pass
+    from collections.abc import Callable
 
 
 @dataclass
@@ -55,6 +55,23 @@ def _restore_node_under(parent: Any, snap: _NodeSnapshot) -> None:
             pass
     for grandchild in snap.children:
         _restore_node_under(child, grandchild)
+
+
+def _call_after_refresh(host: TreeFilterMixinHost, callback: Callable[[], None]) -> None:
+    """Run `callback` after the next refresh, once nodes added by a snapshot
+    restore have been laid out.
+
+    Textual's Tree.move_cursor reads `node._line`, which is set during the
+    next layout pass — not when the node is `add()`-ed. Calling move_cursor
+    right after a snapshot restore sees stale `_line` values and parks the
+    cursor on the wrong row.
+    """
+    call_after = getattr(host, "call_after_refresh", None)
+    if callable(call_after):
+        call_after(callback)
+    else:
+        # Synchronous fallback (used in unit tests with a mock host).
+        callback()
 
 
 class TreeFilterMixin:
@@ -132,18 +149,7 @@ class TreeFilterMixin:
         if fresh_node is None:
             return
 
-        # Textual's Tree.move_cursor reads `node._line`, which is set during
-        # the next layout pass — not when the node is `add()`-ed. Since the
-        # snapshot restore that just ran in action_tree_filter_close added
-        # all fresh nodes synchronously, calling move_cursor right now sees
-        # stale `_line` values and parks the cursor on the wrong row.
-        # Defer the move (and the activation) until after the next refresh.
-        call_after = getattr(self, "call_after_refresh", None)
-        if callable(call_after):
-            call_after(lambda: self._select_and_activate_after_refresh(fresh_node))
-        else:
-            # Synchronous fallback (used in unit tests with a mock host).
-            self._select_and_activate_after_refresh(fresh_node)
+        _call_after_refresh(self, lambda: self._select_and_activate_after_refresh(fresh_node))
 
     def _select_and_activate_after_refresh(self: TreeFilterMixinHost, node: Any) -> None:
         tree = self.object_tree
@@ -193,7 +199,7 @@ class TreeFilterMixin:
         # Expand ancestors to make node visible
         self._expand_ancestors(node)
         # Move cursor to node
-        self.object_tree.move_cursor(node)
+        _call_after_refresh(self, lambda: self.object_tree.move_cursor(node))
 
     def _expand_ancestors(self: TreeFilterMixinHost, node: Any) -> None:
         """Expand all ancestor nodes to make a node visible."""
