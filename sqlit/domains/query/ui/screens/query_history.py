@@ -9,7 +9,7 @@ from typing import Any
 from textual.app import ComposeResult
 from rich.text import Text
 from textual.binding import Binding
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
@@ -28,6 +28,7 @@ class QueryHistoryScreen(ModalScreen):
         Binding("d", "delete", "Delete"),
         Binding("asterisk", "toggle_star", "Star"),
         Binding("slash", "open_filter", "Filter"),
+        Binding("tab", "toggle_pane", "Pane", priority=True),
     ]
 
     CSS = """
@@ -37,20 +38,54 @@ class QueryHistoryScreen(ModalScreen):
     }
 
     #history-dialog {
-        width: 90;
-        max-width: 90%;
-        height: 80%;
-        max-height: 90%;
+        width: 120;
+        max-width: 95%;
+        height: 24;
+        min-height: 16;
+        max-height: 80%;
+    }
+
+    #history-filter {
+        background: $surface;
+    }
+
+    /* nvim-style split: list sidebar | preview window */
+    #history-split {
+        height: 1fr;
+        width: 1fr;
+    }
+
+    #history-list-pane {
+        width: 32;
+        min-width: 24;
+        max-width: 40%;
+        height: 1fr;
+        background: $surface;
+        border: none;
+        padding: 0;
+    }
+
+    #history-list-pane.active-pane {
+        border-left: tall $primary;
+    }
+
+    #history-preview-pane {
+        width: 1fr;
+        height: 1fr;
+        background: $surface-darken-1;
+        border: none;
+        padding: 1;
+    }
+
+    #history-preview-pane.active-pane {
+        border-left: tall $primary;
     }
 
     #history-scroll {
         height: 1fr;
         background: $surface;
         border: none;
-    }
-
-    #history-filter {
-        background: $surface;
+        padding: 0;
     }
 
     #history-list {
@@ -71,13 +106,10 @@ class QueryHistoryScreen(ModalScreen):
     }
 
     #history-preview-container {
-        height: 8;
-        min-height: 8;
-        max-height: 8;
+        height: 1fr;
         background: $surface-darken-1;
         border: none;
-        padding: 1;
-        margin-top: 1;
+        padding: 0;
     }
 
     #history-preview {
@@ -110,6 +142,7 @@ class QueryHistoryScreen(ModalScreen):
         self._filter_query = ""
         self._filter_fuzzy = False
         self._filtered_entries: list[QueryHistoryEntry] = []
+        self._active_pane = "list"  # "list" or "preview"
 
     def _merge_entries(self) -> list[QueryHistoryEntry]:
         """Merge history entries with starred-only queries.
@@ -193,24 +226,26 @@ class QueryHistoryScreen(ModalScreen):
         else:
             title = f"Query History - {self.connection_name}"
             empty_message = "No query history for this connection"
-        shortcuts = [("Select", "<enter>"), ("Star", "*"), ("Delete", "D")]
+        shortcuts = [("Select", "<enter>"), ("Star", "*"), ("Delete", "D"), ("Pane", "<tab>")]
 
         self._merged_entries = self._merge_entries()
 
         with Dialog(id="history-dialog", title=title, shortcuts=shortcuts):
             yield FilterInput(id="history-filter")
-            with VerticalScroll(id="history-scroll"):
-                if self._merged_entries:
-                    options = []
-                    for entry in self._merged_entries:
-                        options.append(self._build_option(entry))
+            with Horizontal(id="history-split"):
+                with Vertical(id="history-list-pane"):
+                    with VerticalScroll(id="history-scroll"):
+                        if self._merged_entries:
+                            options = []
+                            for entry in self._merged_entries:
+                                options.append(self._build_option(entry))
 
-                    yield OptionList(*options, id="history-list")
-                else:
-                    yield Static(empty_message, id="history-empty")
-
-            with VerticalScroll(id="history-preview-container"):
-                yield Static("", id="history-preview")
+                            yield OptionList(*options, id="history-list")
+                        else:
+                            yield Static(empty_message, id="history-empty")
+                with Vertical(id="history-preview-pane"):
+                    with VerticalScroll(id="history-preview-container"):
+                        yield Static("", id="history-preview")
 
     def on_mount(self) -> None:
         if self._merged_entries:
@@ -225,8 +260,38 @@ class QueryHistoryScreen(ModalScreen):
             filter_input.hide()
         except Exception:
             pass
+        self._set_active_pane("list")
         if self._auto_open_filter:
             self.action_open_filter()
+
+    def action_toggle_pane(self) -> None:
+        """Switch focus between the list pane and the preview pane (Tab).
+
+        Works while a search filter is open so the user can jump to the
+        preview to read a query without closing the filter.
+        """
+        self._set_active_pane("preview" if self._active_pane == "list" else "list")
+
+    def _set_active_pane(self, pane: str) -> None:
+        """Mark ``pane`` as active, update focus, and refresh pane borders."""
+        self._active_pane = pane
+        try:
+            list_pane = self.query_one("#history-list-pane", Vertical)
+            preview_pane = self.query_one("#history-preview-pane", Vertical)
+        except Exception:
+            return
+        list_pane.set_class(pane == "list", "active-pane")
+        preview_pane.set_class(pane == "preview", "active-pane")
+        if pane == "list":
+            try:
+                self.query_one("#history-list", OptionList).focus()
+            except Exception:
+                pass
+        else:
+            try:
+                self.query_one("#history-preview-container", VerticalScroll).focus()
+            except Exception:
+                pass
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         if event.option_list.id == "history-list":
@@ -239,6 +304,14 @@ class QueryHistoryScreen(ModalScreen):
         if idx < len(entries):
             preview = self.query_one("#history-preview", Static)
             preview.update(Text(entries[idx].query))
+            # Reset the preview scroll to the top so each query starts at
+            # its first line instead of inheriting the previous query's
+            # scroll offset.
+            try:
+                container = self.query_one("#history-preview-container", VerticalScroll)
+                container.scroll_home(animate=False)
+            except Exception:
+                pass
 
     def action_select(self) -> None:
         entries = self._get_display_entries()
@@ -303,6 +376,22 @@ class QueryHistoryScreen(ModalScreen):
         self.dismiss(None)
 
     def on_key(self, event: Any) -> None:
+        # j/k always navigate the active pane, even while a filter is open:
+        # in the preview pane they scroll the query; in the list pane they
+        # move the highlight (no filter) or type into the filter (filter open).
+        if event.key in ("j", "k") and self._active_pane == "preview":
+            try:
+                preview = self.query_one("#history-preview-container", VerticalScroll)
+            except Exception:
+                return
+            if event.key == "j":
+                preview.scroll_down()
+            else:
+                preview.scroll_up()
+            event.prevent_default()
+            event.stop()
+            return
+
         if not self._filter_active:
             if event.key in ("j", "k"):
                 try:
@@ -315,6 +404,10 @@ class QueryHistoryScreen(ModalScreen):
                     option_list.action_cursor_up()
                 event.prevent_default()
                 event.stop()
+            return
+
+        # when in preview pane, disable filter modification
+        if self._active_pane != "list":
             return
 
         key = event.key
@@ -339,7 +432,16 @@ class QueryHistoryScreen(ModalScreen):
             event.stop()
 
     def action_open_filter(self) -> None:
+        # in case of no history, no filter needed
         if not self._merged_entries:
+            return
+
+        # when in search mode, default pane is set to list
+        if self._active_pane != "list":
+            self._set_active_pane("list")
+
+        # when some text is alredy in filter, `/` won't reset it
+        if self._filter_active:
             return
         self._filter_active = True
         self._filter_text = ""
