@@ -109,21 +109,18 @@ class TreeFilterMixin:
 
     def action_tree_filter_accept(self: TreeFilterMixinHost) -> None:
         """Accept current filter selection, close filter, and activate the node."""
-        # Remember the match's *data* (not the node reference) before closing.
-        # Closing the filter rebuilds the tree from the snapshot taken at
-        # filter-open time, which replaces every node object — so the
-        # reference we captured here would be stale after close. The data
-        # payload, however, is the same object on both old and new nodes
-        # (we pass it through unchanged in _restore_node_under), so we can
-        # re-locate the match by identity.
+        # Remember the highlighted node's *data* (not the node reference)
+        # before closing. Closing the filter rebuilds the tree from the
+        # snapshot taken at filter-open time, which replaces every node
+        # object, so the reference we captured here would be stale after
+        # close. The data payload, however, is the same object on both old
+        # and new nodes (we pass it through unchanged in _restore_node_under),
+        # so we can re-locate the node by identity.
         matched_data: Any = None
-        if (
-            self._tree_filter_matches
-            and self._tree_filter_match_index < len(self._tree_filter_matches)
-        ):
-            current_node = self._tree_filter_matches[self._tree_filter_match_index]
-            if current_node and current_node.data:
-                matched_data = current_node.data
+        if self._tree_filter_matches:
+            cursor_node = self.object_tree.cursor_node
+            if cursor_node is not None and cursor_node.data:
+                matched_data = cursor_node.data
 
         # Close the filter
         self.action_tree_filter_close()
@@ -149,8 +146,13 @@ class TreeFilterMixin:
             self._select_and_activate_after_refresh(fresh_node)
 
     def _select_and_activate_after_refresh(self: TreeFilterMixinHost, node: Any) -> None:
+        tree = self.object_tree
         try:
-            self.object_tree.move_cursor(node)
+            tree.move_cursor(node)
+            tree.scroll_to(
+                y=node.line - tree.scrollable_content_region.height // 2,
+                animate=False,
+            )
         except Exception:
             pass
         self._activate_tree_node(node)
