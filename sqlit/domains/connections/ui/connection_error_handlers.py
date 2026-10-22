@@ -111,9 +111,79 @@ class AzureFirewallHandler:
         )
 
 
+_UNTRUSTED_CERT_MARKERS = (
+    "certificate verify failed",
+    "certificate chain was issued by an authority that is not trusted",
+)
+
+
+def is_untrusted_certificate_error(message: str) -> bool:
+    text = message.lower()
+    return any(marker in text for marker in _UNTRUSTED_CERT_MARKERS)
+
+
+@dataclass(frozen=True)
+class UntrustedServerCertificateHandler:
+    """Offer to trust a SQL Server certificate that cannot be verified.
+
+    SQL Server verifies the server certificate by default. A server with a
+    self-signed certificate then fails to connect; ask once, and remember the
+    answer on the connection, the way SSH asks about an unknown host key.
+    """
+
+    def can_handle(self, error: Exception) -> bool:
+        return is_untrusted_certificate_error(str(error))
+
+    def handle(self, app: ConnectionErrorApp, error: Exception, config: ConnectionConfig) -> None:
+        from sqlit.shared.ui.screens.confirm import ConfirmScreen
+        from sqlit.shared.ui.screens.error import ErrorScreen
+
+        if config.db_type != "mssql":
+            app.push_screen(ErrorScreen("Connection Failed", str(error)))
+            return
+
+        endpoint = config.tcp_endpoint
+        host = endpoint.host if endpoint else "The server"
+
+        def on_result(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            trust_server_certificate(app, config)
+            app.connect_to_server(config)
+
+        app.push_screen(
+            ConfirmScreen(
+                "Untrusted server certificate",
+                f"{host} presented a certificate that can't be verified, "
+                "usually because it is self-signed.\n\n"
+                "Trust it for this connection? Only do this for a server you know: "
+                "on an untrusted network, someone could be impersonating it.",
+                yes_label="Trust this server",
+                no_label="Cancel",
+            ),
+            on_result,
+        )
+
+
+def trust_server_certificate(app: ConnectionErrorApp, config: ConnectionConfig) -> None:
+    """Encrypt without verifying the certificate, and save that on the connection."""
+    from sqlit.domains.connections.providers.tls import TLS_MODE_REQUIRE
+
+    config.set_option("tls_mode", TLS_MODE_REQUIRE)
+    config.set_option("tls_trust_server_certificate", "yes")
+    if not config.name or all(c.name != config.name for c in app.connections):
+        return
+    app.connections = [config if c.name == config.name else c for c in app.connections]
+    try:
+        app.services.connection_store.save_one(config)
+    except Exception as exc:
+        app.notify(f"Trusted for this session, but could not save: {exc}", severity="warning")
+
+
 _DEFAULT_HANDLERS: tuple[ConnectionErrorHandler, ...] = (
     AzureFirewallHandler(),
     MissingDriverHandler(),
+    UntrustedServerCertificateHandler(),
 )
 
 
