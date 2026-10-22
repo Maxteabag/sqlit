@@ -117,3 +117,42 @@ def test_mssql_tls_flags_in_connection_string():
     conn_str = adapter.build_connection_string(config)
     assert "Encrypt=yes;" in conn_str
     assert "TrustServerCertificate=no;" in conn_str
+
+
+def _mssql_config(server: str, **options: str) -> ConnectionConfig:
+    return ConnectionConfig(
+        name="mssql",
+        db_type="mssql",
+        server=server,
+        port="1433",
+        database="master",
+        username="sa",
+        password="secret",
+        options={"auth_type": "sql", **options},
+    )
+
+
+def test_mssql_default_tls_verifies_remote_certificates():
+    """Default TLS mode must not blindly trust a remote server's certificate.
+
+    Saved connections carry the old hidden form default ("yes"); in default mode
+    it is not a choice the user made, so it must not switch verification off.
+    """
+    import pytest
+
+    from sqlit.domains.connections.providers.mssql.adapter import SQLServerAdapter
+
+    adapter = SQLServerAdapter()
+    cases = [
+        ("myserver.database.windows.net", {}, False),
+        ("myserver.database.windows.net", {"tls_trust_server_certificate": "yes"}, False),
+        ("10.0.0.5", {"tls_mode": "default", "tls_trust_server_certificate": "yes"}, False),
+        ("localhost", {}, True),
+        ("127.0.0.1", {}, True),
+        (".\\SQLEXPRESS", {}, True),
+        ("db.internal", {"tls_mode": "require", "tls_trust_server_certificate": "yes"}, True),
+    ]
+    for server, options, trusted in cases:
+        conn_str = adapter.build_connection_string(_mssql_config(server, **options))
+        if ("TrustServerCertificate=yes;" in conn_str) != trusted:
+            pytest.fail(f"{server} {options}: expected trusted={trusted}, got {conn_str!r}")

@@ -29,6 +29,16 @@ if TYPE_CHECKING:
 # Entra access token instead of having the driver acquire one itself.
 SQL_COPT_SS_ACCESS_TOKEN = 1256
 
+# Hosts whose self-signed certificate is trusted without asking: a local SQL
+# Server or Docker container, where there is no network path to intercept.
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ".", "(local)", "(localdb)"})
+
+
+def is_local_host(host: str) -> bool:
+    """Return True for a host on this machine, ignoring any instance name."""
+    base = host.strip().split("\\")[0].split(",")[0].lower()
+    return base in _LOCAL_HOSTS or base.startswith("(localdb)")
+
 
 def _build_access_token_struct(token: str) -> bytes:
     """Pack a JWT into the layout SQL_COPT_SS_ACCESS_TOKEN expects.
@@ -252,14 +262,19 @@ class SQLServerAdapter(DatabaseAdapter):
         base = f"SERVER={server_with_port};" f"DATABASE={endpoint.database or 'master'};"
 
         tls_mode = get_tls_mode(config)
-        trust_value = str(config.get_option("tls_trust_server_certificate", "yes")).lower()
-        trust_server_cert = "no" if trust_value in {"no", "false", "0"} else "yes"
-
         security_parts: list[str] = []
-        if tls_mode != TLS_MODE_DEFAULT:
+        if tls_mode == TLS_MODE_DEFAULT:
+            # The trust option is hidden in this mode, so a stored value is the
+            # old form default rather than a choice. Verify the certificate
+            # (the driver's default) unless the server is on this machine.
+            if is_local_host(endpoint.host):
+                security_parts.append("TrustServerCertificate=yes;")
+        else:
+            trust_value = str(config.get_option("tls_trust_server_certificate", "yes")).lower()
+            trust_server_cert = "no" if trust_value in {"no", "false", "0"} else "yes"
             encrypt_value = "no" if tls_mode == TLS_MODE_DISABLE else "yes"
             security_parts.append(f"Encrypt={encrypt_value};")
-        security_parts.append(f"TrustServerCertificate={trust_server_cert};")
+            security_parts.append(f"TrustServerCertificate={trust_server_cert};")
 
         base = base + "".join(security_parts)
 
