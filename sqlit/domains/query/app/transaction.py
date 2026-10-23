@@ -153,6 +153,8 @@ class TransactionExecutor:
 
     config: ConnectionConfig
     provider: DatabaseProvider
+    tunnel: Any | None = None  # Optional existing SSH tunnel to reuse (e.g. the session's)
+    _created_tunnel: Any | None = None
     _state: TransactionStateManager | None = None
     _transaction_connection: Any | None = None
     _analyzer: KeywordQueryAnalyzer | None = None
@@ -160,6 +162,24 @@ class TransactionExecutor:
     def __post_init__(self) -> None:
         self._state = TransactionStateManager()
         self._analyzer = KeywordQueryAnalyzer()
+
+    def _connect(self) -> Any:
+        """Open a connection, routed through the SSH tunnel when one is configured."""
+        connect_config = self.config
+        tunnel = self.tunnel or self._created_tunnel
+        if tunnel is None and self.config.tunnel and self.config.tunnel.enabled:
+            from sqlit.domains.connections.app.tunnel import create_ssh_tunnel
+
+            self._created_tunnel, _host, _port = create_ssh_tunnel(self.config)
+            tunnel = self._created_tunnel
+        if tunnel is not None:
+            connect_config = self.config.with_endpoint(host="127.0.0.1", port=str(tunnel.local_bind_port))
+        conn = self.provider.connection_factory.connect(connect_config)
+        try:
+            self.provider.post_connect(conn, self.config)
+        except Exception:
+            pass
+        return conn
 
     @property
     def in_transaction(self) -> bool:
@@ -200,19 +220,11 @@ class TransactionExecutor:
         if use_persistent:
             # Reuse or create a persistent connection for transaction scope
             if self._transaction_connection is None:
-                self._transaction_connection = self.provider.connection_factory.connect(self.config)
-                try:
-                    self.provider.post_connect(self._transaction_connection, self.config)
-                except Exception:
-                    pass
+                self._transaction_connection = self._connect()
             conn = self._transaction_connection
         else:
             # Not in transaction - use temporary connection
-            conn = self.provider.connection_factory.connect(self.config)
-            try:
-                self.provider.post_connect(conn, self.config)
-            except Exception:
-                pass
+            conn = self._connect()
             is_temp_connection = True
 
         try:
@@ -291,11 +303,7 @@ class TransactionExecutor:
         statements = [s for s in statements if not is_comment_only_statement(s)]
 
         # Create a dedicated connection for this atomic operation
-        conn = self.provider.connection_factory.connect(self.config)
-        try:
-            self.provider.post_connect(conn, self.config)
-        except Exception:
-            pass
+        conn = self._connect()
 
         try:
             # Start transaction
@@ -378,5 +386,11 @@ class TransactionExecutor:
         Always call this when done with the executor.
         """
         self._close_transaction_connection()
+        if self._created_tunnel is not None:
+            try:
+                self._created_tunnel.stop()
+            except Exception:
+                pass
+            self._created_tunnel = None
         if self._state:
             self._state.reset()

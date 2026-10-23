@@ -47,6 +47,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
     _cancellable_query: CancellableQuery | None = None
     _transaction_executor: TransactionExecutor | None = None
     _transaction_executor_config: Any | None = None
+    _transaction_executor_tunnel: Any | None = None
     _query_spinner: Spinner | None = None
     _query_cursor_cache: dict[str, tuple[int, int]] | None = None
     _query_target_database: str | None = None
@@ -355,12 +356,23 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         from sqlit.domains.query.app.transaction import TransactionExecutor
 
         # Create new executor if none exists or if config changed
-        if self._transaction_executor is None or self._transaction_executor_config != config:
+        tunnel = self._session_tunnel()
+        if (
+            self._transaction_executor is None
+            or self._transaction_executor_config != config
+            or self._transaction_executor_tunnel is not tunnel
+        ):
             if self._transaction_executor is not None:
                 self._transaction_executor.close()
-            self._transaction_executor = TransactionExecutor(config=config, provider=provider)
+            self._transaction_executor = TransactionExecutor(config=config, provider=provider, tunnel=tunnel)
             self._transaction_executor_config = config
+            self._transaction_executor_tunnel = tunnel
         return self._transaction_executor
+
+    def _session_tunnel(self: QueryMixinHost) -> Any | None:
+        """The SSH tunnel of the active session, so executors reuse it instead of the raw host."""
+        session = getattr(self, "_session", None)
+        return getattr(session, "tunnel", None) if session is not None else None
 
     def _reset_transaction_executor(self: QueryMixinHost) -> None:
         """Reset the transaction executor (e.g., on disconnect)."""
@@ -368,6 +380,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             self._transaction_executor.close()
             self._transaction_executor = None
         self._transaction_executor_config = None
+        self._transaction_executor_tunnel = None
 
     def _on_disconnect(self: QueryMixinHost) -> None:
         """Handle disconnect lifecycle event."""
@@ -635,7 +648,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
             config = provider.apply_database_override(config, active_db)
 
         # Create a dedicated executor for atomic execution
-        executor = TransactionExecutor(config=config, provider=provider)
+        executor = TransactionExecutor(config=config, provider=provider, tunnel=self._session_tunnel())
         try:
             start_time = time.perf_counter()
             max_rows = self.services.runtime.max_rows or MAX_FETCH_ROWS
