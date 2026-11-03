@@ -31,7 +31,7 @@ class IdleJob:
     priority: Priority = Priority.NORMAL
     is_async: bool = False
     name: str = ""
-    created_at: float = field(default_factory=time.time)
+    created_at: float = field(default_factory=time.monotonic)
 
     def __lt__(self, other: IdleJob) -> bool:
         # Higher priority first, then older jobs first
@@ -72,7 +72,7 @@ class IdleScheduler:
         self.max_queue_size = max_queue_size
 
         self._queue: deque[IdleJob] = deque()
-        self._last_activity_time: float = time.time()
+        self._last_activity_time: float = time.monotonic()
         self._running = False
         self._timer: Any = None
         self._paused = False
@@ -85,13 +85,13 @@ class IdleScheduler:
     @property
     def is_idle(self) -> bool:
         """Check if user is considered idle."""
-        elapsed_ms = (time.time() - self._last_activity_time) * 1000
+        elapsed_ms = (time.monotonic() - self._last_activity_time) * 1000
         return elapsed_ms >= self.idle_threshold_ms
 
     @property
     def time_until_idle_ms(self) -> float:
         """Time remaining until user is considered idle."""
-        elapsed_ms = (time.time() - self._last_activity_time) * 1000
+        elapsed_ms = (time.monotonic() - self._last_activity_time) * 1000
         return max(0, self.idle_threshold_ms - elapsed_ms)
 
     @property
@@ -104,7 +104,7 @@ class IdleScheduler:
 
         Should be hooked into key presses, mouse events, etc.
         """
-        self._last_activity_time = time.time()
+        self._last_activity_time = time.monotonic()
 
     def request_idle_callback(
         self,
@@ -138,6 +138,7 @@ class IdleScheduler:
         # Insert maintaining priority order
         # For simplicity, just append and sort when executing
         self._queue.append(job)
+        self._schedule_check()
         return True
 
     def cancel_all(self, name: str | None = None) -> int:
@@ -153,10 +154,13 @@ class IdleScheduler:
         if name is None:
             count = len(self._queue)
             self._queue.clear()
+            self._stop_timer()
             return count
 
         original_len = len(self._queue)
         self._queue = deque(job for job in self._queue if job.name != name)
+        if not self._queue:
+            self._stop_timer()
         return original_len - len(self._queue)
 
     def start(self) -> None:
@@ -169,6 +173,9 @@ class IdleScheduler:
     def stop(self) -> None:
         """Stop the idle scheduler."""
         self._running = False
+        self._stop_timer()
+
+    def _stop_timer(self) -> None:
         if self._timer:
             self._timer.stop()
             self._timer = None
@@ -176,14 +183,16 @@ class IdleScheduler:
     def pause(self) -> None:
         """Temporarily pause processing (queue still accepts jobs)."""
         self._paused = True
+        self._stop_timer()
 
     def resume(self) -> None:
         """Resume processing after pause."""
         self._paused = False
+        self._schedule_check()
 
     def _schedule_check(self) -> None:
         """Schedule the next idle check."""
-        if not self._running:
+        if not self._running or self._paused or not self._queue or self._timer is not None:
             return
 
         # Use Textual's timer
@@ -192,6 +201,7 @@ class IdleScheduler:
 
     def _check_and_work(self) -> None:
         """Check if idle and do work if so."""
+        self._timer = None
         if not self._running or self._paused:
             self._schedule_check()
             return
@@ -209,11 +219,13 @@ class IdleScheduler:
         self._do_work_chunk()
 
         # Schedule next check
+        if not self._queue:
+            self._stop_timer()
         self._schedule_check()
 
     def _do_work_chunk(self) -> None:
         """Execute jobs for up to max_work_chunk_ms."""
-        start_time = time.time()
+        start_time = time.monotonic()
         max_time = self.max_work_chunk_ms / 1000
 
         # Sort queue by priority (do this lazily)
@@ -222,7 +234,7 @@ class IdleScheduler:
 
         while self._queue:
             # Check if we've exceeded our time budget
-            elapsed = time.time() - start_time
+            elapsed = time.monotonic() - start_time
             if elapsed >= max_time:
                 break
 
@@ -244,7 +256,7 @@ class IdleScheduler:
                 self.app.log.error(f"IdleScheduler job failed: {job.name or 'unnamed'}: {e}")
 
         # Track stats
-        self._total_work_time_ms += (time.time() - start_time) * 1000
+        self._total_work_time_ms += (time.monotonic() - start_time) * 1000
 
         # Refresh status bar if debug mode is on
         if hasattr(self.app, "_debug_idle_scheduler") and self.app._debug_idle_scheduler:

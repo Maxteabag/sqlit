@@ -214,19 +214,25 @@ def get_completions(
         List of completion suggestions
     """
     before_cursor = sql[:cursor_pos]
+    if not before_cursor.strip() or is_inside_string(before_cursor):
+        return []
     current_word = get_current_word(sql, cursor_pos)
     routines = procedures or []
 
+    # Build the ambiguity index once. Scanning all routines for every candidate
+    # makes each editor completion quadratic in the size of the catalog.
+    routine_identities: dict[str, set[tuple[str, str]]] = {}
+    for routine in routines:
+        routine_identities.setdefault(str(routine).lower(), set()).add(
+            (
+                str(getattr(routine, "database", "")).lower(),
+                str(getattr(routine, "schema", "")).lower(),
+            )
+        )
+
     def routine_display_name(routine: object) -> str:
         name = str(routine)
-        identities = {
-            (
-                str(getattr(candidate, "database", "")).lower(),
-                str(getattr(candidate, "schema", "")).lower(),
-            )
-            for candidate in routines
-            if str(candidate).lower() == name.lower()
-        }
+        identities = routine_identities[name.lower()]
         if len(identities) <= 1:
             return name
         parts = [
@@ -286,14 +292,6 @@ def get_completions(
         if bool(getattr(routine, "is_table_valued", False))
     ]
     table_function_names = [routine_display_name(routine) for routine in table_function_routines]
-
-    # Don't suggest if inside string literal
-    if is_inside_string(before_cursor):
-        return []
-
-    # Don't suggest if there's no SQL content yet (just whitespace)
-    if not before_cursor.strip():
-        return []
 
     # Try DDL-specific handlers first (they return completions directly)
     for ddl_handler in [

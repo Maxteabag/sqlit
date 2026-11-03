@@ -1,0 +1,22 @@
+[
+  {
+    "file": "diagnostics/cells.png",
+    "sha256": "7cee4b06777186f183a06aff612baec9f00c32110bffe7c818e0538d29791b14",
+    "bytes": 113719
+  },
+  {
+    "file": "diagnostics/completion-baseline.trace.json",
+    "sha256": "cba1f1c8cca7ea912dca7fcbfdf00db56dba67a0fc44abe26ce21084a1950ba7",
+    "bytes": 25919
+  },
+  {
+    "file": "diagnostics/completion-candidate.trace.json",
+    "sha256": "42d84e47b6d26ddd92e55b251d672213f1c33bbf50926ff3dc2e63183492ab82",
+    "bytes": 25658
+  },
+  {
+    "file": "diagnostics/diagnostics.zip",
+    "sha256": "92516e352e4b2d2d57a5b47ed052d85032fcac0cabded76aa412019c9df4c438",
+    "bytes": 192111
+  }
+]

@@ -1,0 +1,29 @@
+{
+  "source_sha": "0640c96464dcb50434f97b14d097418b51b110ba",
+  "suite": "tests/unit tests/ui tests/cli tests/test_sqlite.py tests/test_duckdb.py",
+  "passed": 1801,
+  "skipped": 14,
+  "failed": 0,
+  "errors": 0,
+  "duration_s": 187.045,
+  "skip_reasons": {
+    "could not import 'databricks.sdk.core': No module named 'databricks'": 1,
+    "could not import 'oracledb': No module named 'oracledb'": 2,
+    "SQLite is file-based, no Docker container": 3,
+    "SQLite does not support sequences": 2,
+    "SQLite does not have a timezone-aware datetime type": 1,
+    "DuckDB is file-based, no Docker container": 3,
+    "DuckDB does not support triggers": 2
+  },
+  "formal_study_jobs": 152,
+  "formal_observations": 1349,
+  "focused_completion_tests": 347,
+  "focused_scheduler_startup_tests": 50,
+  "focused_display_tests": 11,
+  "release_state": "Measured source branch; no release or deployment performed",
+  "python310": {
+    "passed": 408,
+    "skipped": 0,
+    "failed": 0
+  }
+}

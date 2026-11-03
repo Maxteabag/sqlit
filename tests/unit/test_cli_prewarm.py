@@ -16,6 +16,26 @@ def test_prewarm_skipped_when_worker_disabled() -> None:
     klass.assert_not_called()
 
 
+def test_prewarm_honors_saved_disabled_setting_before_mount() -> None:
+    runtime = RuntimeConfig(process_worker=True)
+    settings = MagicMock()
+    settings.get.return_value = False
+    with patch("sqlit.domains.process_worker.app.process_worker_client.ProcessWorkerClient") as klass:
+        result = _prewarm_process_worker(runtime, settings_store=settings)
+    assert result is None
+    assert runtime.process_worker is False
+    klass.assert_not_called()
+
+
+def test_prewarm_keeps_early_spawn_when_saved_worker_is_enabled() -> None:
+    runtime = RuntimeConfig(process_worker=True)
+    settings = MagicMock()
+    settings.get.return_value = True
+    with patch("sqlit.domains.process_worker.app.process_worker_client.ProcessWorkerClient") as klass:
+        assert _prewarm_process_worker(runtime, settings_store=settings) is klass.return_value
+    klass.assert_called_once()
+
+
 def test_prewarm_skipped_when_mock_enabled() -> None:
     runtime = RuntimeConfig(process_worker=True, mock=MockConfig(enabled=True))
     with patch("sqlit.domains.process_worker.app.process_worker_client.ProcessWorkerClient") as klass:

@@ -15,6 +15,15 @@ from sqlit.domains.query.store.starred import StarredStore
 from sqlit.shared.app.runtime import RuntimeConfig
 
 
+@pytest.mark.parametrize("flag", ["--profile-startup-file", "--profile-startup-imports-file", "--settings", "--file-path"])
+def test_path_flag_value_is_not_a_project_directory(tmp_path, flag):
+    path = str(tmp_path / "not-created-yet.txt")
+    args = ["sqlit", flag, path, str(tmp_path)]
+    project_dir, remaining = _extract_project_dir(args)
+    assert project_dir == tmp_path
+    assert remaining == ["sqlit", flag, path]
+
+
 class TestLooksLikePath:
     @pytest.mark.parametrize(
         "arg",
