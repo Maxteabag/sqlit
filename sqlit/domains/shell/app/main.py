@@ -841,6 +841,7 @@ class SSMSTUI(
                 "Show process worker status",
                 "Displays worker mode, active state, and last activity.",
             ),
+            ("Explorer", ":explorer [schema|type]", "Choose explorer hierarchy", "No argument opens the layout picker; choice is saved."),
             ("Settings", ":set process_worker_warm on|off", "Warm worker on idle", ""),
             ("Settings", ":set process_worker_lazy on|off", "Lazy worker start", ""),
             ("Settings", ":set process_worker_auto_shutdown <seconds>", "Auto-shutdown worker", ""),

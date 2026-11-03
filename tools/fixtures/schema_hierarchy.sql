@@ -1,0 +1,23 @@
+-- Synthetic review data only. Run against a disposable database.
+CREATE SCHEMA billing;
+CREATE SCHEMA analytics;
+CREATE SCHEMA archive;
+CREATE SCHEMA empty_lab;
+CREATE TABLE billing.orders (id integer PRIMARY KEY, customer text NOT NULL, total numeric(10,2), status text);
+INSERT INTO billing.orders VALUES (1001, 'Northwind Bikes', 1240.00, 'paid'), (1002, 'Harbor Coffee', 385.50, 'pending'), (1003, 'Pine Studio', 910.00, 'paid');
+CREATE TABLE billing.invoices (id integer PRIMARY KEY, order_id integer REFERENCES billing.orders(id), issued_on date);
+INSERT INTO billing.invoices VALUES (501,1001,'2026-09-01'), (502,1003,'2026-09-02');
+CREATE TABLE analytics.orders (id integer PRIMARY KEY, report_month text, revenue numeric(10,2));
+INSERT INTO analytics.orders VALUES (1,'2026-08',28500.00), (2,'2026-09',19300.00);
+CREATE TABLE archive.orders (id integer PRIMARY KEY, archived_on date);
+INSERT INTO archive.orders VALUES (400,'2024-12-31');
+CREATE VIEW billing.open_orders AS SELECT * FROM billing.orders WHERE status='pending';
+CREATE VIEW analytics.monthly_revenue AS SELECT report_month, revenue FROM analytics.orders;
+CREATE INDEX orders_lookup ON billing.orders(customer);
+CREATE INDEX orders_lookup ON analytics.orders(report_month);
+CREATE SEQUENCE billing.invoice_number START 10000;
+CREATE SEQUENCE analytics.invoice_number START 90000;
+CREATE FUNCTION billing.audit_order() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
+CREATE TRIGGER audit_order BEFORE INSERT ON billing.orders FOR EACH ROW EXECUTE FUNCTION billing.audit_order();
+CREATE PROCEDURE billing.close_month() LANGUAGE plpgsql AS $$ BEGIN NULL; END $$;
+CREATE PROCEDURE analytics.close_month() LANGUAGE plpgsql AS $$ BEGIN NULL; END $$;

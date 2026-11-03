@@ -117,6 +117,7 @@ class IndexInfo:
     name: str
     table_name: str
     is_unique: bool = False
+    schema: str = ""
 
 
 @dataclass
@@ -125,6 +126,7 @@ class TriggerInfo:
 
     name: str
     table_name: str
+    schema: str = ""
 
 
 @dataclass
@@ -132,6 +134,7 @@ class SequenceInfo:
     """Information about a database sequence."""
 
     name: str
+    schema: str = ""
 
 
 @dataclass(frozen=True)

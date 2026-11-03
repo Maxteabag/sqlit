@@ -6,6 +6,7 @@ from .router import dispatch_command, register_command_handler
 from . import alert as _alert
 from . import credentials as _credentials
 from . import debug as _debug
+from . import explorer as _explorer
 from . import watchdog as _watchdog
 from . import worker as _worker
 

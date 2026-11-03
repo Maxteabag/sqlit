@@ -11,6 +11,7 @@ from sqlit.domains.connections.providers.metadata import get_connection_display_
 from sqlit.domains.explorer.domain.tree_nodes import (
     ConnectionFolderNode,
     ConnectionNode,
+    DatabaseNode,
     FolderNode,
     SavedQueryFileNode,
     SavedQueryFolderNode,
@@ -721,18 +722,29 @@ def add_saved_query_nodes(host: TreeMixinHost, parent_node: Any) -> None:
         )
 
 
-def add_database_object_nodes(host: TreeMixinHost, parent_node: Any, database: str | None) -> None:
+def add_database_object_nodes(host: TreeMixinHost, parent_node: Any, database: str | None, schema: str | None = None) -> None:
     """Add Tables, Views, Indexes, Triggers, Sequences, and Stored Procedures nodes."""
     if not host.current_provider:
         return
 
     caps = host.current_provider.capabilities
     node_provider = host.current_provider.explorer_nodes
+    settings = getattr(getattr(host, "services", None), "settings_store", None)
+    if schema is None and caps.supports_schema_grouping and settings and settings.get("explorer_hierarchy") == "schema":
+        from . import loaders
+
+        # Database branches load schemas only when opened. The connected
+        # single-database root is already active and can load immediately.
+        if isinstance(parent_node.data, DatabaseNode) and not parent_node.is_expanded:
+            return
+        loaders.add_loading_placeholder(host, parent_node)
+        loaders.load_folder_async(host, parent_node, FolderNode(folder_type="schemas", database=database))
+        return
 
     for folder in node_provider.get_root_folders(caps):
         if folder.requires(caps):
             folder_node = parent_node.add(escape_markup(folder.label))
-            folder_node.data = FolderNode(folder_type=folder.kind, database=database)
+            folder_node.data = FolderNode(folder_type=folder.kind, database=database, schema=schema)
             folder_node.allow_expand = True
         else:
             parent_node.add_leaf(f"[dim]{folder.label} (Not available)[/]")

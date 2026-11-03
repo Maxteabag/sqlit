@@ -392,6 +392,7 @@ class UIStateMachine:
 
         # SETTINGS
         s = HelpSection(id="settings", title="SETTINGS")
+        s.binding(":explorer [schema|type]", "Explorer hierarchy")
         s.binding(":alert off|delete|write", "Confirm risky queries")
         s.binding(":set ln on|off|relative", "Line numbers")
         sections.append(s)

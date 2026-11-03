@@ -206,6 +206,7 @@ class ProcessWorkerClient:
         config: ConnectionConfig,
         database: str | None,
         folder_type: str,
+        schema: str | None = None,
     ) -> ProcessFolderOutcome:
         with self._execute_lock:
             if self._closed:
@@ -223,6 +224,7 @@ class ProcessWorkerClient:
                 "db_type": config.db_type,
                 "database": database,
                 "folder_type": folder_type,
+                "schema": schema,
             }
             self._send(payload)
 

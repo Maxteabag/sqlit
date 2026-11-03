@@ -145,12 +145,26 @@ class PostgreSQLAdapter(PostgresBaseAdapter):
         cursor.execute("SELECT datname FROM pg_database " "WHERE datistemplate = false ORDER BY datname")
         return [row[0] for row in cursor.fetchall()]
 
+    supports_schema_grouping = True
+
+    def get_schemas(self, conn: Any, database: str | None = None) -> list[str]:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT schema_name FROM information_schema.schemata "
+            "WHERE schema_name NOT IN ('pg_catalog', 'information_schema') "
+            "AND schema_name NOT LIKE 'pg_toast%' AND schema_name NOT LIKE 'pg_temp_%' "
+            "ORDER BY schema_name"
+        )
+        return [row[0] for row in cursor.fetchall()]
+
     def get_procedures(self, conn: Any, database: str | None = None) -> list[str]:
         """Get stored procedures/functions from PostgreSQL."""
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT routine_name FROM information_schema.routines "
-            "WHERE routine_schema = 'public' AND routine_type = 'FUNCTION' "
+            "SELECT routine_name, routine_schema FROM information_schema.routines "
+            "WHERE routine_schema NOT IN ('pg_catalog', 'information_schema') "
             "ORDER BY routine_name"
         )
-        return [row[0] for row in cursor.fetchall()]
+        from sqlit.domains.connections.providers.adapters.base import RoutineInfo
+
+        return [RoutineInfo(row[0], schema=row[1]) for row in cursor.fetchall()]

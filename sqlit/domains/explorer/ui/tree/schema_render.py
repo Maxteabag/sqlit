@@ -38,12 +38,13 @@ def add_schema_grouped_items(
     schema_nodes: dict[str, Any] = {}
     items_to_add: list[tuple[Any, str, str, str]] = []
     expanded_paths = getattr(host, "_expanded_paths", set())
+    schema_scoped = getattr(getattr(node, "data", None), "schema", None) is not None
 
     for schema in sorted_schemas:
         schema_items = by_schema[schema]
         is_default = not schema or schema == default_schema
 
-        if is_default and not has_multiple_schemas:
+        if schema_scoped or (is_default and not has_multiple_schemas):
             parent = node
         else:
             if schema not in schema_nodes:

@@ -182,3 +182,19 @@ class TestSnowflakeAdapter:
 
             query = adapter.build_select_query("MY_TABLE", 10, schema="MYSCHEMA")
             assert query == 'SELECT * FROM "MYSCHEMA"."MY_TABLE" LIMIT 10'
+
+
+def test_schema_listing_uses_named_show_column_and_paginates():
+    """SHOW works without warehouse compute; pagination must not drop schemas."""
+    from sqlit.domains.connections.providers.snowflake.adapter import SnowflakeAdapter
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value
+    cursor.description = [("created_on",), ("name",), ("database_name",)]
+    first = [(None, "INFORMATION_SCHEMA", "data")] + [(None, f"schema{i:04d}", "data") for i in range(999)]
+    cursor.fetchall.side_effect = [first, [(None, "z'last", "data")]]
+    schemas = SnowflakeAdapter().get_schemas(conn, 'data"quoted')
+    assert schemas == [f"schema{i:04d}" for i in range(999)] + ["z'last"]
+    calls = [call.args[0] for call in cursor.execute.call_args_list]
+    assert calls[0] == 'SHOW SCHEMAS IN DATABASE "data""quoted" LIMIT 1000'
+    assert calls[1].endswith(" FROM 'schema0998'")

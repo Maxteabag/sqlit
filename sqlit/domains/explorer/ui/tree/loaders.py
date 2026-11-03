@@ -14,6 +14,7 @@ from sqlit.domains.explorer.domain.tree_nodes import (
     LoadingNode,
     ProcedureNode,
     SequenceNode,
+    SchemaNode,
     TableNode,
     TriggerNode,
     ViewNode,
@@ -199,6 +200,32 @@ def load_folder_async(host: TreeMixinHost, node: Any, data: FolderNode) -> None:
     """Spawn worker to load folder contents (tables/views/indexes/triggers/sequences/procedures)."""
     folder_type = data.folder_type
     db_name = data.database
+    schema = data.schema
+    session = host._session
+    refresh_token = getattr(host, "_tree_refresh_token", None)
+    tokens = getattr(host, "_folder_load_tokens", None)
+    if tokens is None:
+        tokens = {}
+        setattr(host, "_folder_load_tokens", tokens)
+    token = object()
+    tokens[id(node)] = token
+
+    def deliver(callback: Any) -> None:
+        # A refresh, connection switch, or second load owns the new tree. Late
+        # metadata must never append into it or clear its loading indicator.
+        if tokens.get(id(node)) is not token:
+            return
+        tokens.pop(id(node), None)
+        if host._session is not session or getattr(host, "_tree_refresh_token", None) is not refresh_token:
+            return
+        current = node
+        while current.parent is not None:
+            if current not in current.parent.children:
+                return
+            current = current.parent
+        if current is not host.object_tree.root:
+            return
+        callback()
 
     async def work_async() -> None:
         import asyncio
@@ -227,6 +254,7 @@ def load_folder_async(host: TreeMixinHost, node: Any, data: FolderNode) -> None:
                     config=host.current_config,
                     database=db_name,
                     folder_type=folder_type,
+                    **({"schema": schema} if schema is not None else {}),
                 )
                 if getattr(outcome, "cancelled", False):
                     return
@@ -241,17 +269,18 @@ def load_folder_async(host: TreeMixinHost, node: Any, data: FolderNode) -> None:
                         schema_service.list_folder_items,
                         folder_type,
                         db_name,
+                        *([schema] if schema is not None else []),
                     )
 
             host.set_timer(
                 MIN_TIMER_DELAY_S,
-                lambda: on_folder_loaded(host, node, db_name, folder_type, items),
+                lambda: deliver(lambda: on_folder_loaded(host, node, db_name, folder_type, items)),
             )
         except Exception as error:
             error_message = f"Error loading: {error}"
             host.set_timer(
                 MIN_TIMER_DELAY_S,
-                lambda: on_tree_load_error(host, node, error_message),
+                lambda: deliver(lambda: on_tree_load_error(host, node, error_message)),
             )
 
     host.run_worker(work_async(), name=f"load-folder-{folder_type}", exclusive=False)
@@ -270,6 +299,18 @@ def on_folder_loaded(
     if not items:
         empty_child = node.add_leaf("[dim](Empty)[/]")
         empty_child.data = LoadingNode()
+        return
+
+    if folder_type == "schemas":
+        default = provider.capabilities.default_schema
+        for schema_name in sorted(set(items), key=lambda name: (name != default, name.casefold(), name)):
+            schema_node = node.add(f"\\[{escape_markup(schema_name)}]")
+            schema_node.data = SchemaNode(database=db_name, schema=schema_name)
+            schema_node.allow_expand = True
+            tree_builder.add_database_object_nodes(host, schema_node, db_name, schema_name)
+        expansion_state.restore_subtree_expansion_with_paths(host, node, getattr(host, "_expanded_paths", set()))
+        ensure_expanded_nodes_loaded(host, node)
+        tree_builder.restore_pending_cursor(host)
         return
 
     if folder_type == "databases":
@@ -300,21 +341,22 @@ def on_folder_loaded(
         tree_builder.restore_pending_cursor(host)
         return
 
+    schema = getattr(node.data, "schema", None)
     for item in items:
         if item[0] == "procedure":
             child = node.add_leaf(escape_markup(item[2]))
-            child.data = ProcedureNode(database=db_name, name=item[2])
+            child.data = ProcedureNode(database=db_name, name=item[2], schema=schema)
         elif item[0] == "index":
             display = f"{escape_markup(item[1])} [dim]({escape_markup(item[2])})[/]"
             child = node.add_leaf(display)
-            child.data = IndexNode(database=db_name, name=item[1], table_name=item[2])
+            child.data = IndexNode(database=db_name, name=item[1], table_name=item[2], schema=schema)
         elif item[0] == "trigger":
             display = f"{escape_markup(item[1])} [dim]({escape_markup(item[2])})[/]"
             child = node.add_leaf(display)
-            child.data = TriggerNode(database=db_name, name=item[1], table_name=item[2])
+            child.data = TriggerNode(database=db_name, name=item[1], table_name=item[2], schema=schema)
         elif item[0] == "sequence":
             child = node.add_leaf(escape_markup(item[1]))
-            child.data = SequenceNode(database=db_name, name=item[1])
+            child.data = SequenceNode(database=db_name, name=item[1], schema=schema)
     tree_builder.restore_pending_cursor(host)
 
 

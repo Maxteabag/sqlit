@@ -39,6 +39,7 @@ class SchemaCapabilities:
     default_schema: str
     system_databases: frozenset[str]
     supports_foreign_keys: bool = False
+    supports_schema_grouping: bool = False
 
 
 @runtime_checkable

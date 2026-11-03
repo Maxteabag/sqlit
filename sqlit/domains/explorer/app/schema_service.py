@@ -120,7 +120,7 @@ class ExplorerSchemaService:
             database,
         )
 
-    def list_folder_items(self, folder_type: str, database: str | None) -> list[Any]:
+    def list_folder_items(self, folder_type: str, database: str | None, schema: str | None = None) -> list[Any]:
         inspector = self.session.provider.schema_inspector
         caps = self.session.provider.capabilities
         db_arg = self._resolve_db_arg(database)
@@ -137,6 +137,19 @@ class ExplorerSchemaService:
                 obj_cache[cache_key] = {}
             obj_cache[cache_key][key] = data
             return data
+
+        if folder_type == "schemas" or schema is not None:
+            from sqlit.domains.connections.providers.schema_explorer import load_schema_folder_items
+
+            if not caps.supports_schema_grouping:
+                raise ValueError("This provider does not support schema grouping")
+            return cached(
+                f"schema-folder:{schema!r}:{folder_type}",
+                lambda: self._run_with_retry(
+                    lambda: load_schema_folder_items(inspector, self.session.connection, db_arg, folder_type, schema),
+                    database,
+                ),
+            )
 
         if folder_type == "tables":
             raw_data = cached(
@@ -210,32 +223,32 @@ class ExplorerSchemaService:
             return []
         return []
 
-    def get_index_definition(self, database: str | None, name: str, table_name: str) -> dict[str, Any] | None:
+    def get_index_definition(self, database: str | None, name: str, table_name: str, schema: str | None = None) -> dict[str, Any] | None:
         inspector = self.session.provider.schema_inspector
         if not isinstance(inspector, IndexInspector):
             return None
         db_arg = self._resolve_db_arg(database)
         return self._run_with_retry(
-            lambda: inspector.get_index_definition(self.session.connection, name, table_name, db_arg),
+            lambda: inspector.get_index_definition(self.session.connection, name, table_name, db_arg, **({"schema": schema} if schema is not None else {})),
             database,
         )
 
-    def get_trigger_definition(self, database: str | None, name: str, table_name: str) -> dict[str, Any] | None:
+    def get_trigger_definition(self, database: str | None, name: str, table_name: str, schema: str | None = None) -> dict[str, Any] | None:
         inspector = self.session.provider.schema_inspector
         if not isinstance(inspector, TriggerInspector):
             return None
         db_arg = self._resolve_db_arg(database)
         return self._run_with_retry(
-            lambda: inspector.get_trigger_definition(self.session.connection, name, table_name, db_arg),
+            lambda: inspector.get_trigger_definition(self.session.connection, name, table_name, db_arg, **({"schema": schema} if schema is not None else {})),
             database,
         )
 
-    def get_sequence_definition(self, database: str | None, name: str) -> dict[str, Any] | None:
+    def get_sequence_definition(self, database: str | None, name: str, schema: str | None = None) -> dict[str, Any] | None:
         inspector = self.session.provider.schema_inspector
         if not isinstance(inspector, SequenceInspector):
             return None
         db_arg = self._resolve_db_arg(database)
         return self._run_with_retry(
-            lambda: inspector.get_sequence_definition(self.session.connection, name, db_arg),
+            lambda: inspector.get_sequence_definition(self.session.connection, name, db_arg, **({"schema": schema} if schema is not None else {})),
             database,
         )
