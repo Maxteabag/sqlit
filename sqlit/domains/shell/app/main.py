@@ -153,6 +153,7 @@ class SSMSTUI(
         self._last_result_rows: list[tuple[Any, ...]] = []
         self._last_result_row_count: int = 0
         self._results_table_counter: int = 0
+        self.results_compact_columns: bool = False
         self._internal_clipboard: str = ""
         # Undo/redo history for query editor
         self._undo_history: Any = None  # Lazy init UndoHistory

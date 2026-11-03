@@ -91,6 +91,9 @@ class UILeaderMixin:
     def action_leader_toggle_fullscreen(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("toggle_fullscreen")
 
+    def action_leader_toggle_compact_columns(self: UINavigationMixinHost) -> None:
+        self._execute_leader_command("toggle_compact_columns")
+
     def action_leader_show_connection_picker(self: UINavigationMixinHost) -> None:
         self._execute_leader_command("show_connection_picker")
 

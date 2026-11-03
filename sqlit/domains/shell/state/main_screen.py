@@ -19,6 +19,7 @@ class MainScreenState(State):
         self.allows("show_connection_picker")
         self.allows("disconnect", guard=lambda app: app.has_connection)
         self.allows("toggle_fullscreen", help="Toggle fullscreen")
+        self.allows("toggle_compact_columns", help="Toggle compact result columns")
         self.allows("change_theme")
         self.allows("toggle_process_worker", help="Toggle process worker")
         self.allows("leader_key", key="<space>", label="Commands")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -18,6 +19,7 @@ from textual.coordinate import Coordinate
 from textual.events import Key
 from textual.strip import Strip
 from textual_fastdatatable import DataTable as FastDataTable
+from textual_fastdatatable.column import CELL_X_PADDING, Column
 
 
 def normalize_arrow_value(value: Any) -> Any:
@@ -64,8 +66,69 @@ class SqlitDataTable(FastDataTable):
     # Track if a manual tooltip is being shown (via 'v' key)
     _manual_tooltip_active: bool = False
 
+    # Compact columns size each column to its average value width rather than
+    # its widest, sampling this many rows so large results toggle instantly.
+    COMPACT_SAMPLE_ROWS = 200
+    COMPACT_MIN_WIDTH = 3
+
+    _compact_columns: bool = False
+
     def __init__(self, *, data: Any | None = None, **kwargs: Any) -> None:
         super().__init__(data=_stringify_uuid_data(data), **kwargs)
+
+    def on_mount(self) -> None:
+        # The compact toggle is app-wide, so tables built for later queries
+        # pick it up too.
+        if getattr(self.app, "results_compact_columns", False):
+            self.set_compact_columns(True)
+
+    @property
+    def ordered_columns(self) -> list[Column]:
+        fresh = self._ordered_columns is None
+        columns = super().ordered_columns
+        if fresh and self._compact_columns:
+            self._apply_compact_widths(columns)
+        return columns
+
+    @property
+    def compact_columns(self) -> bool:
+        return self._compact_columns
+
+    def set_compact_columns(self, enabled: bool) -> None:
+        """Switch between average-width (compact) and full-width columns."""
+        if enabled == self._compact_columns:
+            return
+        self._compact_columns = enabled
+        # Columns are rebuilt from the backend on next access, which re-applies
+        # (or drops) the compact widths.
+        self._ordered_columns = None
+        self._clear_caches()
+        self._require_update_dimensions = True
+        self.refresh()
+
+    def _apply_compact_widths(self, columns: list[Column]) -> None:
+        backend = self.backend
+        if backend is None or backend.row_count == 0:
+            return
+        row_count = backend.row_count
+        # Measure with Rich directly: DataTable._measure only exists in newer
+        # textual-fastdatatable releases.
+        console = self.app.console
+        options = console.options
+
+        def measure(renderable: Any) -> int:
+            return console.measure(renderable, options=options).maximum
+
+        step = max(1, row_count // self.COMPACT_SAMPLE_ROWS)
+        sample = range(0, row_count, step)
+        for index, column in enumerate(columns):
+            widths = [measure(self._format_cell(backend.get_cell_at(row, index), column)) for row in sample]
+            average = math.ceil(sum(widths) / len(widths))
+            # Keep the header readable; only the data is squeezed to its average.
+            floor = max(self.COMPACT_MIN_WIDTH, measure(column.label))
+            full_width = column.render_width - CELL_X_PADDING
+            column.width = min(full_width, max(floor, average))
+            column.auto_width = False
 
     def add_rows(self, rows: Iterable[Iterable[Any]]) -> list[int]:
         return super().add_rows(_stringify_uuid_rows(rows))

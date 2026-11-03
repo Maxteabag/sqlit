@@ -209,6 +209,10 @@ class UIStateMachine:
         s.binding(f"{leader_key}{lk('change_theme', 'leader', 't')}", "Change theme")
         s.binding(f"{leader_key}{lk('toggle_fullscreen', 'leader', 'f')}", "Toggle fullscreen pane")
         s.binding(f"{leader_key}{lk('toggle_explorer', 'leader', 'e')}", "Toggle explorer visibility")
+        s.binding(
+            f"{leader_key}{lk('toggle_compact_columns', 'leader', 'w')}",
+            "Toggle compact result columns (average width)",
+        )
         sections.append(s)
 
         # NAVIGATION

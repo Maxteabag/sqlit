@@ -192,6 +192,7 @@ class DefaultKeymapProvider(KeymapProvider):
             # View
             LeaderCommandDef("e", "toggle_explorer", "Toggle Explorer", "View"),
             LeaderCommandDef("f", "toggle_fullscreen", "Toggle Maximize", "View"),
+            LeaderCommandDef("w", "toggle_compact_columns", "Compact Columns", "View"),
             # Connection
             LeaderCommandDef("c", "show_connection_picker", "Connect", "Connection"),
             LeaderCommandDef("x", "disconnect", "Disconnect", "Connection", guard="has_connection"),

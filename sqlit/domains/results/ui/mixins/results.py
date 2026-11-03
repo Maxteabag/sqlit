@@ -1341,6 +1341,13 @@ class ResultsMixin:
 
         self.push_screen(ColumnPickerScreen(labels), handle_pick)
 
+    def action_toggle_compact_columns(self: ResultsMixinHost) -> None:
+        """Toggle sizing result columns to their average value width instead of the widest."""
+        enabled = not self.results_compact_columns
+        self.results_compact_columns = enabled
+        for table in self.results_area.query(SqlitDataTable):
+            table.set_compact_columns(enabled)
+
     def action_clear_results(self: ResultsMixinHost) -> None:
         """Clear the results table."""
         if self.results_area.has_class("stacked-mode"):
