@@ -7,9 +7,61 @@ from types import MethodType
 
 import pytest
 
+from sqlit.domains.query.ui.mixins.query_results import RESULTS_RENDER_CHUNK_SIZE
 from sqlit.domains.shell.app.main import SSMSTUI
+from sqlit.shared.ui.widgets_tables import SqlitDataTable
 
 from .mocks import MockConnectionStore, MockSettingsStore, build_test_services, create_test_connection
+
+
+@pytest.mark.asyncio
+async def test_incremental_rendering_uses_large_batches(monkeypatch):
+    """Large results should minimize table updates after the fast first paint."""
+    connections = [create_test_connection("test-db", "sqlite")]
+    services = build_test_services(
+        connection_store=MockConnectionStore(connections),
+        settings_store=MockSettingsStore({"theme": "tokyo-night"}),
+    )
+    app = SSMSTUI(services=services)
+    columns = ["id", "value"]
+    rows = [(index, f"value-{index}") for index in range(5_000)]
+    batch_sizes: list[int] = []
+    initial_row_counts: list[int] = []
+    original_add_rows = SqlitDataTable.add_rows
+    original_replace = app._replace_results_table_with_table
+
+    def _record_add_rows(self, batch):
+        batch = list(batch)
+        batch_sizes.append(len(batch))
+        return original_add_rows(self, batch)
+
+    def _record_replace(self, table):
+        initial_row_counts.append(table.row_count)
+        return original_replace(table)
+
+    monkeypatch.setattr(SqlitDataTable, "add_rows", _record_add_rows)
+    app._replace_results_table_with_table = MethodType(_record_replace, app)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await app._display_query_results(
+            columns=columns,
+            rows=rows,
+            row_count=len(rows),
+            truncated=False,
+            elapsed_ms=0,
+        )
+
+        assert initial_row_counts == [20]
+
+        await pilot.pause()
+
+        assert app.results_table.row_count == len(rows)
+        assert batch_sizes == [
+            RESULTS_RENDER_CHUNK_SIZE,
+            RESULTS_RENDER_CHUNK_SIZE,
+            len(rows) - 20 - (2 * RESULTS_RENDER_CHUNK_SIZE),
+        ]
 
 
 @pytest.mark.asyncio

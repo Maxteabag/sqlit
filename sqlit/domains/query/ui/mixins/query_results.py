@@ -12,7 +12,10 @@ from sqlit.shared.ui.widgets_tables import normalize_arrow_value
 
 from .query_constants import MAX_COLUMN_CONTENT_WIDTH, MAX_RENDER_ROWS
 
-RESULTS_RENDER_CHUNK_SIZE = 200
+# Preserve the quick initial paint for medium and large result sets, then use
+# larger continuation batches to avoid repeated Arrow table rebuilds and renders.
+RESULTS_RENDER_INCREMENTAL_THRESHOLD = 200
+RESULTS_RENDER_CHUNK_SIZE = 2_000
 RESULTS_RENDER_INITIAL_ROWS = 20
 
 
@@ -333,7 +336,7 @@ class QueryResultsMixin:
         self._cancel_results_render()
         render_token = getattr(self, "_results_render_token", 0)
         row_limit = min(len(rows), MAX_RENDER_ROWS)
-        if row_limit > RESULTS_RENDER_CHUNK_SIZE:
+        if row_limit > RESULTS_RENDER_INCREMENTAL_THRESHOLD:
             self._render_results_table_incremental(
                 columns,
                 rows,
