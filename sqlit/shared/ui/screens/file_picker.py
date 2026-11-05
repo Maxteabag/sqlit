@@ -14,6 +14,12 @@ from textual.widgets import Input, ListItem, ListView, Static
 from sqlit.shared.ui.widgets import Dialog
 
 
+class _FilePickerEntryLabel(Static):
+    """Render a file-picker entry without enabling Textual text selection."""
+
+    ALLOW_SELECT = False
+
+
 class FilePickerMode(Enum):
     """Mode for the file picker dialog."""
 
@@ -191,7 +197,7 @@ class FilePickerScreen(ModalScreen[str | None]):
 
         # Add parent directory entry
         if self._current_dir.parent != self._current_dir:
-            item = ListItem(Static("📁 .."))
+            item = ListItem(_FilePickerEntryLabel("📁 .."))
             items.append(item)
             self._entries.append(None)  # None = parent
 
@@ -199,7 +205,7 @@ class FilePickerScreen(ModalScreen[str | None]):
         try:
             entries = sorted(self._current_dir.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
         except PermissionError:
-            items.append(ListItem(Static("⚠️  Permission denied")))
+            items.append(ListItem(_FilePickerEntryLabel("⚠️  Permission denied")))
             await list_view.extend(items)
             return
 
@@ -207,11 +213,11 @@ class FilePickerScreen(ModalScreen[str | None]):
             if entry.name.startswith("."):
                 continue  # Skip hidden files
             if entry.is_dir():
-                item = ListItem(Static(f"📁 {entry.name}"))
+                item = ListItem(_FilePickerEntryLabel(f"📁 {entry.name}"))
                 items.append(item)
                 self._entries.append(entry)
             elif show_files and self._matches_extension(entry):
-                item = ListItem(Static(f"📄 {entry.name}"))
+                item = ListItem(_FilePickerEntryLabel(f"📄 {entry.name}"))
                 items.append(item)
                 self._entries.append(entry)
 
