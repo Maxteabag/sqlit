@@ -11,12 +11,14 @@ from typing import Any
 from sqlit.domains.connections.app.session import ConnectionSession
 from sqlit.domains.connections.cli.prompts import prompt_for_password
 from sqlit.domains.connections.domain.config import ConnectionConfig
+from sqlit.domains.query.app.multi_statement import split_statements
 from sqlit.domains.query.app.query_service import (
     DialectQueryAnalyzer,
     QueryKind,
     QueryResult,
     QueryService,
 )
+from sqlit.domains.query.editing.comments import is_comment_only_statement
 from sqlit.shared.app.runtime import RuntimeConfig
 from sqlit.shared.app.services import AppServices, build_app_services
 
@@ -172,6 +174,20 @@ def cmd_query(
 
     try:
         with create_session(config) as session:
+            statements = [s for s in split_statements(query) if not is_comment_only_statement(s)]
+            if len(statements) > 1:
+                # Same as the TUI: run them in order, stop on the first error, show the last result.
+                for statement in statements[:-1]:
+                    service.execute(
+                        connection=session.connection,
+                        executor=session.provider.query_executor,
+                        query=statement,
+                        config=config,
+                        max_rows=max_rows,
+                        save_to_history=True,
+                    )
+                query = statements[-1]
+
             has_cursor = hasattr(session.connection, "cursor") and callable(getattr(session.connection, "cursor", None))
 
             if _should_stream_results(

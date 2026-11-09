@@ -249,3 +249,16 @@ def test_cli_version_short_option(tmp_path: Path):
     )
     assert result.returncode == 0
     assert "sqlit" in result.stdout
+
+
+def test_query_file_runs_every_statement(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SQLIT_CONFIG_DIR", str(tmp_path))
+    db = tmp_path / "demo.db"
+    script = tmp_path / "script.sql"
+    script.write_text("create table z(a int);\n-- seed\ninsert into z values (1);\nselect * from z;\n")
+
+    run_cli("connections", "add", "sqlite", "--name", "d", "--file-path", str(db))
+    result = run_cli("query", "-c", "d", "-f", str(script), "--format", "json", check=False)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == [{"a": 1}]
