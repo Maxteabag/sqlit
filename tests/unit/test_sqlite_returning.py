@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from sqlit.domains.connections.providers.sqlite.adapter import SQLiteAdapter
-from sqlit.domains.query.app.query_service import KeywordQueryAnalyzer, QueryKind
+from sqlit.domains.query.app.query_service import DialectQueryAnalyzer, KeywordQueryAnalyzer, QueryKind
+from sqlit.domains.query.cli.commands import _should_stream_results
 
 
 @pytest.fixture
@@ -40,6 +41,21 @@ def test_classifier_recognizes_delete_returning_as_returns_rows():
     analyzer = KeywordQueryAnalyzer()
     sql = "DELETE FROM jobs WHERE id = 1 RETURNING id"
     assert analyzer.classify(sql) == QueryKind.RETURNS_ROWS
+
+
+def test_dialect_classifier_recognizes_returning():
+    """The analyzer real queries go through asks the adapter, not the keyword fallback."""
+    analyzer = DialectQueryAnalyzer(SQLiteAdapter())
+    assert analyzer.classify("UPDATE jobs SET status = 'x' RETURNING id") == QueryKind.RETURNS_ROWS
+    assert analyzer.classify("UPDATE jobs SET status = 'x'") == QueryKind.NON_QUERY
+
+
+def test_cli_does_not_stream_dml_returning():
+    """Streaming skips the commit, so a write must take the normal path."""
+    analyzer = DialectQueryAnalyzer(SQLiteAdapter())
+    kwargs = {"max_rows": None, "fmt": "json", "analyzer": analyzer, "has_cursor": True}
+    assert not _should_stream_results(query="UPDATE jobs SET status = 'x' RETURNING id", **kwargs)
+    assert _should_stream_results(query="SELECT id FROM jobs", **kwargs)
 
 
 def test_classifier_plain_update_is_non_query():

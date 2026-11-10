@@ -11,6 +11,7 @@ from typing import Any
 from sqlit.domains.connections.app.session import ConnectionSession
 from sqlit.domains.connections.cli.prompts import prompt_for_password
 from sqlit.domains.connections.domain.config import ConnectionConfig
+from sqlit.domains.connections.providers.adapters.base import _DML_KEYWORDS, _first_keyword
 from sqlit.domains.query.app.query_service import (
     DialectQueryAnalyzer,
     QueryKind,
@@ -59,6 +60,7 @@ def _should_stream_results(
         max_rows is None
         and fmt in ("csv", "json")
         and analyzer.classify(query) == QueryKind.RETURNS_ROWS
+        and _first_keyword(query) not in _DML_KEYWORDS
         and has_cursor
     )
 
