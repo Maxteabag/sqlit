@@ -1231,6 +1231,29 @@ class SSMSTUI(
         close_worker = getattr(self, "_close_process_worker_client", None)
         if callable(close_worker):
             close_worker()
+        self._close_connections_on_exit()
+
+    def _close_connections_on_exit(self) -> None:
+        """Close open database connections synchronously before the process exits.
+
+        Leaving them to the interpreter's atexit handlers makes some drivers
+        (e.g. snowflake-connector-python) emit a FutureWarning about connections
+        not being explicitly closed.
+        """
+        session = getattr(self, "_session", None)
+        self._session = None
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                pass
+        executor = getattr(self, "_transaction_executor", None)
+        self._transaction_executor = None
+        if executor is not None:
+            try:
+                executor.close()
+            except Exception:
+                pass
 
     def _startup_stamp(self, name: str) -> None:
         if not self._startup_profile:
