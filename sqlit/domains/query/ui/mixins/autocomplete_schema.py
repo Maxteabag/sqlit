@@ -11,6 +11,20 @@ from sqlit.shared.ui.spinner import Spinner
 
 SCHEMA_PROCESS_BATCH_SIZE = 200
 
+# With no database selected, autocomplete indexes every user database on the
+# server. Past this many databases that means hundreds of metadata queries
+# queued on the single connection executor (blocking the explorer and user
+# queries for minutes) and millions of entries processed on the UI thread, so
+# indexing waits until the user picks a database.
+MAX_SERVER_WIDE_INDEX_DATABASES = 20
+
+
+def _too_many_databases_message(count: int) -> str:
+    return (
+        f"Autocomplete not indexed: the server has {count} databases. "
+        "Select a database in the explorer (Enter on it) to index it."
+    )
+
 
 def _dedupe_routines(routines: list[Any]) -> list[Any]:
     """Deduplicate routines without collapsing equal names in other schemas."""
@@ -345,6 +359,11 @@ class AutocompleteSchemaMixin:
             self._stop_schema_spinner()
             return
         caps = provider.capabilities
+
+        if len(databases) > MAX_SERVER_WIDE_INDEX_DATABASES:
+            self._stop_schema_spinner()
+            self.notify(_too_many_databases_message(len(databases)), severity="warning")
+            return
 
         self._schema_pending_dbs = databases
         self._schema_total_jobs = len(databases) * 3  # tables, views, procedures per db
@@ -821,6 +840,9 @@ class AutocompleteSchemaMixin:
                     all_dbs = await run_db_call(inspector.get_databases, connection)
                     system_dbs = {s.lower() for s in caps.system_databases}
                     databases = [d for d in all_dbs if d.lower() not in system_dbs]
+                    if len(databases) > MAX_SERVER_WIDE_INDEX_DATABASES:
+                        self.notify(_too_many_databases_message(len(databases)), severity="warning")
+                        return
                 else:
                     databases = []
             else:
