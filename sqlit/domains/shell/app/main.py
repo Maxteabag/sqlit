@@ -149,6 +149,7 @@ class SSMSTUI(
         self._autocomplete_just_applied: bool = False
         self._suppress_autocomplete_once: bool = False
         self._value_view_active: bool = False
+        self._results_transposed: bool = False
         self._last_result_columns: list[str] = []
         self._last_result_rows: list[tuple[Any, ...]] = []
         self._last_result_row_count: int = 0
@@ -301,10 +302,15 @@ class SSMSTUI(
         # before the widget is mounted, so guard it.
         active_table_info: dict[str, Any] | None = None
         cursor_column_name: str | None = None
+        results_transposed = False
         try:
             rt, columns, _rows, stacked = self._get_active_results_context()
             active_table_info = self._get_active_results_table_info(rt, stacked) if rt else None
-            if rt and rt.row_count > 0:
+            results_transposed = self._is_active_results_transposed(rt, stacked) if rt else False
+            # When transposed, the cursor's column index runs over the "Row N"
+            # columns, not the original DB columns, so cursor_column_name (and the
+            # FK lookups below) would be nonsense - skip it.
+            if rt and rt.row_count > 0 and not results_transposed:
                 col_index = rt.cursor_coordinate.column
                 if 0 <= col_index < len(columns):
                     cursor_column_name = columns[col_index]
@@ -354,6 +360,7 @@ class SSMSTUI(
             count_buffer=self._count_buffer,
             cursor_column_is_foreign_key=cursor_column_is_foreign_key,
             cursor_column_is_foreign_key_target=cursor_column_is_foreign_key_target,
+            results_transposed=results_transposed,
         )
 
     def _debug_screen_label(self, screen: Any | None) -> str:

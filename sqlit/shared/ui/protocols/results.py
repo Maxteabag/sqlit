@@ -35,6 +35,7 @@ class ResultsStateProtocol(Protocol):
     _tooltip_showing: bool
     _tooltip_timer: Any | None
     _value_view_active: bool
+    _results_transposed: bool
     MAX_FILTER_MATCHES: int
 
 
@@ -149,6 +150,17 @@ class ResultsActionsProtocol(Protocol):
         ...
 
     def _find_results_section(self, widget: Any) -> Any | None:
+        ...
+
+    def _is_active_results_transposed(self, table: Any, stacked: bool) -> bool:
+        ...
+
+    def action_toggle_transpose(self) -> None:
+        ...
+
+    def _replace_results_section_table_typed(
+        self, section: Any, old_table: SqlitDataTable, columns: list[str], rows: list[tuple[Any, ...]]
+    ) -> None:
         ...
 
     def _start_leader_pending(self, prefix: str) -> None:
