@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from textual.messages import TerminalSupportsSynchronizedOutput
 
 from sqlit.core.keymap import get_keymap
 from sqlit.core.vim import VimMode
@@ -21,6 +22,35 @@ def _make_app() -> SSMSTUI:
 
 class TestInsertModeKeybindings:
     """Test keybindings in vim INSERT mode."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("synchronized", [False, True])
+    async def test_insert_cursor_during_typing(self, synchronized: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+        app = _make_app()
+        async with app.run_test() as pilot:
+            app.action_focus_query()
+            app.query_input.cursor_blink = False
+            if synchronized:
+                app.post_message(TerminalSupportsSynchronizedOutput())
+            await pilot.pause()
+
+            writes: list[str] = []
+            monkeypatch.setattr(app._driver, "write", writes.append)
+            await pilot.press("i", "x")
+            assert app.query_input.text == "x"
+            assert ("\x1b[?25h" in "".join(writes)) == synchronized
+            assert app.query_input._draw_cursor == (not synchronized)
+
+            if not synchronized:
+                # A late terminal reply must not hide the cursor between frames.
+                app.post_message(TerminalSupportsSynchronizedOutput())
+                await pilot.pause()
+                assert app.query_input._draw_cursor
+
+            writes.clear()
+            await pilot.press("escape")
+            assert ("\x1b[?25l" in "".join(writes)) == synchronized
+            assert app.query_input._draw_cursor
 
     @pytest.mark.asyncio
     async def test_enter_insert_mode_key(self):
