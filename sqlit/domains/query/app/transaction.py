@@ -160,6 +160,8 @@ class TransactionExecutor:
 
     config: ConnectionConfig
     provider: DatabaseProvider
+    tunnel: Any | None = None  # Optional existing SSH tunnel to reuse (e.g. the session's)
+    _created_tunnel: Any | None = None
     _state: TransactionStateManager | None = None
     _transaction_connection: Any | None = None
     _analyzer: KeywordQueryAnalyzer | None = None
@@ -168,6 +170,30 @@ class TransactionExecutor:
         self._state = TransactionStateManager()
         self._analyzer = KeywordQueryAnalyzer()
 
+    def _connect(self) -> Any:
+        """Open a connection with SQLite transaction control or SSH routing as needed."""
+        factory = self.provider.connection_factory
+        is_sqlite = isinstance(factory, SQLiteAdapter)
+        connect_config = self.config
+        if not is_sqlite:
+            tunnel = self.tunnel or self._created_tunnel
+            if tunnel is None and self.config.tunnel and self.config.tunnel.enabled:
+                from sqlit.domains.connections.app.tunnel import create_ssh_tunnel
+
+                self._created_tunnel, _host, _port = create_ssh_tunnel(self.config)
+                tunnel = self._created_tunnel
+            if tunnel is not None:
+                connect_config = self.config.with_endpoint(host="127.0.0.1", port=str(tunnel.local_bind_port))
+        conn = factory.connect(connect_config)
+        if is_sqlite:
+            # SQLite autocommits outside explicit transactions.
+            conn.isolation_level = None
+        try:
+            self.provider.post_connect(conn, self.config)
+        except Exception:
+            pass
+        return conn
+
     @property
     def in_transaction(self) -> bool:
         """Whether we're currently inside a transaction."""
@@ -175,19 +201,9 @@ class TransactionExecutor:
             return self._transaction_connection.in_transaction
         return self._state.in_transaction if self._state else False
 
-    def _connect_sqlite(self) -> sqlite3.Connection:
-        conn = self.provider.connection_factory.connect(self.config)
-        # Use SQLite autocommit outside explicit transactions.
-        conn.isolation_level = None
-        try:
-            self.provider.post_connect(conn, self.config)
-        except Exception:
-            pass
-        return conn
-
     @contextmanager
     def _sqlite_execution_connection(self) -> Iterator[sqlite3.Connection]:
-        conn = self._transaction_connection or self._connect_sqlite()
+        conn = self._transaction_connection or self._connect()
         try:
             yield conn
         finally:
@@ -246,19 +262,11 @@ class TransactionExecutor:
         if use_persistent:
             # Reuse or create a persistent connection for transaction scope
             if self._transaction_connection is None:
-                self._transaction_connection = self.provider.connection_factory.connect(self.config)
-                try:
-                    self.provider.post_connect(self._transaction_connection, self.config)
-                except Exception:
-                    pass
+                self._transaction_connection = self._connect()
             conn = self._transaction_connection
         else:
             # Not in transaction - use temporary connection
-            conn = self.provider.connection_factory.connect(self.config)
-            try:
-                self.provider.post_connect(conn, self.config)
-            except Exception:
-                pass
+            conn = self._connect()
             is_temp_connection = True
 
         try:
@@ -337,14 +345,7 @@ class TransactionExecutor:
         statements = [s for s in statements if not is_comment_only_statement(s)]
 
         # Create a dedicated connection for this atomic operation
-        if isinstance(self.provider.connection_factory, SQLiteAdapter):
-            conn = self._connect_sqlite()
-        else:
-            conn = self.provider.connection_factory.connect(self.config)
-            try:
-                self.provider.post_connect(conn, self.config)
-            except Exception:
-                pass
+        conn = self._connect()
 
         try:
             # Start transaction
@@ -427,5 +428,11 @@ class TransactionExecutor:
         Always call this when done with the executor.
         """
         self._close_transaction_connection()
+        if self._created_tunnel is not None:
+            try:
+                self._created_tunnel.stop()
+            except Exception:
+                pass
+            self._created_tunnel = None
         if self._state:
             self._state.reset()
