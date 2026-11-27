@@ -45,7 +45,8 @@ class SQLiteAdapter(DatabaseAdapter):
         file_endpoint = config.file_endpoint
         if file_endpoint is None:
             raise ValueError("SQLite connections require a file endpoint.")
-        file_path = resolve_file_path(str(file_endpoint.path))
+        path = str(file_endpoint.path)
+        file_path = path if path == ":memory:" else resolve_file_path(path)
         # check_same_thread=False allows connection to be used from background threads
         # (for async query execution). SQLite serializes access internally.
         connect_args: dict[str, Any] = {"check_same_thread": False}
@@ -314,7 +315,7 @@ class SQLiteAdapter(DatabaseAdapter):
                 rows = cursor.fetchall()
                 truncated = False
             # DML with RETURNING produces a result set but also writes — persist it.
-            if conn.in_transaction:
+            if conn.isolation_level is not None and conn.in_transaction:
                 conn.commit()
             return columns, [tuple(row) for row in rows], truncated
         return [], [], False
@@ -324,5 +325,6 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor = conn.cursor()
         cursor.execute(query)
         rowcount = int(cursor.rowcount)
-        conn.commit()
+        if conn.isolation_level is not None:
+            conn.commit()
         return rowcount

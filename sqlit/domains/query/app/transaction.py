@@ -10,10 +10,17 @@ This module provides:
 from __future__ import annotations
 
 import re
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import partial
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
-from .multi_statement import MultiStatementResult
+from sqlit.domains.connections.providers.sqlite.adapter import SQLiteAdapter
+
+from .multi_statement import MultiStatementExecutor, MultiStatementResult
 from .query_service import KeywordQueryAnalyzer, NonQueryResult, QueryKind, QueryResult
 
 if TYPE_CHECKING:
@@ -164,7 +171,42 @@ class TransactionExecutor:
     @property
     def in_transaction(self) -> bool:
         """Whether we're currently inside a transaction."""
+        if isinstance(self._transaction_connection, sqlite3.Connection):
+            return self._transaction_connection.in_transaction
         return self._state.in_transaction if self._state else False
+
+    def _connect_sqlite(self) -> sqlite3.Connection:
+        conn = self.provider.connection_factory.connect(self.config)
+        # Use SQLite autocommit outside explicit transactions.
+        conn.isolation_level = None
+        try:
+            self.provider.post_connect(conn, self.config)
+        except Exception:
+            pass
+        return conn
+
+    @contextmanager
+    def _sqlite_execution_connection(self) -> Iterator[sqlite3.Connection]:
+        conn = self._transaction_connection or self._connect_sqlite()
+        try:
+            yield conn
+        finally:
+            # SQLite tracks explicit transactions and savepoints itself.
+            if conn.in_transaction:
+                self._transaction_connection = conn
+            else:
+                if self._transaction_connection is conn:
+                    self._transaction_connection = None
+                conn.close()
+
+    def execute_script(self, sql: str, max_rows: int | None = None) -> MultiStatementResult:
+        """Execute a script, keeping SQLite session state for its duration."""
+        if not isinstance(self.provider.connection_factory, SQLiteAdapter):
+            return MultiStatementExecutor(self).execute(sql, max_rows)
+
+        with self._sqlite_execution_connection() as conn:
+            statement_executor = SimpleNamespace(execute=partial(self._execute_on_connection, conn))
+            return MultiStatementExecutor(statement_executor).execute(sql, max_rows)
 
     def execute(self, sql: str, max_rows: int | None = None) -> QueryResult | NonQueryResult:
         """Execute a query with transaction awareness.
@@ -183,6 +225,10 @@ class TransactionExecutor:
 
         # Normalize SQL: convert blank-line-separated to semicolon-separated
         sql = normalize_for_execution(sql)
+
+        if isinstance(self.provider.connection_factory, SQLiteAdapter):
+            with self._sqlite_execution_connection() as conn:
+                return self._execute_on_connection(conn, sql, max_rows)
 
         statements = split_statements(sql)
         contains_transaction_start = any(is_transaction_start(statement) for statement in statements)
@@ -291,11 +337,14 @@ class TransactionExecutor:
         statements = [s for s in statements if not is_comment_only_statement(s)]
 
         # Create a dedicated connection for this atomic operation
-        conn = self.provider.connection_factory.connect(self.config)
-        try:
-            self.provider.post_connect(conn, self.config)
-        except Exception:
-            pass
+        if isinstance(self.provider.connection_factory, SQLiteAdapter):
+            conn = self._connect_sqlite()
+        else:
+            conn = self.provider.connection_factory.connect(self.config)
+            try:
+                self.provider.post_connect(conn, self.config)
+            except Exception:
+                pass
 
         try:
             # Start transaction
