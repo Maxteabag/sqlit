@@ -7,6 +7,7 @@ from textual.widgets.text_area import Selection
 
 from sqlit.core.keymap import ActionKeyDef, DefaultKeymapProvider, reset_keymap, set_keymap
 from sqlit.core.vim import VimMode
+from sqlit.domains.connections.providers.catalog import get_provider
 from sqlit.domains.shell.app.keymap_manager import FileBasedKeymapProvider
 from sqlit.domains.shell.app.main import SSMSTUI
 from sqlit.shared.ui.widgets_autocomplete import AutocompleteItem
@@ -73,6 +74,66 @@ class TestQueryTabInsertion:
 
             assert app._autocomplete_visible is False
             assert app.query_input.text == "select"
+
+    @pytest.mark.parametrize(
+        ("before", "after", "key", "accept", "expected"),
+        [
+            ("CREATE TABLE t (id INT GE", ");", "n", ("tab",), "CREATE TABLE t (id INT GENERATED"),
+            ("CREATE TABLE t (id INT GENERATED ", ");", "a", ("tab",), "CREATE TABLE t (id INT GENERATED AS"),
+            (
+                "CREATE TABLE t (source INT, result INT GENERATED ALWAYS ",
+                " (source + 1) STORED);",
+                "a",
+                ("tab",),
+                "CREATE TABLE t (source INT, result INT GENERATED ALWAYS AS",
+            ),
+            (
+                "CREATE TABLE books (id BIGINT GE",
+                ", title text)",
+                "n",
+                ("down", "tab"),
+                "CREATE TABLE books (id BIGINT GENERATED ALWAYS AS IDENTITY",
+            ),
+            (
+                "ALTER TABLE altered ADD COLUMN id INTEGER GENERATED",
+                "",
+                "space",
+                ("tab",),
+                "ALTER TABLE altered ADD COLUMN id INTEGER GENERATED ALWAYS AS IDENTITY",
+            ),
+            (
+                "/* publisher's schema */ CREATE TABLE t (source INT, -- publisher's id\n id INT GE",
+                ");",
+                "n",
+                ("down", "tab"),
+                "/* publisher's schema */ CREATE TABLE t (source INT, -- publisher's id\n id INT GENERATED ALWAYS AS IDENTITY",
+            ),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_postgres_generated_completions_accept_through_editor(self, before, after, key, accept, expected) -> None:
+        app = _make_app()
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.current_provider = get_provider("postgresql")
+            app.current_connection = object()
+            try:
+                app.action_focus_query()
+                await pilot.press("i")
+                app.query_input.text = before + after
+                app.query_input.cursor_location = (before.count("\n"), len(before.rsplit("\n", 1)[-1]))
+
+                await pilot.press(key)
+                await pilot.pause(0.15)
+                typed = " " if key == "space" else key
+                assert app.query_input.text == before + typed + after
+                assert app._autocomplete_visible
+                await pilot.press(*accept)
+                await pilot.pause()
+
+                assert app.query_input.text == expected + after
+            finally:
+                app.current_connection = None
 
     @pytest.mark.asyncio
     async def test_enter_inserts_newline_with_default_tab_accept_binding(self) -> None:
