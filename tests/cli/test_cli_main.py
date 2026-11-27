@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from tests.conftest import run_cli
 
 
@@ -249,3 +251,89 @@ def test_cli_version_short_option(tmp_path: Path):
     )
     assert result.returncode == 0
     assert "sqlit" in result.stdout
+
+
+@pytest.fixture
+def sqlite_cli(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SQLIT_CONFIG_DIR", str(tmp_path))
+    db = tmp_path / "demo.db"
+    created = run_cli("connections", "add", "sqlite", "--name", "d", "--file-path", str(db), check=False)
+    assert created.returncode == 0, created.stdout + created.stderr
+
+    def query(*args: str) -> subprocess.CompletedProcess:
+        return run_cli("query", "-c", "d", "--format", "json", *args, check=False)
+
+    return query
+
+
+def test_sqlite_script_shows_only_last_result(tmp_path: Path, sqlite_cli):
+    script = tmp_path / "script.sql"
+    script.write_text(
+        "create table z(a int);\n"
+        "-- seed; comment\n"
+        "insert into z values (1) returning a;\n"
+        "/* last; result */ select a from z /* end of query */\n"
+        "-- trailing comment;",
+        encoding="utf-8",
+    )
+
+    result = sqlite_cli("-f", str(script))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == [{"a": 1}]
+
+
+@pytest.mark.parametrize(
+    ("explicit_transaction", "failing_statement", "error", "expected"),
+    [
+        (False, "insert into z values (1)", "UNIQUE constraint failed: z.a", [{"a": 1}]),
+        (True, "insert into z values (1)", "UNIQUE constraint failed: z.a", []),
+        (False, "select abs(column1) from (values (1), (-9223372036854775808))", "integer overflow", [{"a": 1}]),
+    ],
+)
+def test_sqlite_script_stops_at_first_error(
+    tmp_path: Path, sqlite_cli, explicit_transaction, failing_statement, error, expected
+):
+    setup = sqlite_cli("-q", "create table z(a int unique)")
+    assert setup.returncode == 0, setup.stdout + setup.stderr
+    script = tmp_path / "script.sql"
+    script.write_text(
+        ("begin;\n" if explicit_transaction else "")
+        + "insert into z values (1);\n"
+        + f"{failing_statement};\n"
+        + "insert into z values (2);\n"
+        + ("commit;\n" if explicit_transaction else "")
+        + "select * from z;",
+        encoding="utf-8",
+    )
+
+    result = sqlite_cli("-f", str(script))
+    assert result.returncode == 1
+    assert error in result.stdout
+
+    readback = sqlite_cli("-q", "select * from z order by a")
+    assert readback.returncode == 0, readback.stdout + readback.stderr
+    assert json.loads(readback.stdout) == expected
+
+
+@pytest.mark.parametrize("in_script", [False, True])
+def test_sqlite_trigger_body_with_internal_semicolons(tmp_path: Path, sqlite_cli, in_script):
+    setup = sqlite_cli("-q", "create table z(a int)")
+    assert setup.returncode == 0, setup.stdout + setup.stderr
+    trigger = (
+        "create trigger log_insert after insert on z when new.a = 1 begin\n"
+        "  insert into z values (2);\n"
+        "  insert into z values (3);\n"
+        "end"
+    )
+    script = tmp_path / "trigger.sql"
+    query = "insert into z values (1); select * from z order by a"
+    script.write_text(f"\ufeff{trigger};\n{query}" if in_script else trigger, encoding="utf-8")
+
+    result = sqlite_cli("-f", str(script))
+    assert result.returncode == 0, result.stdout + result.stderr
+    if not in_script:
+        inserted = sqlite_cli("-q", "insert into z values (1)")
+        assert inserted.returncode == 0, inserted.stdout + inserted.stderr
+        result = sqlite_cli("-q", "select * from z order by a")
+        assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == [{"a": 1}, {"a": 2}, {"a": 3}]
