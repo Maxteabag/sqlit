@@ -187,6 +187,13 @@ sqlit connections list
 sqlit connections delete "MyConnection"
 ```
 
+SQLite scripts can contain multiple semicolon-delimited statements, including
+trigger definitions. The CLI runs them in order, stops at the first error with
+a nonzero exit status, and displays only the final statement's result on
+success. The CLI does not wrap the file in a transaction. Earlier committed
+changes remain after an error. To group changes, use explicit `BEGIN` and
+`COMMIT` statements in the file.
+
 ## Keybindings
 
 | Key | Action |
