@@ -156,6 +156,7 @@ class AutocompleteSuggestionsMixin:
                         elif table_key in loading:
                             return ["Loading..."]
 
+        provider = getattr(self, "current_provider", None)
         # Now call get_completions with all available data
         results = get_completions(
             text,
@@ -165,6 +166,7 @@ class AutocompleteSuggestionsMixin:
             procedures,
             include_keywords=True,
             include_functions=True,
+            dialect=provider.metadata.db_type if provider else None,
         )
 
         return results

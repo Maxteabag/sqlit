@@ -34,6 +34,7 @@ from .core import (
 )
 from .create_index import get_create_index_completions
 from .create_table import get_create_table_completions
+from .postgres_identity import get_postgres_identity_completions
 from .create_view import get_create_view_completions
 from .delete import extract_delete_table_refs, get_delete_context
 from .drop import get_drop_completions
@@ -198,6 +199,8 @@ def get_completions(
     procedures: list[str] | None = None,
     include_keywords: bool = True,
     include_functions: bool = True,
+    *,
+    dialect: str | None = None,
 ) -> list[str]:
     """Get completion suggestions for the given SQL and cursor position.
 
@@ -294,6 +297,11 @@ def get_completions(
     # Don't suggest if there's no SQL content yet (just whitespace)
     if not before_cursor.strip():
         return []
+
+    if dialect == "postgresql":
+        identity = get_postgres_identity_completions(before_cursor)
+        if identity is not None:
+            return identity
 
     # Try DDL-specific handlers first (they return completions directly)
     for ddl_handler in [
