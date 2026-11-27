@@ -448,10 +448,7 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
         import asyncio
         import time
 
-        from sqlit.domains.query.app.multi_statement import (
-            MultiStatementExecutor,
-            split_statements,
-        )
+        from sqlit.domains.query.app.multi_statement import split_statements
         from sqlit.domains.query.app.query_service import QueryResult, parse_use_statement
         from sqlit.domains.query.app.transaction import is_transaction_end, is_transaction_start
 
@@ -572,9 +569,8 @@ class QueryExecutionMixin(ProcessWorkerLifecycleMixin):
 
             if is_multi_statement:
                 # Multi-statement execution with stacked results
-                multi_executor = MultiStatementExecutor(executor)
                 multi_result = await asyncio.to_thread(
-                    multi_executor.execute,
+                    executor.execute_script,
                     query,
                     max_rows,
                 )
