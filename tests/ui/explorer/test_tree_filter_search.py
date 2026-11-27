@@ -68,6 +68,10 @@ class MockTree:
     def move_cursor(self, node: MockTreeNode) -> None:
         self.selected_node = node
 
+    @property
+    def cursor_node(self) -> MockTreeNode | None:
+        return self.selected_node
+
     def focus(self) -> None:
         self.has_focus = True
 
