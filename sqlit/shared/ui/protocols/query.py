@@ -33,6 +33,7 @@ class QueryStateProtocol(Protocol):
     _undo_history: Any | None
     _transaction_executor: Any | None
     _transaction_executor_config: Any | None
+    _transaction_executor_tunnel: Any | None
     _results_render_worker: Worker[Any] | None
     _results_render_token: int
     _query_document: Any | None
@@ -257,6 +258,9 @@ class QueryActionsProtocol(Protocol):
         ...
 
     def _get_transaction_executor(self, config: Any, provider: Any) -> Any:
+        ...
+
+    def _session_tunnel(self) -> Any | None:
         ...
 
     def _display_multi_statement_results(self, multi_result: Any, elapsed_ms: float) -> None:

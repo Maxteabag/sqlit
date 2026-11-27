@@ -48,6 +48,7 @@ class TestExecutorResetOnConfigChange:
             instance, config, provider
         )
         instance._reset_transaction_executor = lambda: QueryExecutionMixin._reset_transaction_executor(instance)
+        instance._session_tunnel = lambda: QueryExecutionMixin._session_tunnel(instance)
 
         return instance
 
@@ -251,3 +252,22 @@ class TestConnectionSwitchScenario:
         # THIS IS THE BUG FIX: should get server B's executor, not server A's
         assert exec_b is executor_b
         assert exec_b is not executor_a
+
+
+@patch(EXECUTOR_PATCH_TARGET)
+def test_new_session_tunnel_creates_new_executor(mock_executor_class: MagicMock) -> None:
+    """A reconnect opens a new SSH tunnel; the executor must not keep the stale one (#337)."""
+    instance = TestExecutorResetOnConfigChange()._make_mixin_instance()
+    config = TestExecutorResetOnConfigChange()._make_config("server-a", host="db.internal")
+    provider = MagicMock()
+
+    instance._session = MagicMock(tunnel="tunnel-1")
+    instance._get_transaction_executor(config, provider)
+    instance._get_transaction_executor(config, provider)
+    assert mock_executor_class.call_count == 1
+    assert mock_executor_class.call_args.kwargs["tunnel"] == "tunnel-1"
+
+    instance._session = MagicMock(tunnel="tunnel-2")
+    instance._get_transaction_executor(config, provider)
+    assert mock_executor_class.call_count == 2
+    assert mock_executor_class.call_args.kwargs["tunnel"] == "tunnel-2"

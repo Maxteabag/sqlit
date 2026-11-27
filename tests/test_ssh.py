@@ -236,3 +236,44 @@ class TestSSHTunnelIntegration:
         # Verify it's gone
         result = cli_runner("connection", "list")
         assert connection_name not in result.stdout
+
+
+@pytest.mark.parametrize("reuse_session_tunnel", [True, False], ids=["borrowed", "owned"])
+def test_transaction_script_via_ssh(ssh_server_ready, reuse_session_tunnel):
+    from sqlit.domains.connections.app.session import ConnectionSession
+    from sqlit.domains.connections.domain.config import ConnectionConfig
+    from sqlit.domains.query.app.transaction import TransactionExecutor
+    from tests.fixtures.postgres import POSTGRES_DATABASE, POSTGRES_PASSWORD, POSTGRES_USER
+    from tests.fixtures.ssh import (
+        SSH_HOST, SSH_PASSWORD, SSH_PORT, SSH_REMOTE_DB_HOST, SSH_REMOTE_DB_PORT, SSH_USER,
+    )
+
+    if not ssh_server_ready:
+        pytest.skip("SSH integration fixture is unavailable")
+
+    config = ConnectionConfig.from_dict({
+        "name": "transaction-via-ssh", "db_type": "postgresql",
+        "server": SSH_REMOTE_DB_HOST, "port": str(SSH_REMOTE_DB_PORT),
+        "database": POSTGRES_DATABASE, "username": POSTGRES_USER, "password": POSTGRES_PASSWORD,
+        "ssh_enabled": True, "ssh_host": SSH_HOST, "ssh_port": str(SSH_PORT),
+        "ssh_username": SSH_USER, "ssh_auth_type": "password", "ssh_password": SSH_PASSWORD,
+    })
+    with ConnectionSession.create(config) as session:
+        executor = TransactionExecutor(
+            config=config, provider=session.provider,
+            tunnel=session.tunnel if reuse_session_tunnel else None,
+        )
+        try:
+            result = executor.atomic_execute(
+                "CREATE TEMP TABLE tunnel_check (value integer); "
+                "INSERT INTO tunnel_check VALUES (73); SELECT value FROM tunnel_check"
+            )
+            assert result.completed, result.results
+            assert result.results[-1].result.rows == [(73,)]
+        finally:
+            executor.close()
+
+        # Closing the transaction executor must leave the original session usable.
+        with session.connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            assert cursor.fetchone()[0] == 1
