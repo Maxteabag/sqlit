@@ -103,6 +103,35 @@ def _is_use_unsupported_error(exc: Exception) -> bool:
     return "USE statement is not supported" in str(exc)
 
 
+# SQL Server returns `SELECT ... FOR JSON` / `FOR XML` output as a single
+# column with this fixed name, split over many rows of roughly 2,033
+# characters each. No single row is a valid document on its own.
+_DOCUMENT_COLUMNS = {
+    "JSON_F52E2B61-18A1-11D1-B105-00805F49916B",
+    "XML_F52E2B61-18A1-11D1-B105-00805F49916B",
+}
+
+
+def _fetch_result(cursor: Any, max_rows: int | None) -> tuple[list[str], list[tuple], bool]:
+    """Fetch the current result set, joining FOR JSON/FOR XML chunks into one cell."""
+    columns = [col[0] for col in cursor.description]
+    if len(columns) == 1 and isinstance(columns[0], str) and columns[0].upper() in _DOCUMENT_COLUMNS:
+        # The chunks are one document: fetch them all, whatever the row limit,
+        # so the value viewer gets complete JSON/XML it can format.
+        chunks = cursor.fetchall()
+        document = "".join(str(row[0]) for row in chunks if row[0] is not None)
+        return columns, [(document,)] if chunks else [], False
+    if max_rows is not None:
+        rows = cursor.fetchmany(max_rows + 1)
+        truncated = len(rows) > max_rows
+        if truncated:
+            rows = rows[:max_rows]
+    else:
+        rows = cursor.fetchall()
+        truncated = False
+    return columns, [tuple(row) for row in rows], truncated
+
+
 class SQLServerAdapter(DatabaseAdapter):
     """Adapter for Microsoft SQL Server using the mssql-python driver."""
 
@@ -824,15 +853,7 @@ class SQLServerAdapter(DatabaseAdapter):
             result: tuple[list[str], list[tuple], bool] | None = None
             while True:
                 if cursor.description and result is None:
-                    columns = [col[0] for col in cursor.description]
-                    if max_rows is not None:
-                        rows = cursor.fetchmany(max_rows + 1)
-                        truncated = len(rows) > max_rows
-                        rows = rows[:max_rows]
-                    else:
-                        rows = cursor.fetchall()
-                        truncated = False
-                    result = (columns, [tuple(row) for row in rows], truncated)
+                    result = _fetch_result(cursor, max_rows)
 
                 nextset = getattr(cursor, "nextset", None)
                 if not callable(nextset) or not nextset():
@@ -840,16 +861,7 @@ class SQLServerAdapter(DatabaseAdapter):
             return result or ([], [], False)
 
         if cursor.description:
-            columns = [col[0] for col in cursor.description]
-            if max_rows is not None:
-                rows = cursor.fetchmany(max_rows + 1)
-                truncated = len(rows) > max_rows
-                if truncated:
-                    rows = rows[:max_rows]
-            else:
-                rows = cursor.fetchall()
-                truncated = False
-            return columns, [tuple(row) for row in rows], truncated
+            return _fetch_result(cursor, max_rows)
         return [], [], False
 
     def execute_non_query(self, conn: Any, query: str) -> int:
