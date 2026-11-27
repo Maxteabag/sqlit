@@ -38,6 +38,7 @@ from .create_view import get_create_view_completions
 from .delete import extract_delete_table_refs, get_delete_context
 from .drop import get_drop_completions
 from .insert import get_insert_context
+from .postgres_identity import get_postgres_identity_completions
 from .truncate import get_truncate_completions
 from .update import get_update_context
 
@@ -198,6 +199,8 @@ def get_completions(
     procedures: list[str] | None = None,
     include_keywords: bool = True,
     include_functions: bool = True,
+    *,
+    dialect: str | None = None,
 ) -> list[str]:
     """Get completion suggestions for the given SQL and cursor position.
 
@@ -286,6 +289,11 @@ def get_completions(
         if bool(getattr(routine, "is_table_valued", False))
     ]
     table_function_names = [routine_display_name(routine) for routine in table_function_routines]
+
+    if dialect == "postgresql":
+        identity = get_postgres_identity_completions(before_cursor)
+        if identity is not None:
+            return identity
 
     # Don't suggest if inside string literal
     if is_inside_string(before_cursor):
