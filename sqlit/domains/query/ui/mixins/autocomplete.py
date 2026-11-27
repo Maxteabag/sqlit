@@ -68,10 +68,13 @@ class AutocompleteMixin(AutocompleteSchemaMixin, AutocompleteSuggestionsMixin):
         cursor_loc = self.query_input.cursor_location
         cursor_pos = self._location_to_offset(text, cursor_loc)
 
+        provider = getattr(self, "current_provider", None)
+        postgres = provider is not None and provider.metadata.db_type == "postgresql"
         word_start = cursor_pos
         while word_start > 0:
             previous = text[word_start - 1]
-            if previous in " \t\r\n,()[].":
+            # A PostgreSQL block comment separates tokens even without whitespace.
+            if previous in " \t\r\n,()[]." or (postgres and text.endswith("*/", 0, word_start)):
                 break
             word_start -= 1
 

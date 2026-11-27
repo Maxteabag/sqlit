@@ -102,6 +102,13 @@ class TestQueryTabInsertion:
                 "ALTER TABLE altered ADD COLUMN id INTEGER GENERATED ALWAYS AS IDENTITY",
             ),
             (
+                "SELECT 2 # 1; CREATE TABLE t (id INT/* explanation */GE",
+                ");",
+                "n",
+                ("down", "tab"),
+                "SELECT 2 # 1; CREATE TABLE t (id INT/* explanation */GENERATED ALWAYS AS IDENTITY",
+            ),
+            (
                 "/* publisher's schema */ CREATE TABLE t (source INT, -- publisher's id\n id INT GE",
                 ");",
                 "n",
