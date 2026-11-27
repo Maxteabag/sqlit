@@ -74,8 +74,8 @@ class QueryTextArea(TextArea):
         return vim_mode == VimMode.INSERT
 
     def _should_use_terminal_cursor(self) -> bool:
-        """Use a terminal bar cursor only in INSERT mode with focus."""
-        return self.has_focus and self._is_insert_mode()
+        """Use the bar cursor only when Textual can paint a frame atomically."""
+        return self.has_focus and self._is_insert_mode() and getattr(self.app, "_sync_available", False)
 
     def _get_insert_cursor_color(self) -> str:
         from sqlit.domains.shell.app.themes import DEFAULT_MODE_COLORS, MODE_NORMAL_COLOR_VAR
@@ -131,7 +131,8 @@ class QueryTextArea(TextArea):
 
     @property
     def _draw_cursor(self) -> bool:
-        if self._should_use_terminal_cursor():
+        # A capability reply can arrive before the terminal cursor is enabled.
+        if self._terminal_cursor_active:
             return False
         return super()._draw_cursor
 
