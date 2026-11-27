@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,8 @@ if TYPE_CHECKING:
     from sqlit.domains.connections.domain.config import ConnectionConfig
 
 SELECT_KEYWORDS = frozenset(["SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA"])
+_DML_KEYWORDS = frozenset(["INSERT", "UPDATE", "DELETE", "MERGE"])
+_RETURNING_RE = re.compile(r"(?is)\bRETURNING\b\s+\S")
 
 
 def _strip_leading_sql_comments(query: str) -> str:
@@ -319,7 +322,10 @@ class DatabaseAdapter(ABC):
 
     def classify_query(self, query: str) -> bool:
         """Return True if the query is expected to return rows."""
-        return _first_keyword(query) in SELECT_KEYWORDS
+        keyword = _first_keyword(query)
+        if keyword in SELECT_KEYWORDS:
+            return True
+        return keyword in _DML_KEYWORDS and _RETURNING_RE.search(query) is not None
 
     def execute_test_query(self, conn: Any) -> None:
         """Execute a simple query to verify the connection works.
