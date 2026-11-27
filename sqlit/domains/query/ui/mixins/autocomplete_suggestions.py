@@ -11,6 +11,7 @@ from sqlit.domains.query.completion import (
     get_completions,
     get_context,
 )
+from sqlit.domains.query.completion.postgres_identity import get_postgres_identity_completions
 from sqlit.shared.ui.protocols import AutocompleteMixinHost
 
 
@@ -104,6 +105,12 @@ class AutocompleteSuggestionsMixin:
 
     def _get_autocomplete_suggestions(self: AutocompleteMixinHost, text: str, cursor_pos: int) -> list[str]:
         """Get autocomplete suggestions using the SQL completion engine."""
+        provider = getattr(self, "current_provider", None)
+        if provider and provider.metadata.db_type == "postgresql":
+            identity = get_postgres_identity_completions(text[:cursor_pos])
+            if identity is not None:
+                return identity
+
         # Build schema data for get_completions
         raw_tables = self._schema_cache.get("tables", []) + self._schema_cache.get("views", [])
         raw_columns = self._schema_cache.get("columns", {})
@@ -156,9 +163,8 @@ class AutocompleteSuggestionsMixin:
                         elif table_key in loading:
                             return ["Loading..."]
 
-        provider = getattr(self, "current_provider", None)
-        # Now call get_completions with all available data
-        results = get_completions(
+        # Dialect-specific identity completion was checked before metadata loading.
+        return get_completions(
             text,
             cursor_pos,
             tables,
@@ -166,7 +172,4 @@ class AutocompleteSuggestionsMixin:
             procedures,
             include_keywords=True,
             include_functions=True,
-            dialect=provider.metadata.db_type if provider else None,
         )
-
-        return results
