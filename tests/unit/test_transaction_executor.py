@@ -150,3 +150,62 @@ def test_executor_without_ssh_connects_to_configured_host() -> None:
     config = ConnectionConfig.from_dict({"name": "direct", "db_type": "postgresql", "server": "db", "port": "5432"})
     TransactionExecutor(config, provider).execute("SELECT 1")
     assert _endpoints(provider) == [("db", "5432")]
+
+
+def test_batch_runs_script_on_one_connection() -> None:
+    """Regression #337: session state (SET @var) must carry between statements of a script."""
+    executor, provider = _make_executor()
+
+    with executor.batch():
+        executor.execute("SET @x = 1")
+        executor.execute("SELECT @x")
+        executor.execute("UPDATE t SET a = 1")
+
+    created = provider.connection_factory.created
+    assert len(created) == 1
+    assert created[0].closed is True
+    assert {conn for _kind, conn, _sql in provider.query_executor.calls} == {created[0]}
+
+
+def test_batch_transaction_uses_batch_connection_and_keeps_it_after_commit() -> None:
+    executor, provider = _make_executor()
+
+    with executor.batch():
+        executor.execute("SET @x = 1")
+        executor.execute("BEGIN")
+        executor.execute("INSERT INTO t VALUES (@x)")
+        executor.execute("COMMIT")
+        assert provider.connection_factory.created[0].closed is False
+        executor.execute("SELECT @x")
+
+    created = provider.connection_factory.created
+    assert len(created) == 1
+    assert created[0].closed is True
+    assert executor.in_transaction is False
+
+
+def test_batch_ending_inside_transaction_keeps_connection_open() -> None:
+    executor, provider = _make_executor()
+
+    with executor.batch():
+        executor.execute("SET @x = 1")
+        executor.execute("BEGIN")
+        executor.execute("INSERT INTO t VALUES (@x)")
+
+    conn = provider.connection_factory.created[0]
+    assert executor.in_transaction is True
+    assert conn.closed is False
+
+    executor.execute("COMMIT")
+    assert len(provider.connection_factory.created) == 1
+    assert conn.closed is True
+
+
+def test_without_batch_each_statement_gets_its_own_connection() -> None:
+    executor, provider = _make_executor()
+
+    executor.execute("SELECT 1")
+    executor.execute("SELECT 2")
+
+    assert len(provider.connection_factory.created) == 2
+    assert all(conn.closed for conn in provider.connection_factory.created)

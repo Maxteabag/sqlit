@@ -10,6 +10,8 @@ This module provides:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -157,6 +159,8 @@ class TransactionExecutor:
     _created_tunnel: Any | None = None
     _state: TransactionStateManager | None = None
     _transaction_connection: Any | None = None
+    _batch_connection: Any | None = None
+    _batch_active: bool = False
     _analyzer: KeywordQueryAnalyzer | None = None
 
     def __post_init__(self) -> None:
@@ -185,6 +189,29 @@ class TransactionExecutor:
     def in_transaction(self) -> bool:
         """Whether we're currently inside a transaction."""
         return self._state.in_transaction if self._state else False
+
+    @contextmanager
+    def batch(self) -> Iterator[None]:
+        """Run every execute() inside this block on one connection.
+
+        Outside a transaction each execute() otherwise gets a fresh connection, so
+        session state (SET @var, temp tables, SET search_path) would not carry from
+        one statement of a script to the next.
+        """
+        self._batch_active = True
+        try:
+            yield
+        finally:
+            self._batch_active = False
+            conn = self._batch_connection
+            self._batch_connection = None
+            # A script that opened a transaction without ending it keeps the
+            # connection as the transaction connection.
+            if conn is not None and conn is not self._transaction_connection:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def execute(self, sql: str, max_rows: int | None = None) -> QueryResult | NonQueryResult:
         """Execute a query with transaction awareness.
@@ -218,10 +245,16 @@ class TransactionExecutor:
         )
 
         if use_persistent:
-            # Reuse or create a persistent connection for transaction scope
+            # Reuse or create a persistent connection for transaction scope.
+            # Inside a batch, the batch's connection carries the transaction so
+            # session state set earlier in the script is kept.
             if self._transaction_connection is None:
-                self._transaction_connection = self._connect()
+                self._transaction_connection = self._batch_connection or self._connect()
             conn = self._transaction_connection
+        elif self._batch_active:
+            if self._batch_connection is None:
+                self._batch_connection = self._connect()
+            conn = self._batch_connection
         else:
             # Not in transaction - use temporary connection
             conn = self._connect()
@@ -374,10 +407,12 @@ class TransactionExecutor:
     def _close_transaction_connection(self) -> None:
         """Close the persistent transaction connection."""
         if self._transaction_connection is not None:
-            try:
-                self._transaction_connection.close()
-            except Exception:
-                pass
+            # The batch still needs its connection once the transaction ends.
+            if self._transaction_connection is not self._batch_connection:
+                try:
+                    self._transaction_connection.close()
+                except Exception:
+                    pass
             self._transaction_connection = None
 
     def close(self) -> None:
